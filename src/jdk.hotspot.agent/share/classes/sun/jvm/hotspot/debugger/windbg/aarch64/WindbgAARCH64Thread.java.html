@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\debugger\windbg\aarch64\WindbgAARCH64Thread.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+ 1 /*
+ 2  * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
+ 3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ 4  *
+ 5  * This code is free software; you can redistribute it and/or modify it
+ 6  * under the terms of the GNU General Public License version 2 only, as
+ 7  * published by the Free Software Foundation.
+ 8  *
+ 9  * This code is distributed in the hope that it will be useful, but WITHOUT
+10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+12  * version 2 for more details (a copy is included in the LICENSE file that
+13  * accompanied this code).
+14  *
+15  * You should have received a copy of the GNU General Public License version
+16  * 2 along with this work; if not, write to the Free Software Foundation,
+17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+18  *
+19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+20  * or visit www.oracle.com if you need additional information or have any
+21  * questions.
+22  *
+23  */
+24 
+25 package sun.jvm.hotspot.debugger.windbg.aarch64;
+26 
+27 import sun.jvm.hotspot.debugger.*;
+28 import sun.jvm.hotspot.debugger.aarch64.*;
+29 import sun.jvm.hotspot.debugger.windbg.*;
+30 
+31 class WindbgAARCH64Thread implements ThreadProxy {
+32   private WindbgDebugger debugger;
+33   private long           sysId;
+34   private boolean        gotID;
+35   private long           id;
+36 
+37   // The address argument must be the address of the OSThread::_thread_id
+38   WindbgAARCH64Thread(WindbgDebugger debugger, Address addr) {
+39     this.debugger = debugger;
+40     this.sysId    = (long)addr.getCIntegerAt(0, 4, true);
+41     gotID         = false;
+42   }
+43 
+44   WindbgAARCH64Thread(WindbgDebugger debugger, long sysId) {
+45     this.debugger = debugger;
+46     this.sysId    = sysId;
+47     gotID         = false;
+48   }
+49 
+50   public ThreadContext getContext() throws IllegalThreadStateException {
+51     long[] data = debugger.getThreadIntegerRegisterSet(getThreadID());
+52     WindbgAARCH64ThreadContext context = new WindbgAARCH64ThreadContext(debugger);
+53     for (int i = 0; i &lt; data.length; i++) {
+54       context.setRegister(i, data[i]);
+55     }
+56     return context;
+57   }
+58 
+59   public boolean canSetContext() throws DebuggerException {
+60     return false;
+61   }
+62 
+63   public void setContext(ThreadContext thrCtx)
+64     throws IllegalThreadStateException, DebuggerException {
+65     throw new DebuggerException(&quot;Unimplemented&quot;);
+66   }
+67 
+68   public boolean equals(Object obj) {
+69     if ((obj == null) || !(obj instanceof WindbgAARCH64Thread)) {
+70       return false;
+71     }
+72 
+73     return (((WindbgAARCH64Thread) obj).getThreadID() == getThreadID());
+74   }
+75 
+76   public int hashCode() {
+77     return (int) getThreadID();
+78   }
+79 
+80   public String toString() {
+81     return Long.toString(getThreadID());
+82   }
+83 
+84   /** Retrieves the thread ID of this thread by examining the Thread
+85       Information Block. */
+86   private long getThreadID() {
+87     if (!gotID) {
+88        id = debugger.getThreadIdFromSysId(sysId);
+89     }
+90 
+91     return id;
+92   }
+93 }
+    </pre>
+  </body>
+</html>

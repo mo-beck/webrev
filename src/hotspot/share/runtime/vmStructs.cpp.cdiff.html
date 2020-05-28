@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\share\runtime\vmStructs.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="thread.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version.hpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\share\runtime\vmStructs.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 100,19 ***</span>
+  #include &quot;runtime/vmStructs.hpp&quot;
+  #include &quot;utilities/globalDefinitions.hpp&quot;
+  #include &quot;utilities/hashtable.hpp&quot;
+  #include &quot;utilities/macros.hpp&quot;
+  
+  #include CPU_HEADER(vmStructs)
+  #include OS_HEADER(vmStructs)
+  #include OS_CPU_HEADER(vmStructs)
+  
+  #if INCLUDE_JVMCI
+  # include &quot;jvmci/vmStructs_jvmci.hpp&quot;
+  #endif
+  
+<span class="line-removed">- </span>
+  #ifdef COMPILER2
+  #include &quot;opto/addnode.hpp&quot;
+  #include &quot;opto/block.hpp&quot;
+  #include &quot;opto/callnode.hpp&quot;
+  #include &quot;opto/castnode.hpp&quot;
+<span class="line-new-header">--- 100,19 ---</span>
+  #include &quot;runtime/vmStructs.hpp&quot;
+  #include &quot;utilities/globalDefinitions.hpp&quot;
+  #include &quot;utilities/hashtable.hpp&quot;
+  #include &quot;utilities/macros.hpp&quot;
+  
+<span class="line-added">+ </span>
+  #include CPU_HEADER(vmStructs)
+  #include OS_HEADER(vmStructs)
+  #include OS_CPU_HEADER(vmStructs)
+  
+  #if INCLUDE_JVMCI
+  # include &quot;jvmci/vmStructs_jvmci.hpp&quot;
+  #endif
+  
+  #ifdef COMPILER2
+  #include &quot;opto/addnode.hpp&quot;
+  #include &quot;opto/block.hpp&quot;
+  #include &quot;opto/callnode.hpp&quot;
+  #include &quot;opto/castnode.hpp&quot;
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 166,10 ***</span>
+<span class="line-new-header">--- 166,12 ---</span>
+  typedef HashtableEntry&lt;intptr_t, mtInternal&gt;  IntptrHashtableEntry;
+  typedef Hashtable&lt;intptr_t, mtInternal&gt;       IntptrHashtable;
+  typedef Hashtable&lt;InstanceKlass*, mtClass&gt;       KlassHashtable;
+  typedef HashtableEntry&lt;InstanceKlass*, mtClass&gt;  KlassHashtableEntry;
+  
+<span class="line-added">+ typedef PaddedEnd&lt;ObjectMonitor&gt;              PaddedObjectMonitor;</span>
+<span class="line-added">+ </span>
+  //--------------------------------------------------------------------------------
+  // VM_STRUCTS
+  //
+  // This list enumerates all of the fields the serviceability agent
+  // needs to know about. Be sure to see also the type table below this one.
+</pre>
+<center><a href="thread.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version.hpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

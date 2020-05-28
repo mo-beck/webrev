@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\share\runtime\thread.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="stubRoutines.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="thread.hpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\share\runtime\thread.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+1689   _reserved_stack_activation = NULL;  // stack base not known yet
+1690   (void)const_cast&lt;oop&amp;&gt;(_exception_oop = oop(NULL));
+1691   _exception_pc  = 0;
+1692   _exception_handler_pc = 0;
+1693   _is_method_handle_return = 0;
+1694   _jvmti_thread_state= NULL;
+1695   _should_post_on_exceptions_flag = JNI_FALSE;
+1696   _interp_only_mode    = 0;
+1697   _special_runtime_exit_condition = _no_async_condition;
+1698   _pending_async_exception = NULL;
+1699   _thread_stat = NULL;
+1700   _thread_stat = new ThreadStatistics();
+1701   _jni_active_critical = 0;
+1702   _pending_jni_exception_check_fn = NULL;
+1703   _do_not_unlock_if_synchronized = false;
+1704   _cached_monitor_info = NULL;
+1705   _parker = Parker::Allocate(this);
+1706   _SleepEvent = ParkEvent::Allocate(this);
+1707   // Setup safepoint state info for this thread
+1708   ThreadSafepointState::create(this);
+
+1709 
+1710   debug_only(_java_call_counter = 0);
+1711 
+1712   // JVMTI PopFrame support
+1713   _popframe_condition = popframe_inactive;
+1714   _popframe_preserved_args = NULL;
+1715   _popframe_preserved_args_size = 0;
+1716   _frames_to_pop_failed_realloc = 0;
+1717 
+1718   if (SafepointMechanism::uses_thread_local_poll()) {
+1719     SafepointMechanism::initialize_header(this);
+1720   }
+1721 
+1722   _class_to_be_initialized = NULL;
+1723 
+1724   pd_initialize();
+1725 }
+1726 
+1727 JavaThread::JavaThread(bool is_attaching_via_jni) :
+1728                        Thread() {
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+1689   _reserved_stack_activation = NULL;  // stack base not known yet
+1690   (void)const_cast&lt;oop&amp;&gt;(_exception_oop = oop(NULL));
+1691   _exception_pc  = 0;
+1692   _exception_handler_pc = 0;
+1693   _is_method_handle_return = 0;
+1694   _jvmti_thread_state= NULL;
+1695   _should_post_on_exceptions_flag = JNI_FALSE;
+1696   _interp_only_mode    = 0;
+1697   _special_runtime_exit_condition = _no_async_condition;
+1698   _pending_async_exception = NULL;
+1699   _thread_stat = NULL;
+1700   _thread_stat = new ThreadStatistics();
+1701   _jni_active_critical = 0;
+1702   _pending_jni_exception_check_fn = NULL;
+1703   _do_not_unlock_if_synchronized = false;
+1704   _cached_monitor_info = NULL;
+1705   _parker = Parker::Allocate(this);
+1706   _SleepEvent = ParkEvent::Allocate(this);
+1707   // Setup safepoint state info for this thread
+1708   ThreadSafepointState::create(this);
+<span class="line-added">1709   _handshake.set_thread(this);</span>
+1710 
+1711   debug_only(_java_call_counter = 0);
+1712 
+1713   // JVMTI PopFrame support
+1714   _popframe_condition = popframe_inactive;
+1715   _popframe_preserved_args = NULL;
+1716   _popframe_preserved_args_size = 0;
+1717   _frames_to_pop_failed_realloc = 0;
+1718 
+1719   if (SafepointMechanism::uses_thread_local_poll()) {
+1720     SafepointMechanism::initialize_header(this);
+1721   }
+1722 
+1723   _class_to_be_initialized = NULL;
+1724 
+1725   pd_initialize();
+1726 }
+1727 
+1728 JavaThread::JavaThread(bool is_attaching_via_jni) :
+1729                        Thread() {
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="stubRoutines.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="thread.hpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

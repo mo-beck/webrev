@@ -1,0 +1,16 @@
+diff a/src/hotspot/cpu/aarch64/c1_LIRGenerator_aarch64.cpp b/src/hotspot/cpu/aarch64/c1_LIRGenerator_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/c1_LIRGenerator_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/c1_LIRGenerator_aarch64.cpp
+@@ -288,11 +288,11 @@
+   __ load(generate_address(base, disp, type), reg1, info);
+   __ cmp(condition, reg, reg1);
+ }
+ 
+ 
+-bool LIRGenerator::strength_reduce_multiply(LIR_Opr left, int c, LIR_Opr result, LIR_Opr tmp) {
++bool LIRGenerator::strength_reduce_multiply(LIR_Opr left, jint c, LIR_Opr result, LIR_Opr tmp) {
+ 
+   if (is_power_of_2(c - 1)) {
+     __ shift_left(left, exact_log2(c - 1), tmp);
+     __ add(tmp, left, result);
+     return true;

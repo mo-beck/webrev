@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\c1_LIRAssembler_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="c1_FrameMap_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_LIRGenerator_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\c1_LIRAssembler_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+1353     klass2reg_with_patching(k_RInfo, op-&gt;info_for_patch());
+1354   } else {
+1355     __ mov_metadata(k_RInfo, k-&gt;constant_encoding());
+1356   }
+1357   __ verify_oop(obj);
+1358 
+1359   if (op-&gt;fast_check()) {
+1360     // get object class
+1361     // not a safepoint as obj null check happens earlier
+1362     __ load_klass(rscratch1, obj);
+1363     __ cmp( rscratch1, k_RInfo);
+1364 
+1365     __ br(Assembler::NE, *failure_target);
+1366     // successful cast, fall through to profile or jump
+1367   } else {
+1368     // get object class
+1369     // not a safepoint as obj null check happens earlier
+1370     __ load_klass(klass_RInfo, obj);
+1371     if (k-&gt;is_loaded()) {
+1372       // See if we get an immediate positive hit
+<span class="line-modified">1373       __ ldr(rscratch1, Address(klass_RInfo, long(k-&gt;super_check_offset())));</span>
+1374       __ cmp(k_RInfo, rscratch1);
+1375       if ((juint)in_bytes(Klass::secondary_super_cache_offset()) != k-&gt;super_check_offset()) {
+1376         __ br(Assembler::NE, *failure_target);
+1377         // successful cast, fall through to profile or jump
+1378       } else {
+1379         // See if we get an immediate positive hit
+1380         __ br(Assembler::EQ, *success_target);
+1381         // check for self
+1382         __ cmp(klass_RInfo, k_RInfo);
+1383         __ br(Assembler::EQ, *success_target);
+1384 
+1385         __ stp(klass_RInfo, k_RInfo, Address(__ pre(sp, -2 * wordSize)));
+1386         __ far_call(RuntimeAddress(Runtime1::entry_for(Runtime1::slow_subtype_check_id)));
+1387         __ ldr(klass_RInfo, Address(__ post(sp, 2 * wordSize)));
+1388         // result is a boolean
+1389         __ cbzw(klass_RInfo, *failure_target);
+1390         // successful cast, fall through to profile or jump
+1391       }
+1392     } else {
+1393       // perform the fast part of the checking logic
+</pre>
+<hr />
+<pre>
+1980         imm = (intptr_t)(opr2-&gt;as_constant_ptr()-&gt;as_metadata());
+1981         break;
+1982       case T_OBJECT:
+1983       case T_ARRAY:
+1984         jobject2reg(opr2-&gt;as_constant_ptr()-&gt;as_jobject(), rscratch1);
+1985         __ cmpoop(reg1, rscratch1);
+1986         return;
+1987       default:
+1988         ShouldNotReachHere();
+1989         imm = 0;  // unreachable
+1990         break;
+1991       }
+1992 
+1993       if (Assembler::operand_valid_for_add_sub_immediate(imm)) {
+1994         if (is_32bit)
+1995           __ cmpw(reg1, imm);
+1996         else
+1997           __ subs(zr, reg1, imm);
+1998         return;
+1999       } else {
+<span class="line-modified">2000         __ mov(rscratch1, imm);</span>
+2001         if (is_32bit)
+2002           __ cmpw(reg1, rscratch1);
+2003         else
+2004           __ cmp(reg1, rscratch1);
+2005         return;
+2006       }
+2007     } else
+2008       ShouldNotReachHere();
+2009   } else if (opr1-&gt;is_single_fpu()) {
+2010     FloatRegister reg1 = opr1-&gt;as_float_reg();
+2011     assert(opr2-&gt;is_single_fpu(), &quot;expect single float register&quot;);
+2012     FloatRegister reg2 = opr2-&gt;as_float_reg();
+2013     __ fcmps(reg1, reg2);
+2014   } else if (opr1-&gt;is_double_fpu()) {
+2015     FloatRegister reg1 = opr1-&gt;as_double_reg();
+2016     assert(opr2-&gt;is_double_fpu(), &quot;expect double float register&quot;);
+2017     FloatRegister reg2 = opr2-&gt;as_double_reg();
+2018     __ fcmpd(reg1, reg2);
+2019   } else {
+2020     ShouldNotReachHere();
+2021   }
+2022 }
+2023 
+2024 void LIR_Assembler::comp_fl2i(LIR_Code code, LIR_Opr left, LIR_Opr right, LIR_Opr dst, LIR_Op2* op){
+2025   if (code == lir_cmp_fd2i || code == lir_ucmp_fd2i) {
+2026     bool is_unordered_less = (code == lir_ucmp_fd2i);
+2027     if (left-&gt;is_single_fpu()) {
+2028       __ float_cmp(true, is_unordered_less ? -1 : 1, left-&gt;as_float_reg(), right-&gt;as_float_reg(), dst-&gt;as_register());
+2029     } else if (left-&gt;is_double_fpu()) {
+2030       __ float_cmp(false, is_unordered_less ? -1 : 1, left-&gt;as_double_reg(), right-&gt;as_double_reg(), dst-&gt;as_register());
+2031     } else {
+2032       ShouldNotReachHere();
+2033     }
+2034   } else if (code == lir_cmp_l2i) {
+2035     Label done;
+2036     __ cmp(left-&gt;as_register_lo(), right-&gt;as_register_lo());
+<span class="line-modified">2037     __ mov(dst-&gt;as_register(), (u_int64_t)-1L);</span>
+2038     __ br(Assembler::LT, done);
+2039     __ csinc(dst-&gt;as_register(), zr, zr, Assembler::EQ);
+2040     __ bind(done);
+2041   } else {
+2042     ShouldNotReachHere();
+2043   }
+2044 }
+2045 
+2046 
+2047 void LIR_Assembler::align_call(LIR_Code code) {  }
+2048 
+2049 
+2050 void LIR_Assembler::call(LIR_OpJavaCall* op, relocInfo::relocType rtype) {
+2051   address call = __ trampoline_call(Address(op-&gt;addr(), rtype));
+2052   if (call == NULL) {
+2053     bailout(&quot;trampoline stub overflow&quot;);
+2054     return;
+2055   }
+2056   add_call_info(code_offset(), op-&gt;info());
+2057 }
+</pre>
+<hr />
+<pre>
+2285     // expects them.
+2286     __ ldp(dst,     dst_pos, Address(sp, 0*BytesPerWord));
+2287     __ ldp(length,  src_pos, Address(sp, 2*BytesPerWord));
+2288     __ ldr(src,              Address(sp, 4*BytesPerWord));
+2289 
+2290     // r0 is -1^K where K == partial copied count
+2291     __ eonw(rscratch1, r0, zr);
+2292     // adjust length down and src/end pos up by partial copied count
+2293     __ subw(length, length, rscratch1);
+2294     __ addw(src_pos, src_pos, rscratch1);
+2295     __ addw(dst_pos, dst_pos, rscratch1);
+2296     __ b(*stub-&gt;entry());
+2297 
+2298     __ bind(*stub-&gt;continuation());
+2299     return;
+2300   }
+2301 
+2302   assert(default_type != NULL &amp;&amp; default_type-&gt;is_array_klass() &amp;&amp; default_type-&gt;is_loaded(), &quot;must be true at this point&quot;);
+2303 
+2304   int elem_size = type2aelembytes(basic_type);
+<span class="line-removed">2305   int shift_amount;</span>
+2306   int scale = exact_log2(elem_size);
+2307 
+2308   Address src_length_addr = Address(src, arrayOopDesc::length_offset_in_bytes());
+2309   Address dst_length_addr = Address(dst, arrayOopDesc::length_offset_in_bytes());
+2310   Address src_klass_addr = Address(src, oopDesc::klass_offset_in_bytes());
+2311   Address dst_klass_addr = Address(dst, oopDesc::klass_offset_in_bytes());
+2312 
+2313   // test for NULL
+2314   if (flags &amp; LIR_OpArrayCopy::src_null_check) {
+2315     __ cbz(src, *stub-&gt;entry());
+2316   }
+2317   if (flags &amp; LIR_OpArrayCopy::dst_null_check) {
+2318     __ cbz(dst, *stub-&gt;entry());
+2319   }
+2320 
+2321   // If the compiler was not able to prove that exact type of the source or the destination
+2322   // of the arraycopy is an array type, check at runtime if the source or the destination is
+2323   // an instance type.
+2324   if (flags &amp; LIR_OpArrayCopy::type_check) {
+2325     if (!(flags &amp; LIR_OpArrayCopy::LIR_OpArrayCopy::dst_objarray)) {
+</pre>
+<hr />
+<pre>
+2676 
+2677 
+2678 void LIR_Assembler::emit_delay(LIR_OpDelay*) {
+2679   Unimplemented();
+2680 }
+2681 
+2682 
+2683 void LIR_Assembler::monitor_address(int monitor_no, LIR_Opr dst) {
+2684   __ lea(dst-&gt;as_register(), frame_map()-&gt;address_for_monitor_lock(monitor_no));
+2685 }
+2686 
+2687 void LIR_Assembler::emit_updatecrc32(LIR_OpUpdateCRC32* op) {
+2688   assert(op-&gt;crc()-&gt;is_single_cpu(),  &quot;crc must be register&quot;);
+2689   assert(op-&gt;val()-&gt;is_single_cpu(),  &quot;byte value must be register&quot;);
+2690   assert(op-&gt;result_opr()-&gt;is_single_cpu(), &quot;result must be register&quot;);
+2691   Register crc = op-&gt;crc()-&gt;as_register();
+2692   Register val = op-&gt;val()-&gt;as_register();
+2693   Register res = op-&gt;result_opr()-&gt;as_register();
+2694 
+2695   assert_different_registers(val, crc, res);
+<span class="line-modified">2696   unsigned long offset;</span>
+2697   __ adrp(res, ExternalAddress(StubRoutines::crc_table_addr()), offset);
+2698   if (offset) __ add(res, res, offset);
+2699 
+2700   __ mvnw(crc, crc); // ~crc
+2701   __ update_byte_crc32(crc, val, res);
+2702   __ mvnw(res, crc); // ~crc
+2703 }
+2704 
+2705 void LIR_Assembler::emit_profile_type(LIR_OpProfileType* op) {
+2706   COMMENT(&quot;emit_profile_type {&quot;);
+2707   Register obj = op-&gt;obj()-&gt;as_register();
+2708   Register tmp = op-&gt;tmp()-&gt;as_pointer_register();
+2709   Address mdo_addr = as_Address(op-&gt;mdp()-&gt;as_address_ptr());
+2710   ciKlass* exact_klass = op-&gt;exact_klass();
+2711   intptr_t current_klass = op-&gt;current_klass();
+2712   bool not_null = op-&gt;not_null();
+2713   bool no_conflict = op-&gt;no_conflict();
+2714 
+2715   Label update, next, none;
+2716 
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+1353     klass2reg_with_patching(k_RInfo, op-&gt;info_for_patch());
+1354   } else {
+1355     __ mov_metadata(k_RInfo, k-&gt;constant_encoding());
+1356   }
+1357   __ verify_oop(obj);
+1358 
+1359   if (op-&gt;fast_check()) {
+1360     // get object class
+1361     // not a safepoint as obj null check happens earlier
+1362     __ load_klass(rscratch1, obj);
+1363     __ cmp( rscratch1, k_RInfo);
+1364 
+1365     __ br(Assembler::NE, *failure_target);
+1366     // successful cast, fall through to profile or jump
+1367   } else {
+1368     // get object class
+1369     // not a safepoint as obj null check happens earlier
+1370     __ load_klass(klass_RInfo, obj);
+1371     if (k-&gt;is_loaded()) {
+1372       // See if we get an immediate positive hit
+<span class="line-modified">1373       __ ldr(rscratch1, Address(klass_RInfo, int64_t(k-&gt;super_check_offset())));</span>
+1374       __ cmp(k_RInfo, rscratch1);
+1375       if ((juint)in_bytes(Klass::secondary_super_cache_offset()) != k-&gt;super_check_offset()) {
+1376         __ br(Assembler::NE, *failure_target);
+1377         // successful cast, fall through to profile or jump
+1378       } else {
+1379         // See if we get an immediate positive hit
+1380         __ br(Assembler::EQ, *success_target);
+1381         // check for self
+1382         __ cmp(klass_RInfo, k_RInfo);
+1383         __ br(Assembler::EQ, *success_target);
+1384 
+1385         __ stp(klass_RInfo, k_RInfo, Address(__ pre(sp, -2 * wordSize)));
+1386         __ far_call(RuntimeAddress(Runtime1::entry_for(Runtime1::slow_subtype_check_id)));
+1387         __ ldr(klass_RInfo, Address(__ post(sp, 2 * wordSize)));
+1388         // result is a boolean
+1389         __ cbzw(klass_RInfo, *failure_target);
+1390         // successful cast, fall through to profile or jump
+1391       }
+1392     } else {
+1393       // perform the fast part of the checking logic
+</pre>
+<hr />
+<pre>
+1980         imm = (intptr_t)(opr2-&gt;as_constant_ptr()-&gt;as_metadata());
+1981         break;
+1982       case T_OBJECT:
+1983       case T_ARRAY:
+1984         jobject2reg(opr2-&gt;as_constant_ptr()-&gt;as_jobject(), rscratch1);
+1985         __ cmpoop(reg1, rscratch1);
+1986         return;
+1987       default:
+1988         ShouldNotReachHere();
+1989         imm = 0;  // unreachable
+1990         break;
+1991       }
+1992 
+1993       if (Assembler::operand_valid_for_add_sub_immediate(imm)) {
+1994         if (is_32bit)
+1995           __ cmpw(reg1, imm);
+1996         else
+1997           __ subs(zr, reg1, imm);
+1998         return;
+1999       } else {
+<span class="line-modified">2000         __ mov(rscratch1,(uint64_t) imm);</span>
+2001         if (is_32bit)
+2002           __ cmpw(reg1, rscratch1);
+2003         else
+2004           __ cmp(reg1, rscratch1);
+2005         return;
+2006       }
+2007     } else
+2008       ShouldNotReachHere();
+2009   } else if (opr1-&gt;is_single_fpu()) {
+2010     FloatRegister reg1 = opr1-&gt;as_float_reg();
+2011     assert(opr2-&gt;is_single_fpu(), &quot;expect single float register&quot;);
+2012     FloatRegister reg2 = opr2-&gt;as_float_reg();
+2013     __ fcmps(reg1, reg2);
+2014   } else if (opr1-&gt;is_double_fpu()) {
+2015     FloatRegister reg1 = opr1-&gt;as_double_reg();
+2016     assert(opr2-&gt;is_double_fpu(), &quot;expect double float register&quot;);
+2017     FloatRegister reg2 = opr2-&gt;as_double_reg();
+2018     __ fcmpd(reg1, reg2);
+2019   } else {
+2020     ShouldNotReachHere();
+2021   }
+2022 }
+2023 
+2024 void LIR_Assembler::comp_fl2i(LIR_Code code, LIR_Opr left, LIR_Opr right, LIR_Opr dst, LIR_Op2* op){
+2025   if (code == lir_cmp_fd2i || code == lir_ucmp_fd2i) {
+2026     bool is_unordered_less = (code == lir_ucmp_fd2i);
+2027     if (left-&gt;is_single_fpu()) {
+2028       __ float_cmp(true, is_unordered_less ? -1 : 1, left-&gt;as_float_reg(), right-&gt;as_float_reg(), dst-&gt;as_register());
+2029     } else if (left-&gt;is_double_fpu()) {
+2030       __ float_cmp(false, is_unordered_less ? -1 : 1, left-&gt;as_double_reg(), right-&gt;as_double_reg(), dst-&gt;as_register());
+2031     } else {
+2032       ShouldNotReachHere();
+2033     }
+2034   } else if (code == lir_cmp_l2i) {
+2035     Label done;
+2036     __ cmp(left-&gt;as_register_lo(), right-&gt;as_register_lo());
+<span class="line-modified">2037     __ mov(dst-&gt;as_register(), (uint64_t)-1L);</span>
+2038     __ br(Assembler::LT, done);
+2039     __ csinc(dst-&gt;as_register(), zr, zr, Assembler::EQ);
+2040     __ bind(done);
+2041   } else {
+2042     ShouldNotReachHere();
+2043   }
+2044 }
+2045 
+2046 
+2047 void LIR_Assembler::align_call(LIR_Code code) {  }
+2048 
+2049 
+2050 void LIR_Assembler::call(LIR_OpJavaCall* op, relocInfo::relocType rtype) {
+2051   address call = __ trampoline_call(Address(op-&gt;addr(), rtype));
+2052   if (call == NULL) {
+2053     bailout(&quot;trampoline stub overflow&quot;);
+2054     return;
+2055   }
+2056   add_call_info(code_offset(), op-&gt;info());
+2057 }
+</pre>
+<hr />
+<pre>
+2285     // expects them.
+2286     __ ldp(dst,     dst_pos, Address(sp, 0*BytesPerWord));
+2287     __ ldp(length,  src_pos, Address(sp, 2*BytesPerWord));
+2288     __ ldr(src,              Address(sp, 4*BytesPerWord));
+2289 
+2290     // r0 is -1^K where K == partial copied count
+2291     __ eonw(rscratch1, r0, zr);
+2292     // adjust length down and src/end pos up by partial copied count
+2293     __ subw(length, length, rscratch1);
+2294     __ addw(src_pos, src_pos, rscratch1);
+2295     __ addw(dst_pos, dst_pos, rscratch1);
+2296     __ b(*stub-&gt;entry());
+2297 
+2298     __ bind(*stub-&gt;continuation());
+2299     return;
+2300   }
+2301 
+2302   assert(default_type != NULL &amp;&amp; default_type-&gt;is_array_klass() &amp;&amp; default_type-&gt;is_loaded(), &quot;must be true at this point&quot;);
+2303 
+2304   int elem_size = type2aelembytes(basic_type);
+
+2305   int scale = exact_log2(elem_size);
+2306 
+2307   Address src_length_addr = Address(src, arrayOopDesc::length_offset_in_bytes());
+2308   Address dst_length_addr = Address(dst, arrayOopDesc::length_offset_in_bytes());
+2309   Address src_klass_addr = Address(src, oopDesc::klass_offset_in_bytes());
+2310   Address dst_klass_addr = Address(dst, oopDesc::klass_offset_in_bytes());
+2311 
+2312   // test for NULL
+2313   if (flags &amp; LIR_OpArrayCopy::src_null_check) {
+2314     __ cbz(src, *stub-&gt;entry());
+2315   }
+2316   if (flags &amp; LIR_OpArrayCopy::dst_null_check) {
+2317     __ cbz(dst, *stub-&gt;entry());
+2318   }
+2319 
+2320   // If the compiler was not able to prove that exact type of the source or the destination
+2321   // of the arraycopy is an array type, check at runtime if the source or the destination is
+2322   // an instance type.
+2323   if (flags &amp; LIR_OpArrayCopy::type_check) {
+2324     if (!(flags &amp; LIR_OpArrayCopy::LIR_OpArrayCopy::dst_objarray)) {
+</pre>
+<hr />
+<pre>
+2675 
+2676 
+2677 void LIR_Assembler::emit_delay(LIR_OpDelay*) {
+2678   Unimplemented();
+2679 }
+2680 
+2681 
+2682 void LIR_Assembler::monitor_address(int monitor_no, LIR_Opr dst) {
+2683   __ lea(dst-&gt;as_register(), frame_map()-&gt;address_for_monitor_lock(monitor_no));
+2684 }
+2685 
+2686 void LIR_Assembler::emit_updatecrc32(LIR_OpUpdateCRC32* op) {
+2687   assert(op-&gt;crc()-&gt;is_single_cpu(),  &quot;crc must be register&quot;);
+2688   assert(op-&gt;val()-&gt;is_single_cpu(),  &quot;byte value must be register&quot;);
+2689   assert(op-&gt;result_opr()-&gt;is_single_cpu(), &quot;result must be register&quot;);
+2690   Register crc = op-&gt;crc()-&gt;as_register();
+2691   Register val = op-&gt;val()-&gt;as_register();
+2692   Register res = op-&gt;result_opr()-&gt;as_register();
+2693 
+2694   assert_different_registers(val, crc, res);
+<span class="line-modified">2695   uint64_t offset;</span>
+2696   __ adrp(res, ExternalAddress(StubRoutines::crc_table_addr()), offset);
+2697   if (offset) __ add(res, res, offset);
+2698 
+2699   __ mvnw(crc, crc); // ~crc
+2700   __ update_byte_crc32(crc, val, res);
+2701   __ mvnw(res, crc); // ~crc
+2702 }
+2703 
+2704 void LIR_Assembler::emit_profile_type(LIR_OpProfileType* op) {
+2705   COMMENT(&quot;emit_profile_type {&quot;);
+2706   Register obj = op-&gt;obj()-&gt;as_register();
+2707   Register tmp = op-&gt;tmp()-&gt;as_pointer_register();
+2708   Address mdo_addr = as_Address(op-&gt;mdp()-&gt;as_address_ptr());
+2709   ciKlass* exact_klass = op-&gt;exact_klass();
+2710   intptr_t current_klass = op-&gt;current_klass();
+2711   bool not_null = op-&gt;not_null();
+2712   bool no_conflict = op-&gt;no_conflict();
+2713 
+2714   Label update, next, none;
+2715 
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="c1_FrameMap_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_LIRGenerator_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

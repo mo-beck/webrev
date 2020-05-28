@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\cpu\aarch64\aarch64.ad</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\..\..\..\make\hotspot\gensrc\GensrcAdlc.gmk.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="assembler_aarch64.cpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\aarch64.ad</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -530,17 +530,23 @@</span>
+    return _ANY_REG_mask;
+  %}
+  
+  // Class for non-allocatable 32 bit registers
+  reg_class non_allocatable_reg32(
+<span class="udiff-line-added">+ #ifdef _WIN64</span>
+<span class="udiff-line-added">+     R18,                        // tls on Windows</span>
+<span class="udiff-line-added">+ #endif</span>
+      R28,                        // thread
+      R30,                        // lr
+      R31                         // sp
+  );
+  
+  // Class for non-allocatable 64 bit registers
+  reg_class non_allocatable_reg(
+<span class="udiff-line-added">+ #ifdef _WIN64</span>
+<span class="udiff-line-added">+     R18, R18_H,                 // tls on Windows</span>
+<span class="udiff-line-added">+ #endif</span>
+      R28, R28_H,                 // thread
+      R30, R30_H,                 // lr
+      R31, R31_H                  // sp
+  );
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -1623,11 +1629,11 @@</span>
+  void MachPrologNode::emit(CodeBuffer &amp;cbuf, PhaseRegAlloc *ra_) const {
+    Compile* C = ra_-&gt;C;
+    MacroAssembler _masm(&amp;cbuf);
+  
+    // n.b. frame size includes space for return pc and rfp
+<span class="udiff-line-modified-removed">-   const long framesize = C-&gt;frame_size_in_bytes();</span>
+<span class="udiff-line-modified-added">+   const int64_t framesize = C-&gt;frame_size_in_bytes();</span>
+    assert(framesize%(2*wordSize) == 0, &quot;must preserve 2*wordSize alignment&quot;);
+  
+    // insert a nop at the start of the prolog so we can patch in a
+    // branch if we need to invalidate the method later
+    __ nop();
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3110,11 +3116,11 @@</span>
+  
+    /// mov envcodings
+  
+    enc_class aarch64_enc_movw_imm(iRegI dst, immI src) %{
+      MacroAssembler _masm(&amp;cbuf);
+<span class="udiff-line-modified-removed">-     u_int32_t con = (u_int32_t)$src$$constant;</span>
+<span class="udiff-line-modified-added">+     uint32_t con = (uint32_t)$src$$constant;</span>
+      Register dst_reg = as_Register($dst$$reg);
+      if (con == 0) {
+        __ movw(dst_reg, zr);
+      } else {
+        __ movw(dst_reg, con);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3122,11 +3128,11 @@</span>
+    %}
+  
+    enc_class aarch64_enc_mov_imm(iRegL dst, immL src) %{
+      MacroAssembler _masm(&amp;cbuf);
+      Register dst_reg = as_Register($dst$$reg);
+<span class="udiff-line-modified-removed">-     u_int64_t con = (u_int64_t)$src$$constant;</span>
+<span class="udiff-line-modified-added">+     uint64_t con = (uint64_t)$src$$constant;</span>
+      if (con == 0) {
+        __ mov(dst_reg, zr);
+      } else {
+        __ mov(dst_reg, con);
+      }
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3147,11 +3153,11 @@</span>
+        } else {
+          assert(rtype == relocInfo::none, &quot;unexpected reloc type&quot;);
+          if (con &lt; (address)(uintptr_t)os::vm_page_size()) {
+            __ mov(dst_reg, con);
+          } else {
+<span class="udiff-line-modified-removed">-           unsigned long offset;</span>
+<span class="udiff-line-modified-added">+           uint64_t offset;</span>
+            __ adrp(dst_reg, con, offset);
+            __ add(dst_reg, dst_reg, offset);
+          }
+        }
+      }
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3164,18 +3170,18 @@</span>
+    %}
+  
+    enc_class aarch64_enc_mov_p1(iRegP dst, immP_1 src) %{
+      MacroAssembler _masm(&amp;cbuf);
+      Register dst_reg = as_Register($dst$$reg);
+<span class="udiff-line-modified-removed">-     __ mov(dst_reg, (u_int64_t)1);</span>
+<span class="udiff-line-modified-added">+     __ mov(dst_reg, (uint64_t)1);</span>
+    %}
+  
+    enc_class aarch64_enc_mov_poll_page(iRegP dst, immPollPage src) %{
+      MacroAssembler _masm(&amp;cbuf);
+      address page = (address)$src$$constant;
+      Register dst_reg = as_Register($dst$$reg);
+<span class="udiff-line-modified-removed">-     unsigned long off;</span>
+<span class="udiff-line-modified-added">+     uint64_t off;</span>
+      __ adrp(dst_reg, Address(page, relocInfo::poll_type), off);
+      assert(off == 0, &quot;assumed offset == 0&quot;);
+    %}
+  
+    enc_class aarch64_enc_mov_byte_map_base(iRegP dst, immByteMapBase src) %{
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3298,11 +3304,11 @@</span>
+    %}
+  
+    enc_class aarch64_enc_cmpw_imm(iRegI src1, immI src2) %{
+      MacroAssembler _masm(&amp;cbuf);
+      Register reg1 = as_Register($src1$$reg);
+<span class="udiff-line-modified-removed">-     u_int32_t val = (u_int32_t)$src2$$constant;</span>
+<span class="udiff-line-modified-added">+     uint32_t val = (uint32_t)$src2$$constant;</span>
+      __ movw(rscratch1, val);
+      __ cmpw(reg1, rscratch1);
+    %}
+  
+    enc_class aarch64_enc_cmp(iRegL src1, iRegL src2) %{
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3320,19 +3326,19 @@</span>
+        __ subs(zr, reg, val);
+      } else if (val != -val) {
+        __ adds(zr, reg, -val);
+      } else {
+      // aargh, Long.MIN_VALUE is a special case
+<span class="udiff-line-modified-removed">-       __ orr(rscratch1, zr, (u_int64_t)val);</span>
+<span class="udiff-line-modified-added">+       __ orr(rscratch1, zr, (uint64_t)val);</span>
+        __ subs(zr, reg, rscratch1);
+      }
+    %}
+  
+    enc_class aarch64_enc_cmp_imm(iRegL src1, immL src2) %{
+      MacroAssembler _masm(&amp;cbuf);
+      Register reg1 = as_Register($src1$$reg);
+<span class="udiff-line-modified-removed">-     u_int64_t val = (u_int64_t)$src2$$constant;</span>
+<span class="udiff-line-modified-added">+     uint64_t val = (uint64_t)$src2$$constant;</span>
+      __ mov(rscratch1, val);
+      __ cmp(reg1, rscratch1);
+    %}
+  
+    enc_class aarch64_enc_cmpp(iRegP src1, iRegP src2) %{
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -4228,22 +4234,22 @@</span>
+  %}
+  
+  // 32 bit integer valid for add sub immediate
+  operand immIAddSub()
+  %{
+<span class="udiff-line-modified-removed">-   predicate(Assembler::operand_valid_for_add_sub_immediate((long)n-&gt;get_int()));</span>
+<span class="udiff-line-modified-added">+   predicate(Assembler::operand_valid_for_add_sub_immediate((int64_t)n-&gt;get_int()));</span>
+    match(ConI);
+    op_cost(0);
+    format %{ %}
+    interface(CONST_INTER);
+  %}
+  
+  // 32 bit unsigned integer valid for logical immediate
+  // TODO -- check this is right when e.g the mask is 0x80000000
+  operand immILog()
+  %{
+<span class="udiff-line-modified-removed">-   predicate(Assembler::operand_valid_for_logical_immediate(/*is32*/true, (unsigned long)n-&gt;get_int()));</span>
+<span class="udiff-line-modified-added">+   predicate(Assembler::operand_valid_for_logical_immediate(/*is32*/true, (uint64_t)n-&gt;get_int()));</span>
+    match(ConI);
+  
+    op_cost(0);
+    format %{ %}
+    interface(CONST_INTER);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -4317,11 +4323,11 @@</span>
+  %}
+  
+  // 64 bit integer valid for logical immediate
+  operand immLLog()
+  %{
+<span class="udiff-line-modified-removed">-   predicate(Assembler::operand_valid_for_logical_immediate(/*is32*/false, (unsigned long)n-&gt;get_long()));</span>
+<span class="udiff-line-modified-added">+   predicate(Assembler::operand_valid_for_logical_immediate(/*is32*/false, (uint64_t)n-&gt;get_long()));</span>
+    match(ConL);
+    op_cost(0);
+    format %{ %}
+    interface(CONST_INTER);
+  %}
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -5888,11 +5894,11 @@</span>
+  pipeline %{
+  
+  attributes %{
+    // ARM instructions are of fixed length
+    fixed_size_instructions;        // Fixed size instructions TODO does
+<span class="udiff-line-modified-removed">-   max_instructions_per_bundle = 2;   // A53 = 2, A57 = 4</span>
+<span class="udiff-line-modified-added">+   max_instructions_per_bundle = 4;   // A53 = 2, A57 = 4</span>
+    // ARM instructions come in 32-bit word units
+    instruction_unit_size = 4;         // An instruction is 4 bytes long
+    instruction_fetch_unit_size = 64;  // The processor fetches one line
+    instruction_fetch_units = 1;       // of 64 bytes
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -7124,11 +7130,11 @@</span>
+  instruct loadConL(iRegLNoSp dst, immL src)
+  %{
+    match(Set dst src);
+  
+    ins_cost(INSN_COST);
+<span class="udiff-line-modified-removed">-   format %{ &quot;mov $dst, $src\t# long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;mov $dst, $src\t# int64_t&quot; %}</span>
+  
+    ins_encode( aarch64_enc_mov_imm(dst, src) );
+  
+    ins_pipe(ialu_imm);
+  %}
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -8276,11 +8282,11 @@</span>
+  
+  instruct castX2P(iRegPNoSp dst, iRegL src) %{
+    match(Set dst (CastX2P src));
+  
+    ins_cost(INSN_COST);
+<span class="udiff-line-modified-removed">-   format %{ &quot;mov $dst, $src\t# long -&gt; ptr&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;mov $dst, $src\t# int64_t -&gt; ptr&quot; %}</span>
+  
+    ins_encode %{
+      if ($dst$$reg != $src$$reg) {
+        __ mov(as_Register($dst$$reg), as_Register($src$$reg));
+      }
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -8291,11 +8297,11 @@</span>
+  
+  instruct castP2X(iRegLNoSp dst, iRegP src) %{
+    match(Set dst (CastP2X src));
+  
+    ins_cost(INSN_COST);
+<span class="udiff-line-modified-removed">-   format %{ &quot;mov $dst, $src\t# ptr -&gt; long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;mov $dst, $src\t# ptr -&gt; int64_t&quot; %}</span>
+  
+    ins_encode %{
+      if ($dst$$reg != $src$$reg) {
+        __ mov(as_Register($dst$$reg), as_Register($src$$reg));
+      }
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -8640,11 +8646,11 @@</span>
+    ins_cost(2 * VOLATILE_REF_COST);
+  
+    effect(KILL cr);
+  
+   format %{
+<span class="udiff-line-modified-removed">-     &quot;cmpxchg $mem, $oldval, $newval\t# (long) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+<span class="udiff-line-modified-added">+     &quot;cmpxchg $mem, $oldval, $newval\t# (int64_t) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+      &quot;cset $res, EQ\t# $res &lt;-- (EQ ? 1 : 0)&quot;
+   %}
+  
+   ins_encode(aarch64_enc_cmpxchg(mem, oldval, newval),
+              aarch64_enc_cset_eq(res));
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -8755,11 +8761,11 @@</span>
+    ins_cost(VOLATILE_REF_COST);
+  
+    effect(KILL cr);
+  
+   format %{
+<span class="udiff-line-modified-removed">-     &quot;cmpxchg_acq $mem, $oldval, $newval\t# (long) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+<span class="udiff-line-modified-added">+     &quot;cmpxchg_acq $mem, $oldval, $newval\t# (int64_t) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+      &quot;cset $res, EQ\t# $res &lt;-- (EQ ? 1 : 0)&quot;
+   %}
+  
+   ins_encode(aarch64_enc_cmpxchg_acq(mem, oldval, newval),
+              aarch64_enc_cset_eq(res));
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -8872,11 +8878,11 @@</span>
+  instruct compareAndExchangeL(iRegLNoSp res, indirect mem, iRegL oldval, iRegL newval, rFlagsReg cr) %{
+    match(Set res (CompareAndExchangeL mem (Binary oldval newval)));
+    ins_cost(2 * VOLATILE_REF_COST);
+    effect(TEMP_DEF res, KILL cr);
+    format %{
+<span class="udiff-line-modified-removed">-     &quot;cmpxchg $res = $mem, $oldval, $newval\t# (long, weak) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+<span class="udiff-line-modified-added">+     &quot;cmpxchg $res = $mem, $oldval, $newval\t# (int64_t, weak) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+    %}
+    ins_encode %{
+      __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register,
+                 Assembler::xword, /*acquire*/ false, /*release*/ true,
+                 /*weak*/ false, $res$$Register);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -8970,11 +8976,11 @@</span>
+    predicate(needs_acquiring_load_exclusive(n));
+    match(Set res (CompareAndExchangeL mem (Binary oldval newval)));
+    ins_cost(VOLATILE_REF_COST);
+    effect(TEMP_DEF res, KILL cr);
+    format %{
+<span class="udiff-line-modified-removed">-     &quot;cmpxchg_acq $res = $mem, $oldval, $newval\t# (long, weak) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+<span class="udiff-line-modified-added">+     &quot;cmpxchg_acq $res = $mem, $oldval, $newval\t# (int64_t, weak) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+    %}
+    ins_encode %{
+      __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register,
+                 Assembler::xword, /*acquire*/ true, /*release*/ true,
+                 /*weak*/ false, $res$$Register);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -9069,11 +9075,11 @@</span>
+  instruct weakCompareAndSwapL(iRegINoSp res, indirect mem, iRegL oldval, iRegL newval, rFlagsReg cr) %{
+    match(Set res (WeakCompareAndSwapL mem (Binary oldval newval)));
+    ins_cost(2 * VOLATILE_REF_COST);
+    effect(KILL cr);
+    format %{
+<span class="udiff-line-modified-removed">-     &quot;cmpxchg $res = $mem, $oldval, $newval\t# (long, weak) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+<span class="udiff-line-modified-added">+     &quot;cmpxchg $res = $mem, $oldval, $newval\t# (int64_t, weak) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+      &quot;csetw $res, EQ\t# $res &lt;-- (EQ ? 1 : 0)&quot;
+    %}
+    ins_encode %{
+      __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register,
+                 Assembler::xword, /*acquire*/ false, /*release*/ true,
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -9176,11 +9182,11 @@</span>
+    predicate(needs_acquiring_load_exclusive(n));
+    match(Set res (WeakCompareAndSwapL mem (Binary oldval newval)));
+    ins_cost(VOLATILE_REF_COST);
+    effect(KILL cr);
+    format %{
+<span class="udiff-line-modified-removed">-     &quot;cmpxchg_acq $res = $mem, $oldval, $newval\t# (long, weak) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+<span class="udiff-line-modified-added">+     &quot;cmpxchg_acq $res = $mem, $oldval, $newval\t# (int64_t, weak) if $mem == $oldval then $mem &lt;-- $newval&quot;</span>
+      &quot;csetw $res, EQ\t# $res &lt;-- (EQ ? 1 : 0)&quot;
+    %}
+    ins_encode %{
+      __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register,
+                 Assembler::xword, /*acquire*/ true, /*release*/ true,
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -9698,11 +9704,11 @@</span>
+  
+  instruct cmovL_reg_reg(cmpOp cmp, rFlagsReg cr, iRegLNoSp dst, iRegL src1, iRegL src2) %{
+    match(Set dst (CMoveL (Binary cmp cr) (Binary src1 src2)));
+  
+    ins_cost(INSN_COST * 2);
+<span class="udiff-line-modified-removed">-   format %{ &quot;csel $dst, $src2, $src1 $cmp\t# signed, long&quot;  %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;csel $dst, $src2, $src1 $cmp\t# signed, int64_t&quot;  %}</span>
+  
+    ins_encode %{
+      __ csel(as_Register($dst$$reg),
+              as_Register($src2$$reg),
+              as_Register($src1$$reg),
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -9714,11 +9720,11 @@</span>
+  
+  instruct cmovUL_reg_reg(cmpOpU cmp, rFlagsRegU cr, iRegLNoSp dst, iRegL src1, iRegL src2) %{
+    match(Set dst (CMoveL (Binary cmp cr) (Binary src1 src2)));
+  
+    ins_cost(INSN_COST * 2);
+<span class="udiff-line-modified-removed">-   format %{ &quot;csel $dst, $src2, $src1 $cmp\t# unsigned, long&quot;  %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;csel $dst, $src2, $src1 $cmp\t# unsigned, int64_t&quot;  %}</span>
+  
+    ins_encode %{
+      __ csel(as_Register($dst$$reg),
+              as_Register($src2$$reg),
+              as_Register($src1$$reg),
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -9732,11 +9738,11 @@</span>
+  
+  instruct cmovL_reg_zero(cmpOp cmp, rFlagsReg cr, iRegLNoSp dst, iRegL src, immL0 zero) %{
+    match(Set dst (CMoveL (Binary cmp cr) (Binary src zero)));
+  
+    ins_cost(INSN_COST * 2);
+<span class="udiff-line-modified-removed">-   format %{ &quot;csel $dst, zr, $src $cmp\t# signed, long&quot;  %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;csel $dst, zr, $src $cmp\t# signed, int64_t&quot;  %}</span>
+  
+    ins_encode %{
+      __ csel(as_Register($dst$$reg),
+              zr,
+              as_Register($src$$reg),
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -9748,11 +9754,11 @@</span>
+  
+  instruct cmovUL_reg_zero(cmpOpU cmp, rFlagsRegU cr, iRegLNoSp dst, iRegL src, immL0 zero) %{
+    match(Set dst (CMoveL (Binary cmp cr) (Binary src zero)));
+  
+    ins_cost(INSN_COST * 2);
+<span class="udiff-line-modified-removed">-   format %{ &quot;csel $dst, zr, $src $cmp\t# unsigned, long&quot;  %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;csel $dst, zr, $src $cmp\t# unsigned, int64_t&quot;  %}</span>
+  
+    ins_encode %{
+      __ csel(as_Register($dst$$reg),
+              zr,
+              as_Register($src$$reg),
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -9764,11 +9770,11 @@</span>
+  
+  instruct cmovL_zero_reg(cmpOp cmp, rFlagsReg cr, iRegLNoSp dst, immL0 zero, iRegL src) %{
+    match(Set dst (CMoveL (Binary cmp cr) (Binary zero src)));
+  
+    ins_cost(INSN_COST * 2);
+<span class="udiff-line-modified-removed">-   format %{ &quot;csel $dst, $src, zr $cmp\t# signed, long&quot;  %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;csel $dst, $src, zr $cmp\t# signed, int64_t&quot;  %}</span>
+  
+    ins_encode %{
+      __ csel(as_Register($dst$$reg),
+              as_Register($src$$reg),
+              zr,
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -9780,11 +9786,11 @@</span>
+  
+  instruct cmovUL_zero_reg(cmpOpU cmp, rFlagsRegU cr, iRegLNoSp dst, immL0 zero, iRegL src) %{
+    match(Set dst (CMoveL (Binary cmp cr) (Binary zero src)));
+  
+    ins_cost(INSN_COST * 2);
+<span class="udiff-line-modified-removed">-   format %{ &quot;csel $dst, $src, zr $cmp\t# unsigned, long&quot;  %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;csel $dst, $src, zr $cmp\t# unsigned, int64_t&quot;  %}</span>
+  
+    ins_encode %{
+      __ csel(as_Register($dst$$reg),
+              as_Register($src$$reg),
+              zr,
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -10185,11 +10191,11 @@</span>
+    format %{ &quot;sbfiz $dst, $src, $scale &amp; 63, -$scale &amp; 63\t&quot; %}
+  
+    ins_encode %{
+      __ sbfiz(as_Register($dst$$reg),
+            as_Register($src$$reg),
+<span class="udiff-line-modified-removed">-           $scale$$constant &amp; 63, MIN(32, (-$scale$$constant) &amp; 63));</span>
+<span class="udiff-line-modified-added">+           $scale$$constant &amp; 63, MIN2((intptr_t)32, (-$scale$$constant) &amp; 63));</span>
+    %}
+  
+    ins_pipe(ialu_reg_shift);
+  %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -10325,11 +10331,11 @@</span>
+  
+  instruct negL_reg(iRegLNoSp dst, iRegL src, immL0 zero, rFlagsReg cr) %{
+    match(Set dst (SubL zero src));
+  
+    ins_cost(INSN_COST);
+<span class="udiff-line-modified-removed">-   format %{ &quot;neg $dst, $src\t# long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;neg $dst, $src\t# int64_t&quot; %}</span>
+  
+    ins_encode %{
+      __ neg(as_Register($dst$$reg),
+             as_Register($src$$reg));
+    %}
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -11991,11 +11997,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    format %{ &quot;ubfxw $dst, $src, $rshift, $mask&quot; %}
+    ins_encode %{
+      int rshift = $rshift$$constant &amp; 31;
+<span class="udiff-line-modified-removed">-     long mask = $mask$$constant;</span>
+<span class="udiff-line-modified-added">+     int64_t mask = $mask$$constant;</span>
+      int width = exact_log2(mask+1);
+      __ ubfxw(as_Register($dst$$reg),
+              as_Register($src$$reg), rshift, width);
+    %}
+    ins_pipe(ialu_reg_shift);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -12008,11 +12014,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    format %{ &quot;ubfx $dst, $src, $rshift, $mask&quot; %}
+    ins_encode %{
+      int rshift = $rshift$$constant &amp; 63;
+<span class="udiff-line-modified-removed">-     long mask = $mask$$constant;</span>
+<span class="udiff-line-modified-added">+     int64_t mask = $mask$$constant;</span>
+      int width = exact_log2_long(mask+1);
+      __ ubfx(as_Register($dst$$reg),
+              as_Register($src$$reg), rshift, width);
+    %}
+    ins_pipe(ialu_reg_shift);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -12028,11 +12034,11 @@</span>
+  
+    ins_cost(INSN_COST * 2);
+    format %{ &quot;ubfx $dst, $src, $rshift, $mask&quot; %}
+    ins_encode %{
+      int rshift = $rshift$$constant &amp; 31;
+<span class="udiff-line-modified-removed">-     long mask = $mask$$constant;</span>
+<span class="udiff-line-modified-added">+     int64_t mask = $mask$$constant;</span>
+      int width = exact_log2(mask+1);
+      __ ubfx(as_Register($dst$$reg),
+              as_Register($src$$reg), rshift, width);
+    %}
+    ins_pipe(ialu_reg_shift);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -12047,11 +12053,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    format %{ &quot;ubfizw $dst, $src, $lshift, $mask&quot; %}
+    ins_encode %{
+      int lshift = $lshift$$constant &amp; 31;
+<span class="udiff-line-modified-removed">-     long mask = $mask$$constant;</span>
+<span class="udiff-line-modified-added">+     int64_t mask = $mask$$constant;</span>
+      int width = exact_log2(mask+1);
+      __ ubfizw(as_Register($dst$$reg),
+            as_Register($src$$reg), lshift, width);
+    %}
+    ins_pipe(ialu_reg_shift);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -12065,11 +12071,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    format %{ &quot;ubfiz $dst, $src, $lshift, $mask&quot; %}
+    ins_encode %{
+      int lshift = $lshift$$constant &amp; 63;
+<span class="udiff-line-modified-removed">-     long mask = $mask$$constant;</span>
+<span class="udiff-line-modified-added">+     int64_t mask = $mask$$constant;</span>
+      int width = exact_log2_long(mask+1);
+      __ ubfiz(as_Register($dst$$reg),
+            as_Register($src$$reg), lshift, width);
+    %}
+    ins_pipe(ialu_reg_shift);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -12083,11 +12089,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    format %{ &quot;ubfiz $dst, $src, $lshift, $mask&quot; %}
+    ins_encode %{
+      int lshift = $lshift$$constant &amp; 63;
+<span class="udiff-line-modified-removed">-     long mask = $mask$$constant;</span>
+<span class="udiff-line-modified-added">+     int64_t mask = $mask$$constant;</span>
+      int width = exact_log2(mask+1);
+      __ ubfiz(as_Register($dst$$reg),
+               as_Register($src$$reg), lshift, width);
+    %}
+    ins_pipe(ialu_reg_shift);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13286,11 +13292,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ andw(as_Register($dst$$reg),
+              as_Register($src1$$reg),
+<span class="udiff-line-modified-removed">-             (unsigned long)($src2$$constant));</span>
+<span class="udiff-line-modified-added">+             (uint64_t)($src2$$constant));</span>
+    %}
+  
+    ins_pipe(ialu_reg_imm);
+  %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13318,11 +13324,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ orrw(as_Register($dst$$reg),
+              as_Register($src1$$reg),
+<span class="udiff-line-modified-removed">-             (unsigned long)($src2$$constant));</span>
+<span class="udiff-line-modified-added">+             (uint64_t)($src2$$constant));</span>
+    %}
+  
+    ins_pipe(ialu_reg_imm);
+  %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13350,11 +13356,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ eorw(as_Register($dst$$reg),
+              as_Register($src1$$reg),
+<span class="udiff-line-modified-removed">-             (unsigned long)($src2$$constant));</span>
+<span class="udiff-line-modified-added">+             (uint64_t)($src2$$constant));</span>
+    %}
+  
+    ins_pipe(ialu_reg_imm);
+  %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13383,11 +13389,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ andr(as_Register($dst$$reg),
+              as_Register($src1$$reg),
+<span class="udiff-line-modified-removed">-             (unsigned long)($src2$$constant));</span>
+<span class="udiff-line-modified-added">+             (uint64_t)($src2$$constant));</span>
+    %}
+  
+    ins_pipe(ialu_reg_imm);
+  %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13415,11 +13421,11 @@</span>
+  
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ orr(as_Register($dst$$reg),
+             as_Register($src1$$reg),
+<span class="udiff-line-modified-removed">-            (unsigned long)($src2$$constant));</span>
+<span class="udiff-line-modified-added">+            (uint64_t)($src2$$constant));</span>
+    %}
+  
+    ins_pipe(ialu_reg_imm);
+  %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13447,11 +13453,11 @@</span>
+    format %{ &quot;eor  $dst, $src1, $src2\t# int&quot; %}
+  
+    ins_encode %{
+      __ eor(as_Register($dst$$reg),
+             as_Register($src1$$reg),
+<span class="udiff-line-modified-removed">-            (unsigned long)($src2$$constant));</span>
+<span class="udiff-line-modified-added">+            (uint64_t)($src2$$constant));</span>
+    %}
+  
+    ins_pipe(ialu_reg_imm);
+  %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13896,20 +13902,20 @@</span>
+    ins_pipe(pipe_class_memory);
+  %}
+  
+  instruct clearArray_imm_reg(immL cnt, iRegP_R10 base, Universe dummy, rFlagsReg cr)
+  %{
+<span class="udiff-line-modified-removed">-   predicate((u_int64_t)n-&gt;in(2)-&gt;get_long()</span>
+<span class="udiff-line-modified-removed">-             &lt; (u_int64_t)(BlockZeroingLowLimit &gt;&gt; LogBytesPerWord));</span>
+<span class="udiff-line-modified-added">+   predicate((uint64_t)n-&gt;in(2)-&gt;get_long()</span>
+<span class="udiff-line-modified-added">+             &lt; (uint64_t)(BlockZeroingLowLimit &gt;&gt; LogBytesPerWord));</span>
+    match(Set dummy (ClearArray cnt base));
+    effect(USE_KILL base);
+  
+    ins_cost(4 * INSN_COST);
+    format %{ &quot;ClearArray $cnt, $base&quot; %}
+  
+    ins_encode %{
+<span class="udiff-line-modified-removed">-     __ zero_words($base$$Register, (u_int64_t)$cnt$$constant);</span>
+<span class="udiff-line-modified-added">+     __ zero_words($base$$Register, (uint64_t)$cnt$$constant);</span>
+    %}
+  
+    ins_pipe(pipe_class_memory);
+  %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13944,11 +13950,11 @@</span>
+  
+  instruct overflowAddL_reg_reg(rFlagsReg cr, iRegL op1, iRegL op2)
+  %{
+    match(Set cr (OverflowAddL op1 op2));
+  
+<span class="udiff-line-modified-removed">-   format %{ &quot;cmn   $op1, $op2\t# overflow check long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;cmn   $op1, $op2\t# overflow check int64_t&quot; %}</span>
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ cmn($op1$$Register, $op2$$Register);
+    %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13957,11 +13963,11 @@</span>
+  
+  instruct overflowAddL_reg_imm(rFlagsReg cr, iRegL op1, immLAddSub op2)
+  %{
+    match(Set cr (OverflowAddL op1 op2));
+  
+<span class="udiff-line-modified-removed">-   format %{ &quot;cmn   $op1, $op2\t# overflow check long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;cmn   $op1, $op2\t# overflow check int64_t&quot; %}</span>
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ cmn($op1$$Register, $op2$$constant);
+    %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -13996,11 +14002,11 @@</span>
+  
+  instruct overflowSubL_reg_reg(rFlagsReg cr, iRegL op1, iRegL op2)
+  %{
+    match(Set cr (OverflowSubL op1 op2));
+  
+<span class="udiff-line-modified-removed">-   format %{ &quot;cmp   $op1, $op2\t# overflow check long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;cmp   $op1, $op2\t# overflow check int64_t&quot; %}</span>
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ cmp($op1$$Register, $op2$$Register);
+    %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -14009,11 +14015,11 @@</span>
+  
+  instruct overflowSubL_reg_imm(rFlagsReg cr, iRegL op1, immLAddSub op2)
+  %{
+    match(Set cr (OverflowSubL op1 op2));
+  
+<span class="udiff-line-modified-removed">-   format %{ &quot;cmp   $op1, $op2\t# overflow check long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;cmp   $op1, $op2\t# overflow check int64_t&quot; %}</span>
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ subs(zr, $op1$$Register, $op2$$constant);
+    %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -14035,11 +14041,11 @@</span>
+  
+  instruct overflowNegL_reg(rFlagsReg cr, immI0 zero, iRegL op1)
+  %{
+    match(Set cr (OverflowSubL zero op1));
+  
+<span class="udiff-line-modified-removed">-   format %{ &quot;cmp   zr, $op1\t# overflow check long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;cmp   zr, $op1\t# overflow check int64_t&quot; %}</span>
+    ins_cost(INSN_COST);
+    ins_encode %{
+      __ cmp(zr, $op1$$Register);
+    %}
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -14091,11 +14097,11 @@</span>
+  
+  instruct overflowMulL_reg(rFlagsReg cr, iRegL op1, iRegL op2)
+  %{
+    match(Set cr (OverflowMulL op1 op2));
+  
+<span class="udiff-line-modified-removed">-   format %{ &quot;mul   rscratch1, $op1, $op2\t#overflow check long\n\t&quot;</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;mul   rscratch1, $op1, $op2\t#overflow check int64_t\n\t&quot;</span>
+              &quot;smulh rscratch2, $op1, $op2\n\t&quot;
+              &quot;cmp   rscratch2, rscratch1, ASR #63\n\t&quot;
+              &quot;movw  rscratch1, #0x80000000\n\t&quot;
+              &quot;cselw rscratch1, rscratch1, zr, NE\n\t&quot;
+              &quot;cmpw  rscratch1, #1&quot; %}
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -14117,11 +14123,11 @@</span>
+    match(If cmp (OverflowMulL op1 op2));
+    predicate(n-&gt;in(1)-&gt;as_Bool()-&gt;_test._test == BoolTest::overflow
+              || n-&gt;in(1)-&gt;as_Bool()-&gt;_test._test == BoolTest::no_overflow);
+    effect(USE labl, KILL cr);
+  
+<span class="udiff-line-modified-removed">-   format %{ &quot;mul   rscratch1, $op1, $op2\t#overflow check long\n\t&quot;</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;mul   rscratch1, $op1, $op2\t#overflow check int64_t\n\t&quot;</span>
+              &quot;smulh rscratch2, $op1, $op2\n\t&quot;
+              &quot;cmp   rscratch2, rscratch1, ASR #63\n\t&quot;
+              &quot;b$cmp $labl&quot; %}
+    ins_cost(4 * INSN_COST); // Branch is rare so treat as INSN_COST
+    ins_encode %{
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -14881,11 +14887,11 @@</span>
+  instruct cmpL_branch_sign(cmpOpLtGe cmp, iRegL op1, immL0 op2, label labl) %{
+    match(If cmp (CmpL op1 op2));
+    effect(USE labl);
+  
+    ins_cost(BRANCH_COST);
+<span class="udiff-line-modified-removed">-   format %{ &quot;cb$cmp   $op1, $labl # long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;cb$cmp   $op1, $labl # int64_t&quot; %}</span>
+    ins_encode %{
+      Label* L = $labl$$label;
+      Assembler::Condition cond =
+        ((Assembler::Condition)$cmp$$cmpcode == Assembler::LT) ? Assembler::NE : Assembler::EQ;
+      __ tbr(cond, $op1$$Register, 63, *L);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -14948,11 +14954,11 @@</span>
+  instruct far_cmpL_branch_sign(cmpOpLtGe cmp, iRegL op1, immL0 op2, label labl) %{
+    match(If cmp (CmpL op1 op2));
+    effect(USE labl);
+  
+    ins_cost(BRANCH_COST);
+<span class="udiff-line-modified-removed">-   format %{ &quot;cb$cmp   $op1, $labl # long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;cb$cmp   $op1, $labl # int64_t&quot; %}</span>
+    ins_encode %{
+      Label* L = $labl$$label;
+      Assembler::Condition cond =
+        ((Assembler::Condition)$cmp$$cmpcode == Assembler::LT) ? Assembler::NE : Assembler::EQ;
+      __ tbr(cond, $op1$$Register, 63, *L, /*far*/true);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -15013,11 +15019,11 @@</span>
+    match(Set cr (CmpL (AndL op1 op2) op3));
+    predicate(Assembler::operand_valid_for_logical_immediate
+              (/*is_32*/false, n-&gt;in(1)-&gt;in(2)-&gt;get_long()));
+  
+    ins_cost(INSN_COST);
+<span class="udiff-line-modified-removed">-   format %{ &quot;tst $op1, $op2 # long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;tst $op1, $op2 # int64_t&quot; %}</span>
+    ins_encode %{
+      __ tst($op1$$Register, $op2$$constant);
+    %}
+    ins_pipe(ialu_reg_reg);
+  %}
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -15037,11 +15043,11 @@</span>
+  
+  instruct cmpL_and_reg(cmpOp cmp, iRegL op1, iRegL op2, immL0 op3, rFlagsReg cr) %{
+    match(Set cr (CmpL (AndL op1 op2) op3));
+  
+    ins_cost(INSN_COST);
+<span class="udiff-line-modified-removed">-   format %{ &quot;tst $op1, $op2 # long&quot; %}</span>
+<span class="udiff-line-modified-added">+   format %{ &quot;tst $op1, $op2 # int64_t&quot; %}</span>
+    ins_encode %{
+      __ tst($op1$$Register, $op2$$Register);
+    %}
+    ins_pipe(ialu_reg_reg);
+  %}
+</pre>
+<center><a href="..\..\..\..\make\hotspot\gensrc\GensrcAdlc.gmk.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="assembler_aarch64.cpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

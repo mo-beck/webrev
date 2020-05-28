@@ -1,0 +1,46 @@
+diff a/src/hotspot/cpu/aarch64/interp_masm_aarch64.cpp b/src/hotspot/cpu/aarch64/interp_masm_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/interp_masm_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/interp_masm_aarch64.cpp
+@@ -166,11 +166,11 @@
+   ldrh(reg, Address(rbcp, bcp_offset));
+   rev16(reg, reg);
+ }
+ 
+ void InterpreterMacroAssembler::get_dispatch() {
+-  unsigned long offset;
++  uint64_t offset;
+   adrp(rdispatch, ExternalAddress((address)Interpreter::dispatch_table()), offset);
+   lea(rdispatch, Address(rdispatch, offset));
+ }
+ 
+ void InterpreterMacroAssembler::get_cache_index_at_bcp(Register index,
+@@ -280,11 +280,16 @@
+ }
+ 
+ void InterpreterMacroAssembler::load_resolved_klass_at_offset(
+                              Register cpool, Register index, Register klass, Register temp) {
+   add(temp, cpool, index, LSL, LogBytesPerWord);
++#ifdef _WIN64
++  Address a1(temp, (int)sizeof(ConstantPool));
++  ldrh(temp, a1); // temp = resolved_klass_index
++#else
+   ldrh(temp, Address(temp, sizeof(ConstantPool))); // temp = resolved_klass_index
++#endif
+   ldr(klass, Address(cpool,  ConstantPool::resolved_klasses_offset_in_bytes())); // klass = cpool->_resolved_klasses
+   add(klass, klass, temp, LSL, LogBytesPerWord);
+   ldr(klass, Address(klass, Array<Klass*>::base_offset_in_bytes()));
+ }
+ 
+@@ -764,11 +769,11 @@
+     // NOTE: the oopMark is in swap_reg %r0 as the result of cmpxchg
+     // NOTE2: aarch64 does not like to subtract sp from rn so take a
+     // copy
+     mov(rscratch1, sp);
+     sub(swap_reg, swap_reg, rscratch1);
+-    ands(swap_reg, swap_reg, (unsigned long)(7 - os::vm_page_size()));
++    ands(swap_reg, swap_reg, (uint64_t)(7 - os::vm_page_size()));
+ 
+     // Save the test result, for recursive case, the result is zero
+     str(swap_reg, Address(lock_reg, mark_offset));
+ 
+     if (PrintBiasedLockingStatistics) {

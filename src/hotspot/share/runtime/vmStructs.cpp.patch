@@ -1,0 +1,37 @@
+diff a/src/hotspot/share/runtime/vmStructs.cpp b/src/hotspot/share/runtime/vmStructs.cpp
+--- a/src/hotspot/share/runtime/vmStructs.cpp
++++ b/src/hotspot/share/runtime/vmStructs.cpp
+@@ -100,19 +100,19 @@
+ #include "runtime/vmStructs.hpp"
+ #include "utilities/globalDefinitions.hpp"
+ #include "utilities/hashtable.hpp"
+ #include "utilities/macros.hpp"
+ 
++
+ #include CPU_HEADER(vmStructs)
+ #include OS_HEADER(vmStructs)
+ #include OS_CPU_HEADER(vmStructs)
+ 
+ #if INCLUDE_JVMCI
+ # include "jvmci/vmStructs_jvmci.hpp"
+ #endif
+ 
+-
+ #ifdef COMPILER2
+ #include "opto/addnode.hpp"
+ #include "opto/block.hpp"
+ #include "opto/callnode.hpp"
+ #include "opto/castnode.hpp"
+@@ -166,10 +166,12 @@
+ typedef HashtableEntry<intptr_t, mtInternal>  IntptrHashtableEntry;
+ typedef Hashtable<intptr_t, mtInternal>       IntptrHashtable;
+ typedef Hashtable<InstanceKlass*, mtClass>       KlassHashtable;
+ typedef HashtableEntry<InstanceKlass*, mtClass>  KlassHashtableEntry;
+ 
++typedef PaddedEnd<ObjectMonitor>              PaddedObjectMonitor;
++
+ //--------------------------------------------------------------------------------
+ // VM_STRUCTS
+ //
+ // This list enumerates all of the fields the serviceability agent
+ // needs to know about. Be sure to see also the type table below this one.

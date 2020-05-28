@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\cpu\aarch64\macroAssembler_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="macroAssembler_aarch64.cpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="macroAssembler_aarch64_log.cpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\macroAssembler_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 187,19 ***</span>
+  
+    virtual void _call_Unimplemented(address call_site) {
+      mov(rscratch2, call_site);
+    }
+  
+  #define call_Unimplemented() _call_Unimplemented((address)__PRETTY_FUNCTION__)
+  
+    // aliases defined in AARCH64 spec
+  
+    template&lt;class T&gt;
+    inline void cmpw(Register Rd, T imm)  { subsw(zr, Rd, imm); }
+  
+    inline void cmp(Register Rd, unsigned char imm8)  { subs(zr, Rd, imm8); }
+<span class="line-modified">!   inline void cmp(Register Rd, unsigned imm) __attribute__ ((deprecated));</span>
+  
+    inline void cmnw(Register Rd, unsigned imm) { addsw(zr, Rd, imm); }
+    inline void cmn(Register Rd, unsigned imm) { adds(zr, Rd, imm); }
+  
+    void cset(Register Rd, Assembler::Condition cond) {
+<span class="line-new-header">--- 187,23 ---</span>
+  
+    virtual void _call_Unimplemented(address call_site) {
+      mov(rscratch2, call_site);
+    }
+  
+<span class="line-added">+ #ifdef _WIN64</span>
+<span class="line-added">+ #define call_Unimplemented() _call_Unimplemented((address)__FUNCSIG__)</span>
+<span class="line-added">+ #else</span>
+  #define call_Unimplemented() _call_Unimplemented((address)__PRETTY_FUNCTION__)
+<span class="line-added">+ #endif</span>
+  
+    // aliases defined in AARCH64 spec
+  
+    template&lt;class T&gt;
+    inline void cmpw(Register Rd, T imm)  { subsw(zr, Rd, imm); }
+  
+    inline void cmp(Register Rd, unsigned char imm8)  { subs(zr, Rd, imm8); }
+<span class="line-modified">!   inline __declspec(deprecated) void cmp(Register Rd, unsigned imm);</span>
+  
+    inline void cmnw(Register Rd, unsigned imm) { addsw(zr, Rd, imm); }
+    inline void cmn(Register Rd, unsigned imm) { adds(zr, Rd, imm); }
+  
+    void cset(Register Rd, Assembler::Condition cond) {
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 451,12 ***</span>
+    // macro assembly operations needed for aarch64
+  
+    // first two private routines for loading 32 bit or 64 bit constants
+  private:
+  
+<span class="line-modified">!   void mov_immediate64(Register dst, u_int64_t imm64);</span>
+<span class="line-modified">!   void mov_immediate32(Register dst, u_int32_t imm32);</span>
+  
+    int push(unsigned int bitset, Register stack);
+    int pop(unsigned int bitset, Register stack);
+  
+    int push_fp(unsigned int bitset, Register stack);
+<span class="line-new-header">--- 455,12 ---</span>
+    // macro assembly operations needed for aarch64
+  
+    // first two private routines for loading 32 bit or 64 bit constants
+  private:
+  
+<span class="line-modified">!   void mov_immediate64(Register dst, uint64_t imm64);</span>
+<span class="line-modified">!   void mov_immediate32(Register dst, uint32_t imm32);</span>
+  
+    int push(unsigned int bitset, Register stack);
+    int pop(unsigned int bitset, Register stack);
+  
+    int push_fp(unsigned int bitset, Register stack);
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 481,65 ***</span>
+    // now mov instructions for loading absolute addresses and 32 or
+    // 64 bit integers
+  
+    inline void mov(Register dst, address addr)
+    {
+<span class="line-modified">!     mov_immediate64(dst, (u_int64_t)addr);</span>
+    }
+  
+<span class="line-modified">!   inline void mov(Register dst, u_int64_t imm64)</span>
+    {
+      mov_immediate64(dst, imm64);
+    }
+  
+<span class="line-modified">!   inline void movw(Register dst, u_int32_t imm32)</span>
+    {
+      mov_immediate32(dst, imm32);
+    }
+  
+<span class="line-modified">!   inline void mov(Register dst, long l)</span>
+    {
+<span class="line-modified">!     mov(dst, (u_int64_t)l);</span>
+    }
+  
+    inline void mov(Register dst, int i)
+    {
+<span class="line-modified">!     mov(dst, (long)i);</span>
+    }
+  
+    void mov(Register dst, RegisterOrConstant src) {
+      if (src.is_register())
+        mov(dst, src.as_register());
+      else
+<span class="line-modified">!       mov(dst, src.as_constant());</span>
+    }
+  
+    void movptr(Register r, uintptr_t imm64);
+  
+<span class="line-modified">!   void mov(FloatRegister Vd, SIMD_Arrangement T, u_int32_t imm32);</span>
+  
+    void mov(FloatRegister Vd, SIMD_Arrangement T, FloatRegister Vn) {
+      orr(Vd, T, Vn, Vn);
+    }
+  
+  public:
+  
+    // Generalized Test Bit And Branch, including a &quot;far&quot; variety which
+    // spans more than 32KiB.
+<span class="line-modified">!   void tbr(Condition cond, Register Rt, int bitpos, Label &amp;dest, bool far = false) {</span>
+      assert(cond == EQ || cond == NE, &quot;must be&quot;);
+  
+<span class="line-modified">!     if (far)</span>
+        cond = ~cond;
+  
+      void (Assembler::* branch)(Register Rt, int bitpos, Label &amp;L);
+      if (cond == Assembler::EQ)
+        branch = &amp;Assembler::tbz;
+      else
+        branch = &amp;Assembler::tbnz;
+  
+<span class="line-modified">!     if (far) {</span>
+        Label L;
+        (this-&gt;*branch)(Rt, bitpos, L);
+        b(dest);
+        bind(L);
+      } else {
+<span class="line-new-header">--- 485,65 ---</span>
+    // now mov instructions for loading absolute addresses and 32 or
+    // 64 bit integers
+  
+    inline void mov(Register dst, address addr)
+    {
+<span class="line-modified">!     mov_immediate64(dst, (uint64_t)addr);</span>
+    }
+  
+<span class="line-modified">!   inline void mov(Register dst, uint64_t imm64)</span>
+    {
+      mov_immediate64(dst, imm64);
+    }
+  
+<span class="line-modified">!   inline void movw(Register dst, uint32_t imm32)</span>
+    {
+      mov_immediate32(dst, imm32);
+    }
+  
+<span class="line-modified">!   inline void mov(Register dst, int64_t l)</span>
+    {
+<span class="line-modified">!     mov(dst, (uint64_t)l);</span>
+    }
+  
+    inline void mov(Register dst, int i)
+    {
+<span class="line-modified">!     mov(dst, (int64_t)i);</span>
+    }
+  
+    void mov(Register dst, RegisterOrConstant src) {
+      if (src.is_register())
+        mov(dst, src.as_register());
+      else
+<span class="line-modified">!       mov(dst, (uint64_t)src.as_constant());</span>
+    }
+  
+    void movptr(Register r, uintptr_t imm64);
+  
+<span class="line-modified">!   void mov(FloatRegister Vd, SIMD_Arrangement T, uint32_t imm32);</span>
+  
+    void mov(FloatRegister Vd, SIMD_Arrangement T, FloatRegister Vn) {
+      orr(Vd, T, Vn, Vn);
+    }
+  
+  public:
+  
+    // Generalized Test Bit And Branch, including a &quot;far&quot; variety which
+    // spans more than 32KiB.
+<span class="line-modified">!   void tbr(Condition cond, Register Rt, int bitpos, Label &amp;dest, bool isfar = false) {</span>
+      assert(cond == EQ || cond == NE, &quot;must be&quot;);
+  
+<span class="line-modified">!     if (isfar)</span>
+        cond = ~cond;
+  
+      void (Assembler::* branch)(Register Rt, int bitpos, Label &amp;L);
+      if (cond == Assembler::EQ)
+        branch = &amp;Assembler::tbz;
+      else
+        branch = &amp;Assembler::tbnz;
+  
+<span class="line-modified">!     if (isfar) {</span>
+        Label L;
+        (this-&gt;*branch)(Rt, bitpos, L);
+        b(dest);
+        bind(L);
+      } else {
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1166,11 ***</span>
+    void add(Register Rd, Register Rn, RegisterOrConstant increment);
+    void addw(Register Rd, Register Rn, RegisterOrConstant increment);
+    void sub(Register Rd, Register Rn, RegisterOrConstant decrement);
+    void subw(Register Rd, Register Rn, RegisterOrConstant decrement);
+  
+<span class="line-modified">!   void adrp(Register reg1, const Address &amp;dest, unsigned long &amp;byte_offset);</span>
+  
+    void tableswitch(Register index, jint lowbound, jint highbound,
+                     Label &amp;jumptable, Label &amp;jumptable_end, int stride = 1) {
+      adr(rscratch1, jumptable);
+      subsw(rscratch2, index, lowbound);
+<span class="line-new-header">--- 1170,11 ---</span>
+    void add(Register Rd, Register Rn, RegisterOrConstant increment);
+    void addw(Register Rd, Register Rn, RegisterOrConstant increment);
+    void sub(Register Rd, Register Rn, RegisterOrConstant decrement);
+    void subw(Register Rd, Register Rn, RegisterOrConstant decrement);
+  
+<span class="line-modified">!   void adrp(Register reg1, const Address &amp;dest, uint64_t &amp;byte_offset);</span>
+  
+    void tableswitch(Register index, jint lowbound, jint highbound,
+                     Label &amp;jumptable, Label &amp;jumptable_end, int stride = 1) {
+      adr(rscratch1, jumptable);
+      subsw(rscratch2, index, lowbound);
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1183,11 ***</span>
+  
+    // Form an address from base + offset in Rd.  Rd may or may not
+    // actually be used: you must use the Address that is returned.  It
+    // is up to you to ensure that the shift provided matches the size
+    // of your data.
+<span class="line-modified">!   Address form_address(Register Rd, Register base, long byte_offset, int shift);</span>
+  
+    // Return true iff an address is within the 48-bit AArch64 address
+    // space.
+    bool is_valid_AArch64_address(address a) {
+      return ((uint64_t)a &gt;&gt; 48) == 0;
+<span class="line-new-header">--- 1187,11 ---</span>
+  
+    // Form an address from base + offset in Rd.  Rd may or may not
+    // actually be used: you must use the Address that is returned.  It
+    // is up to you to ensure that the shift provided matches the size
+    // of your data.
+<span class="line-modified">!   Address form_address(Register Rd, Register base, int64_t byte_offset, int shift);</span>
+  
+    // Return true iff an address is within the 48-bit AArch64 address
+    // space.
+    bool is_valid_AArch64_address(address a) {
+      return ((uint64_t)a &gt;&gt; 48) == 0;
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1208,11 ***</span>
+  
+    void ldr_constant(Register dest, const Address &amp;const_addr) {
+      if (NearCpool) {
+        ldr(dest, const_addr);
+      } else {
+<span class="line-modified">!       unsigned long offset;</span>
+        adrp(dest, InternalAddress(const_addr.target()), offset);
+        ldr(dest, Address(dest, offset));
+      }
+    }
+  
+<span class="line-new-header">--- 1212,11 ---</span>
+  
+    void ldr_constant(Register dest, const Address &amp;const_addr) {
+      if (NearCpool) {
+        ldr(dest, const_addr);
+      } else {
+<span class="line-modified">!       uint64_t offset;</span>
+        adrp(dest, InternalAddress(const_addr.target()), offset);
+        ldr(dest, Address(dest, offset));
+      }
+    }
+  
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1238,11 ***</span>
+  
+    void string_equals(Register a1, Register a2, Register result, Register cnt1,
+                       int elem_size);
+  
+    void fill_words(Register base, Register cnt, Register value);
+<span class="line-modified">!   void zero_words(Register base, u_int64_t cnt);</span>
+    void zero_words(Register ptr, Register cnt);
+    void zero_dcache_blocks(Register base, Register cnt);
+  
+    static const int zero_words_block_size;
+  
+<span class="line-new-header">--- 1242,11 ---</span>
+  
+    void string_equals(Register a1, Register a2, Register result, Register cnt1,
+                       int elem_size);
+  
+    void fill_words(Register base, Register cnt, Register value);
+<span class="line-modified">!   void zero_words(Register base, uint64_t cnt);</span>
+    void zero_words(Register ptr, Register cnt);
+    void zero_dcache_blocks(Register base, Register cnt);
+  
+    static const int zero_words_block_size;
+  
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1320,11 ***</span>
+  private:
+    // Returns an address on the stack which is reachable with a ldr/str of size
+    // Uses rscratch2 if the address is not directly reachable
+    Address spill_address(int size, int offset, Register tmp=rscratch2);
+  
+<span class="line-modified">!   bool merge_alignment_check(Register base, size_t size, long cur_offset, long prev_offset) const;</span>
+  
+    // Check whether two loads/stores can be merged into ldp/stp.
+    bool ldst_can_merge(Register rx, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store) const;
+  
+    // Merge current load/store with previous load/store into ldp/stp.
+<span class="line-new-header">--- 1324,11 ---</span>
+  private:
+    // Returns an address on the stack which is reachable with a ldr/str of size
+    // Uses rscratch2 if the address is not directly reachable
+    Address spill_address(int size, int offset, Register tmp=rscratch2);
+  
+<span class="line-modified">!   bool merge_alignment_check(Register base, size_t size, int64_t cur_offset, int64_t prev_offset) const;</span>
+  
+    // Check whether two loads/stores can be merged into ldp/stp.
+    bool ldst_can_merge(Register rx, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store) const;
+  
+    // Merge current load/store with previous load/store into ldp/stp.
+</pre>
+<center><a href="macroAssembler_aarch64.cpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="macroAssembler_aarch64_log.cpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

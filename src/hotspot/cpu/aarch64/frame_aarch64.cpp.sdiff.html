@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\frame_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="compiledIC_aot_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="gc\shared\barrierSetAssembler_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\frame_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+656   return NULL;
+657 }
+658 
+659 intptr_t* frame::real_fp() const {
+660   if (_cb != NULL) {
+661     // use the frame size if valid
+662     int size = _cb-&gt;frame_size();
+663     if (size &gt; 0) {
+664       return unextended_sp() + size;
+665     }
+666   }
+667   // else rely on fp()
+668   assert(! is_compiled_frame(), &quot;unknown compiled frame size&quot;);
+669   return fp();
+670 }
+671 
+672 #undef DESCRIBE_FP_OFFSET
+673 
+674 #define DESCRIBE_FP_OFFSET(name)                                        \
+675   {                                                                     \
+<span class="line-modified">676     unsigned long *p = (unsigned long *)fp;                             \</span>
+<span class="line-modified">677     printf(&quot;0x%016lx 0x%016lx %s\n&quot;, (unsigned long)(p + frame::name##_offset), \</span>
+678            p[frame::name##_offset], #name);                             \
+679   }
+<span class="line-modified">680 </span>
+<span class="line-modified">681 static __thread unsigned long nextfp;</span>
+<span class="line-modified">682 static __thread unsigned long nextpc;</span>
+<span class="line-modified">683 static __thread unsigned long nextsp;</span>
+<span class="line-removed">684 static __thread RegisterMap *reg_map;</span>
+685 
+686 static void printbc(Method *m, intptr_t bcx) {
+687   const char *name;
+688   char buf[16];
+689   if (m-&gt;validate_bci_from_bcp((address)bcx) &lt; 0
+690       || !m-&gt;contains((address)bcx)) {
+691     name = &quot;???&quot;;
+692     snprintf(buf, sizeof buf, &quot;(bad)&quot;);
+693   } else {
+694     int bci = m-&gt;bci_from((address)bcx);
+695     snprintf(buf, sizeof buf, &quot;%d&quot;, bci);
+696     name = Bytecodes::name(m-&gt;code_at(bci));
+697   }
+698   ResourceMark rm;
+699   printf(&quot;%s : %s ==&gt; %s\n&quot;, m-&gt;name_and_sig_as_C_string(), buf, name);
+700 }
+701 
+<span class="line-modified">702 void internal_pf(unsigned long sp, unsigned long fp, unsigned long pc, unsigned long bcx) {</span>
+703   if (! fp)
+704     return;
+705 
+706   DESCRIBE_FP_OFFSET(return_addr);
+707   DESCRIBE_FP_OFFSET(link);
+708   DESCRIBE_FP_OFFSET(interpreter_frame_sender_sp);
+709   DESCRIBE_FP_OFFSET(interpreter_frame_last_sp);
+710   DESCRIBE_FP_OFFSET(interpreter_frame_method);
+711   DESCRIBE_FP_OFFSET(interpreter_frame_mdp);
+712   DESCRIBE_FP_OFFSET(interpreter_frame_cache);
+713   DESCRIBE_FP_OFFSET(interpreter_frame_locals);
+714   DESCRIBE_FP_OFFSET(interpreter_frame_bcp);
+715   DESCRIBE_FP_OFFSET(interpreter_frame_initial_sp);
+<span class="line-modified">716   unsigned long *p = (unsigned long *)fp;</span>
+717 
+718   // We want to see all frames, native and Java.  For compiled and
+719   // interpreted frames we have special information that allows us to
+720   // unwind them; for everything else we assume that the native frame
+721   // pointer chain is intact.
+722   frame this_frame((intptr_t*)sp, (intptr_t*)fp, (address)pc);
+723   if (this_frame.is_compiled_frame() ||
+724       this_frame.is_interpreted_frame()) {
+725     frame sender = this_frame.sender(reg_map);
+<span class="line-modified">726     nextfp = (unsigned long)sender.fp();</span>
+<span class="line-modified">727     nextpc = (unsigned long)sender.pc();</span>
+<span class="line-modified">728     nextsp = (unsigned long)sender.unextended_sp();</span>
+729   } else {
+730     nextfp = p[frame::link_offset];
+731     nextpc = p[frame::return_addr_offset];
+<span class="line-modified">732     nextsp = (unsigned long)&amp;p[frame::sender_sp_offset];</span>
+733   }
+734 
+<span class="line-modified">735   if (bcx == -1ul)</span>
+736     bcx = p[frame::interpreter_frame_bcp_offset];
+737 
+738   if (Interpreter::contains((address)pc)) {
+739     Method* m = (Method*)p[frame::interpreter_frame_method_offset];
+740     if(m &amp;&amp; m-&gt;is_method()) {
+741       printbc(m, bcx);
+742     } else
+743       printf(&quot;not a Method\n&quot;);
+744   } else {
+745     CodeBlob *cb = CodeCache::find_blob((address)pc);
+746     if (cb != NULL) {
+747       if (cb-&gt;is_nmethod()) {
+748         ResourceMark rm;
+749         nmethod* nm = (nmethod*)cb;
+750         printf(&quot;nmethod %s\n&quot;, nm-&gt;method()-&gt;name_and_sig_as_C_string());
+751       } else if (cb-&gt;name()) {
+752         printf(&quot;CodeBlob %s\n&quot;, cb-&gt;name());
+753       }
+754     }
+755   }
+756 }
+757 
+758 extern &quot;C&quot; void npf() {
+759   CodeBlob *cb = CodeCache::find_blob((address)nextpc);
+760   // C2 does not always chain the frame pointers when it can, instead
+761   // preferring to use fixed offsets from SP, so a simple leave() does
+762   // not work.  Instead, it adds the frame size to SP then pops FP and
+763   // LR.  We have to do the same thing to get a good call chain.
+764   if (cb &amp;&amp; cb-&gt;frame_size())
+765     nextfp = nextsp + wordSize * (cb-&gt;frame_size() - 2);
+766   internal_pf (nextsp, nextfp, nextpc, -1);
+767 }
+768 
+<span class="line-modified">769 extern &quot;C&quot; void pf(unsigned long sp, unsigned long fp, unsigned long pc,</span>
+<span class="line-modified">770                    unsigned long bcx, unsigned long thread) {</span>
+771   if (!reg_map) {
+772     reg_map = NEW_C_HEAP_OBJ(RegisterMap, mtNone);
+773     ::new (reg_map) RegisterMap((JavaThread*)thread, false);
+774   } else {
+775     *reg_map = RegisterMap((JavaThread*)thread, false);
+776   }
+777 
+778   {
+779     CodeBlob *cb = CodeCache::find_blob((address)pc);
+780     if (cb &amp;&amp; cb-&gt;frame_size())
+781       fp = sp + wordSize * (cb-&gt;frame_size() - 2);
+782   }
+783   internal_pf(sp, fp, pc, bcx);
+784 }
+785 
+786 // support for printing out where we are in a Java method
+787 // needs to be passed current fp and bcp register values
+788 // prints method name, bc index and bytecode name
+<span class="line-modified">789 extern &quot;C&quot; void pm(unsigned long fp, unsigned long bcx) {</span>
+790   DESCRIBE_FP_OFFSET(interpreter_frame_method);
+<span class="line-modified">791   unsigned long *p = (unsigned long *)fp;</span>
+792   Method* m = (Method*)p[frame::interpreter_frame_method_offset];
+793   printbc(m, bcx);
+794 }
+795 
+796 #ifndef PRODUCT
+797 // This is a generic constructor which is only used by pns() in debug.cpp.
+798 frame::frame(void* sp, void* fp, void* pc) {
+799   init((intptr_t*)sp, (intptr_t*)fp, (address)pc);
+800 }
+801 
+802 void frame::pd_ps() {}
+803 #endif
+804 
+805 void JavaFrameAnchor::make_walkable(JavaThread* thread) {
+806   // last frame set?
+807   if (last_Java_sp() == NULL) return;
+808   // already walkable?
+809   if (walkable()) return;
+810   vmassert(Thread::current() == (Thread*)thread, &quot;not current thread&quot;);
+811   vmassert(last_Java_sp() != NULL, &quot;not called from Java code?&quot;);
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+656   return NULL;
+657 }
+658 
+659 intptr_t* frame::real_fp() const {
+660   if (_cb != NULL) {
+661     // use the frame size if valid
+662     int size = _cb-&gt;frame_size();
+663     if (size &gt; 0) {
+664       return unextended_sp() + size;
+665     }
+666   }
+667   // else rely on fp()
+668   assert(! is_compiled_frame(), &quot;unknown compiled frame size&quot;);
+669   return fp();
+670 }
+671 
+672 #undef DESCRIBE_FP_OFFSET
+673 
+674 #define DESCRIBE_FP_OFFSET(name)                                        \
+675   {                                                                     \
+<span class="line-modified">676     uint64_t *p = (uint64_t *)fp;                             \</span>
+<span class="line-modified">677     printf(&quot;0x%016lx 0x%016lx %s\n&quot;, (uint64_t)(p + frame::name##_offset), \</span>
+678            p[frame::name##_offset], #name);                             \
+679   }
+<span class="line-modified">680 static THREAD_LOCAL uint64_t nextfp;</span>
+<span class="line-modified">681 static THREAD_LOCAL uint64_t nextpc;</span>
+<span class="line-modified">682 static THREAD_LOCAL uint64_t nextsp;</span>
+<span class="line-modified">683 static THREAD_LOCAL RegisterMap *reg_map;</span>
+
+684 
+685 static void printbc(Method *m, intptr_t bcx) {
+686   const char *name;
+687   char buf[16];
+688   if (m-&gt;validate_bci_from_bcp((address)bcx) &lt; 0
+689       || !m-&gt;contains((address)bcx)) {
+690     name = &quot;???&quot;;
+691     snprintf(buf, sizeof buf, &quot;(bad)&quot;);
+692   } else {
+693     int bci = m-&gt;bci_from((address)bcx);
+694     snprintf(buf, sizeof buf, &quot;%d&quot;, bci);
+695     name = Bytecodes::name(m-&gt;code_at(bci));
+696   }
+697   ResourceMark rm;
+698   printf(&quot;%s : %s ==&gt; %s\n&quot;, m-&gt;name_and_sig_as_C_string(), buf, name);
+699 }
+700 
+<span class="line-modified">701 void internal_pf(uint64_t sp, uint64_t fp, uint64_t pc, uint64_t bcx) {</span>
+702   if (! fp)
+703     return;
+704 
+705   DESCRIBE_FP_OFFSET(return_addr);
+706   DESCRIBE_FP_OFFSET(link);
+707   DESCRIBE_FP_OFFSET(interpreter_frame_sender_sp);
+708   DESCRIBE_FP_OFFSET(interpreter_frame_last_sp);
+709   DESCRIBE_FP_OFFSET(interpreter_frame_method);
+710   DESCRIBE_FP_OFFSET(interpreter_frame_mdp);
+711   DESCRIBE_FP_OFFSET(interpreter_frame_cache);
+712   DESCRIBE_FP_OFFSET(interpreter_frame_locals);
+713   DESCRIBE_FP_OFFSET(interpreter_frame_bcp);
+714   DESCRIBE_FP_OFFSET(interpreter_frame_initial_sp);
+<span class="line-modified">715   uint64_t *p = (uint64_t *)fp;</span>
+716 
+717   // We want to see all frames, native and Java.  For compiled and
+718   // interpreted frames we have special information that allows us to
+719   // unwind them; for everything else we assume that the native frame
+720   // pointer chain is intact.
+721   frame this_frame((intptr_t*)sp, (intptr_t*)fp, (address)pc);
+722   if (this_frame.is_compiled_frame() ||
+723       this_frame.is_interpreted_frame()) {
+724     frame sender = this_frame.sender(reg_map);
+<span class="line-modified">725     nextfp = (uint64_t)sender.fp();</span>
+<span class="line-modified">726     nextpc = (uint64_t)sender.pc();</span>
+<span class="line-modified">727     nextsp = (uint64_t)sender.unextended_sp();</span>
+728   } else {
+729     nextfp = p[frame::link_offset];
+730     nextpc = p[frame::return_addr_offset];
+<span class="line-modified">731     nextsp = (uint64_t)&amp;p[frame::sender_sp_offset];</span>
+732   }
+733 
+<span class="line-modified">734   if (bcx == -1ull)</span>
+735     bcx = p[frame::interpreter_frame_bcp_offset];
+736 
+737   if (Interpreter::contains((address)pc)) {
+738     Method* m = (Method*)p[frame::interpreter_frame_method_offset];
+739     if(m &amp;&amp; m-&gt;is_method()) {
+740       printbc(m, bcx);
+741     } else
+742       printf(&quot;not a Method\n&quot;);
+743   } else {
+744     CodeBlob *cb = CodeCache::find_blob((address)pc);
+745     if (cb != NULL) {
+746       if (cb-&gt;is_nmethod()) {
+747         ResourceMark rm;
+748         nmethod* nm = (nmethod*)cb;
+749         printf(&quot;nmethod %s\n&quot;, nm-&gt;method()-&gt;name_and_sig_as_C_string());
+750       } else if (cb-&gt;name()) {
+751         printf(&quot;CodeBlob %s\n&quot;, cb-&gt;name());
+752       }
+753     }
+754   }
+755 }
+756 
+757 extern &quot;C&quot; void npf() {
+758   CodeBlob *cb = CodeCache::find_blob((address)nextpc);
+759   // C2 does not always chain the frame pointers when it can, instead
+760   // preferring to use fixed offsets from SP, so a simple leave() does
+761   // not work.  Instead, it adds the frame size to SP then pops FP and
+762   // LR.  We have to do the same thing to get a good call chain.
+763   if (cb &amp;&amp; cb-&gt;frame_size())
+764     nextfp = nextsp + wordSize * (cb-&gt;frame_size() - 2);
+765   internal_pf (nextsp, nextfp, nextpc, -1);
+766 }
+767 
+<span class="line-modified">768 extern &quot;C&quot; void pf(uint64_t sp, uint64_t fp, uint64_t pc,</span>
+<span class="line-modified">769                    uint64_t bcx, uint64_t thread) {</span>
+770   if (!reg_map) {
+771     reg_map = NEW_C_HEAP_OBJ(RegisterMap, mtNone);
+772     ::new (reg_map) RegisterMap((JavaThread*)thread, false);
+773   } else {
+774     *reg_map = RegisterMap((JavaThread*)thread, false);
+775   }
+776 
+777   {
+778     CodeBlob *cb = CodeCache::find_blob((address)pc);
+779     if (cb &amp;&amp; cb-&gt;frame_size())
+780       fp = sp + wordSize * (cb-&gt;frame_size() - 2);
+781   }
+782   internal_pf(sp, fp, pc, bcx);
+783 }
+784 
+785 // support for printing out where we are in a Java method
+786 // needs to be passed current fp and bcp register values
+787 // prints method name, bc index and bytecode name
+<span class="line-modified">788 extern &quot;C&quot; void pm(uint64_t fp, uint64_t bcx) {</span>
+789   DESCRIBE_FP_OFFSET(interpreter_frame_method);
+<span class="line-modified">790   uint64_t *p = (uint64_t *)fp;</span>
+791   Method* m = (Method*)p[frame::interpreter_frame_method_offset];
+792   printbc(m, bcx);
+793 }
+794 
+795 #ifndef PRODUCT
+796 // This is a generic constructor which is only used by pns() in debug.cpp.
+797 frame::frame(void* sp, void* fp, void* pc) {
+798   init((intptr_t*)sp, (intptr_t*)fp, (address)pc);
+799 }
+800 
+801 void frame::pd_ps() {}
+802 #endif
+803 
+804 void JavaFrameAnchor::make_walkable(JavaThread* thread) {
+805   // last frame set?
+806   if (last_Java_sp() == NULL) return;
+807   // already walkable?
+808   if (walkable()) return;
+809   vmassert(Thread::current() == (Thread*)thread, &quot;not current thread&quot;);
+810   vmassert(last_Java_sp() != NULL, &quot;not called from Java code?&quot;);
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="compiledIC_aot_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="gc\shared\barrierSetAssembler_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

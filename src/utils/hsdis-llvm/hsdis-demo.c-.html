@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Old src\utils\hsdis-llvm\hsdis-demo.c</title>
+    <link rel="stylesheet" href="..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 2008, 2012, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * The Universal Permissive License (UPL), Version 1.0
+  6  *
+  7  * Subject to the condition set forth below, permission is hereby granted to
+  8  * any person obtaining a copy of this software, associated documentation
+  9  * and/or data (collectively the &quot;Software&quot;), free of charge and under any
+ 10  * and all copyright rights in the Software, and any and all patent rights
+ 11  * owned or freely licensable by each licensor hereunder covering either (i)
+ 12  * the unmodified Software as contributed to or provided by such licensor,
+ 13  * or (ii) the Larger Works (as defined below), to deal in both
+ 14  *
+ 15  * (a) the Software, and
+ 16  *
+ 17  * (b) any piece of software and/or hardware listed in the lrgrwrks.txt file
+ 18  * if one is included with the Software (each a &quot;Larger Work&quot; to which the
+ 19  * Software is contributed by such licensors),
+ 20  *
+ 21  * without restriction, including without limitation the rights to copy,
+ 22  * create derivative works of, display, perform, and distribute the Software
+ 23  * and make, use, sell, offer for sale, import, export, have made, and have
+ 24  * sold the Software and the Larger Work(s), and to sublicense the foregoing
+ 25  * rights on either these or other terms.
+ 26  *
+ 27  * This license is subject to the following condition:
+ 28  *
+ 29  * The above copyright notice and either this complete permission notice or
+ 30  * at a minimum a reference to the UPL must be included in all copies or
+ 31  * substantial portions of the Software.
+ 32  *
+ 33  * THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ 34  * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ 35  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+ 36  * NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ 37  * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ 38  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+ 39  * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ 40  *
+ 41  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 42  * or visit www.oracle.com if you need additional information or have any
+ 43  * questions.
+ 44  *
+ 45  */
+ 46 
+ 47 /* hsdis-demo.c -- dump a range of addresses as native instructions
+ 48    This demonstrates the protocol required by the HotSpot PrintAssembly option.
+ 49 */
+ 50 
+ 51 #include &lt;stdio.h&gt;
+ 52 #include &lt;stdlib.h&gt;
+ 53 #include &lt;string.h&gt;
+ 54 #include &lt;inttypes.h&gt;
+ 55 
+ 56 #include &quot;hsdis.h&quot;
+ 57 
+ 58 
+ 59 void greet(const char*);
+ 60 void disassemble(uintptr_t, uintptr_t);
+ 61 void end_of_file();
+ 62 
+ 63 const char* options = NULL;
+ 64 int         raw     = 0;
+ 65 int         xml     = 0;
+ 66 
+ 67 int main(int ac, char** av) {
+ 68   int greeted = 0;
+ 69   int i;
+ 70   for (i = 1; i &lt; ac; i++) {
+ 71     const char* arg = av[i];
+ 72     if (arg[0] == &#39;-&#39;) {
+ 73       if (!strcmp(arg, &quot;-xml&quot;))
+ 74         xml ^= 1;
+ 75       else if (!strcmp(arg, &quot;-raw&quot;))
+ 76         raw ^= 1;
+ 77       else if (!strncmp(arg, &quot;-options=&quot;, 9))
+ 78         options = arg+9;
+ 79       else
+ 80         { printf(&quot;Usage: %s [-xml] [name...]\n&quot;, av[0]); exit(2); }
+ 81       continue;
+ 82     }
+ 83     greet(arg);
+ 84     greeted = 1;
+ 85   }
+ 86   if (!greeted)
+ 87     greet(&quot;world&quot;);
+ 88   printf(&quot;...And now for something completely different:\n&quot;);
+ 89   void *start = (void*) &amp;main;
+ 90   void *end = (void*) &amp;end_of_file;
+ 91 #if defined(__ia64) || (defined(__powerpc__) &amp;&amp; !defined(ABI_ELFv2))
+ 92   /* On IA64 and PPC function pointers are pointers to function descriptors */
+ 93   start = *((void**)start);
+ 94   end = *((void**)end);
+ 95 #endif
+ 96   disassemble(start, (end &gt; start) ? end : start + 64);
+ 97   printf(&quot;Cheers!\n&quot;);
+ 98 }
+ 99 
+100 void greet(const char* whom) {
+101   printf(&quot;Hello, %s!\n&quot;, whom);
+102 }
+103 
+104 void end_of_file() { }
+105 
+106 /* don&#39;t disassemble after this point... */
+107 
+108 #include &quot;dlfcn.h&quot;
+109 
+110 #define DECODE_INSTRUCTIONS_VIRTUAL_NAME &quot;decode_instructions_virtual&quot;
+111 #define DECODE_INSTRUCTIONS_NAME &quot;decode_instructions&quot;
+112 #define HSDIS_NAME               &quot;hsdis&quot;
+113 static void* decode_instructions_pv = 0;
+114 static void* decode_instructions_sv = 0;
+115 static const char* hsdis_path[] = {
+116   HSDIS_NAME&quot;-&quot;LIBARCH LIB_EXT,
+117   &quot;./&quot; HSDIS_NAME&quot;-&quot;LIBARCH LIB_EXT,
+118 #ifdef TARGET_DIR
+119   TARGET_DIR&quot;/&quot;HSDIS_NAME&quot;-&quot;LIBARCH LIB_EXT,
+120 #endif
+121   NULL
+122 };
+123 
+124 static const char* load_decode_instructions() {
+125   void* dllib = NULL;
+126   const char* *next_in_path = hsdis_path;
+127   while (1) {
+128     decode_instructions_pv = dlsym(dllib, DECODE_INSTRUCTIONS_VIRTUAL_NAME);
+129     decode_instructions_sv = dlsym(dllib, DECODE_INSTRUCTIONS_NAME);
+130     if (decode_instructions_pv != NULL || decode_instructions_sv != NULL)
+131       return NULL;
+132     if (dllib != NULL)
+133       return &quot;plugin does not defined &quot;DECODE_INSTRUCTIONS_VIRTUAL_NAME&quot; and &quot;DECODE_INSTRUCTIONS_NAME;
+134     for (dllib = NULL; dllib == NULL; ) {
+135       const char* next_lib = (*next_in_path++);
+136       if (next_lib == NULL)
+137         return &quot;cannot find plugin &quot;HSDIS_NAME LIB_EXT;
+138       dllib = dlopen(next_lib, RTLD_LAZY);
+139     }
+140   }
+141 }
+142 
+143 
+144 static const char* lookup(void* addr) {
+145 #if defined(__ia64) || defined(__powerpc__)
+146   /* On IA64 and PPC function pointers are pointers to function descriptors */
+147 #define CHECK_NAME(fn) \
+148   if (addr == *((void**) &amp;fn))  return #fn;
+149 #else
+150 #define CHECK_NAME(fn) \
+151   if (addr == (void*) &amp;fn)  return #fn;
+152 #endif
+153 
+154   CHECK_NAME(main);
+155   CHECK_NAME(greet);
+156   return NULL;
+157 }
+158 
+159 /* does the event match the tag, followed by a null, space, or slash? */
+160 #define MATCH(event, tag) \
+161   (!strncmp(event, tag, sizeof(tag)-1) &amp;&amp; \
+162    (!event[sizeof(tag)-1] || strchr(&quot; /&quot;, event[sizeof(tag)-1])))
+163 
+164 
+165 static const char event_cookie[] = &quot;event_cookie&quot;; /* demo placeholder */
+166 static void* simple_handle_event(void* cookie, const char* event, void* arg) {
+167   if (MATCH(event, &quot;/insn&quot;)) {
+168     // follow each complete insn by a nice newline
+169     printf(&quot;\n&quot;);
+170   }
+171   return NULL;
+172 }
+173 
+174 static void* handle_event(void* cookie, const char* event, void* arg) {
+175 #define NS_DEMO &quot;demo:&quot;
+176   if (cookie != event_cookie)
+177     printf(&quot;*** bad event cookie %p != %p\n&quot;, cookie, event_cookie);
+178 
+179   if (xml) {
+180     /* We could almost do a printf(event, arg),
+181        but for the sake of a better demo,
+182        we dress the result up as valid XML.
+183     */
+184     const char* fmt = strchr(event, &#39; &#39;);
+185     int evlen = (fmt ? fmt - event : strlen(event));
+186     if (!fmt) {
+187       if (event[0] != &#39;/&#39;) {
+188         printf(&quot;&lt;&quot;NS_DEMO&quot;%.*s&gt;&quot;, evlen, event);
+189       } else {
+190         printf(&quot;&lt;/&quot;NS_DEMO&quot;%.*s&gt;&quot;, evlen-1, event+1);
+191       }
+192     } else {
+193       if (event[0] != &#39;/&#39;) {
+194         printf(&quot;&lt;&quot;NS_DEMO&quot;%.*s&quot;, evlen, event);
+195         printf(fmt, arg);
+196         printf(&quot;&gt;&quot;);
+197       } else {
+198         printf(&quot;&lt;&quot;NS_DEMO&quot;%.*s_done&quot;, evlen-1, event+1);
+199         printf(fmt, arg);
+200         printf(&quot;/&gt;&lt;/&quot;NS_DEMO&quot;%.*s&gt;&quot;, evlen-1, event+1);
+201       }
+202     }
+203   }
+204 
+205   if (MATCH(event, &quot;insn&quot;)) {
+206     const char* name = lookup(arg);
+207     if (name)  printf(&quot;%s:\n&quot;, name);
+208 
+209     /* basic action for &lt;insn&gt;: */
+210     printf(&quot; %p\t&quot;, arg);
+211 
+212   } else if (MATCH(event, &quot;/insn&quot;)) {
+213     // follow each complete insn by a nice newline
+214     printf(&quot;\n&quot;);
+215   } else if (MATCH(event, &quot;mach&quot;)) {
+216     printf(&quot;Decoding for CPU &#39;%s&#39;\n&quot;, (char*) arg);
+217 
+218   } else if (MATCH(event, &quot;addr&quot;)) {
+219     /* basic action for &lt;addr/&gt;: */
+220     const char* name = lookup(arg);
+221     if (name) {
+222       printf(&quot;&amp;%s (%p)&quot;, name, arg);
+223       /* return non-null to notify hsdis not to print the addr */
+224       return arg;
+225     }
+226   }
+227 
+228   /* null return is always safe; can mean &quot;I ignored it&quot; */
+229   return NULL;
+230 }
+231 
+232 #define fprintf_callback \
+233   (decode_instructions_printf_callback_ftype)&amp;fprintf
+234 
+235 void disassemble(uintptr_t from, uintptr_t to) {
+236   const char* err = load_decode_instructions();
+237   if (err != NULL) {
+238     printf(&quot;%s: %s\n&quot;, err, dlerror());
+239     exit(1);
+240   }
+241   decode_func_vtype decode_instructions_v
+242     = (decode_func_vtype) decode_instructions_pv;
+243   decode_func_stype decode_instructions_s
+244     = (decode_func_stype) decode_instructions_sv;
+245   void* res;
+246   if (decode_instructions_pv != NULL) {
+247     printf(&quot;\nDecoding from %p to %p...with %s\n&quot;, from, to, DECODE_INSTRUCTIONS_VIRTUAL_NAME);
+248     if (raw) {
+249       res = (*decode_instructions_v)(from, to,
+250                                      (unsigned char*)from, to - from,
+251                                      simple_handle_event, stdout,
+252                                      NULL, stdout,
+253                                      options, 0);
+254     } else {
+255       res = (*decode_instructions_v)(from, to,
+256                                     (unsigned char*)from, to - from,
+257                                      handle_event, (void*) event_cookie,
+258                                      fprintf_callback, stdout,
+259                                      options, 0);
+260     }
+261     if (res != (void*)to)
+262       printf(&quot;*** Result was %p!\n&quot;, res);
+263   }
+264   void* sres;
+265   if (decode_instructions_sv != NULL) {
+266     printf(&quot;\nDecoding from %p to %p...with old decode_instructions\n&quot;, from, to, DECODE_INSTRUCTIONS_NAME);
+267     if (raw) {
+268       sres = (*decode_instructions_s)(from, to,
+269                                       simple_handle_event, stdout,
+270                                       NULL, stdout,
+271                                       options);
+272     } else {
+273       sres = (*decode_instructions_s)(from, to,
+274                                       handle_event, (void*) event_cookie,
+275                                       fprintf_callback, stdout,
+276                                       options);
+277     }
+278     if (sres != (void *)to)
+279       printf(&quot;*** Result of decode_instructions %p!\n&quot;, sres);
+280   }
+281 }
+    </pre>
+  </body>
+</html>

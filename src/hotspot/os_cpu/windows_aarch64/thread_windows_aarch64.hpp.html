@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\hotspot\os_cpu\windows_aarch64\thread_windows_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+ 1 /*
+ 2  * Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+ 3  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
+ 4  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ 5  *
+ 6  * This code is free software; you can redistribute it and/or modify it
+ 7  * under the terms of the GNU General Public License version 2 only, as
+ 8  * published by the Free Software Foundation.
+ 9  *
+10  * This code is distributed in the hope that it will be useful, but WITHOUT
+11  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+12  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+13  * version 2 for more details (a copy is included in the LICENSE file that
+14  * accompanied this code).
+15  *
+16  * You should have received a copy of the GNU General Public License version
+17  * 2 along with this work; if not, write to the Free Software Foundation,
+18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+19  *
+20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+21  * or visit www.oracle.com if you need additional information or have any
+22  * questions.
+23  *
+24  */
+25 
+26 #ifndef OS_CPU_WINDOWS_AARCH64_THREAD_WINDOWS_AARCH64_HPP
+27 #define OS_CPU_WINDOWS_AARCH64_THREAD_WINDOWS_AARCH64_HPP
+28 
+29  private:
+30 
+31 #ifdef ASSERT
+32   // spill stack holds N callee-save registers at each Java call and
+33   // grows downwards towards limit
+34   // we need limit to check we have space for a spill and base so we
+35   // can identify all live spill frames at GC (eventually)
+36   address          _spill_stack;
+37   address          _spill_stack_base;
+38   address          _spill_stack_limit;
+39 #endif // ASSERT
+40 
+41   void pd_initialize() {
+42     _anchor.clear();
+43   }
+44 
+45   frame pd_last_frame();
+46 
+47  public:
+48   // Mutators are highly dangerous....
+49   intptr_t* last_Java_fp()                       { return _anchor.last_Java_fp(); }
+50   void  set_last_Java_fp(intptr_t* fp)           { _anchor.set_last_Java_fp(fp);   }
+51 
+52   void set_base_of_stack_pointer(intptr_t* base_sp) {
+53   }
+54 
+55   static ByteSize last_Java_fp_offset()          {
+56     return byte_offset_of(JavaThread, _anchor) + JavaFrameAnchor::last_Java_fp_offset();
+57   }
+58 
+59   intptr_t* base_of_stack_pointer() {
+60     return NULL;
+61   }
+62   void record_base_of_stack_pointer() {
+63   }
+64 
+65   bool pd_get_top_frame_for_signal_handler(frame* fr_addr, void* ucontext,
+66     bool isInJava);
+67 
+68   bool pd_get_top_frame_for_profiling(frame* fr_addr, void* ucontext, bool isInJava);
+69 private:
+70   bool pd_get_top_frame(frame* fr_addr, void* ucontext, bool isInJava);
+71 public:
+72 
+73   static Thread *aarch64_get_thread_helper() {
+74      return Thread::current();
+75   }
+76 
+77   // These routines are only used on cpu architectures that
+78   // have separate register stacks (Itanium).
+79   static bool register_stack_overflow() { return false; }
+80   static void enable_register_stack_guard() {}
+81   static void disable_register_stack_guard() {}
+82 
+83 #endif // OS_CPU_WINDOWS_AARCH64_THREAD_WINDOWS_AARCH64_HPP
+    </pre>
+  </body>
+</html>

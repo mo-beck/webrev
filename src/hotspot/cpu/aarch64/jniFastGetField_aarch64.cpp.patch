@@ -1,0 +1,29 @@
+diff a/src/hotspot/cpu/aarch64/jniFastGetField_aarch64.cpp b/src/hotspot/cpu/aarch64/jniFastGetField_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/jniFastGetField_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/jniFastGetField_aarch64.cpp
+@@ -71,11 +71,11 @@
+   MacroAssembler* masm = new MacroAssembler(&cbuf);
+   address fast_entry = __ pc();
+ 
+   Label slow;
+ 
+-  unsigned long offset;
++  uint64_t offset;
+   __ adrp(rcounter_addr,
+           SafepointSynchronize::safepoint_counter_addr(), offset);
+   Address safepoint_counter_addr(rcounter_addr, offset);
+   __ ldrw(rcounter, safepoint_counter_addr);
+   __ tbnz(rcounter, 0, slow);
+@@ -97,11 +97,11 @@
+   }
+ 
+   if (JvmtiExport::can_post_field_access()) {
+     // Check to see if a field access watch has been set before we
+     // take the fast path.
+-    unsigned long offset2;
++    uint64_t offset2;
+     __ adrp(result,
+             ExternalAddress((address) JvmtiExport::get_field_access_count_addr()),
+             offset2);
+     __ ldrw(result, Address(result, offset2));
+     __ cbnzw(result, slow);

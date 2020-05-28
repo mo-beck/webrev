@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames src\jdk.hotspot.agent\windows\native\libsaproc\sawindbg.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\..\style.css" />
+    <script type="text/javascript" src="..\..\..\..\..\navigation.js"></script>
+  </head>
+<body onkeypress="keypress(event);">
+<a name="0"></a>
+<hr />
+<pre>  1 /*
+  2  * Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 // Disable CRT security warning against strcpy/strcat
+ 26 #pragma warning(disable: 4996)
+ 27 
+ 28 // this is source code windbg based SA debugger agent to debug
+ 29 // Dr. Watson dump files and process snapshots.
+ 30 
+ 31 #include &quot;sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal.h&quot;
+ 32 
+ 33 #ifdef _M_IX86
+ 34   #include &quot;sun_jvm_hotspot_debugger_x86_X86ThreadContext.h&quot;
+ 35   #define NPRGREG sun_jvm_hotspot_debugger_x86_X86ThreadContext_NPRGREG
+ 36 #elif _M_AMD64
+ 37   #include &quot;sun_jvm_hotspot_debugger_amd64_AMD64ThreadContext.h&quot;
+ 38   #define NPRGREG sun_jvm_hotspot_debugger_amd64_AMD64ThreadContext_NPRGREG
+<a name="1" id="anc1"></a><span class="line-added"> 39 #elif _M_ARM64</span>
+<span class="line-added"> 40   #include &quot;sun_jvm_hotspot_debugger_aarch64_AARCH64ThreadContext.h&quot;</span>
+<span class="line-added"> 41   #define NPRGREG sun_jvm_hotspot_debugger_aarch64_AARCH64ThreadContext_NPRGREG</span>
+ 42 #else
+ 43   #error &quot;SA windbg back-end is not supported for your cpu!&quot;
+ 44 #endif
+ 45 
+ 46 #include &lt;limits.h&gt;
+ 47 #include &lt;windows.h&gt;
+ 48 
+ 49 #define DEBUG_NO_IMPLEMENTATION
+ 50 #include &lt;dbgeng.h&gt;
+ 51 #include &lt;dbghelp.h&gt;
+ 52 
+ 53 // simple template to manage array delete across early (error) returns
+ 54 
+ 55 template &lt;class T&gt;
+ 56 class AutoArrayPtr {
+ 57       T* m_ptr;
+ 58    public:
+ 59       AutoArrayPtr(T* ptr) : m_ptr(ptr) {
+ 60       }
+ 61 
+ 62       ~AutoArrayPtr() {
+ 63          delete [] m_ptr;
+ 64       }
+ 65 
+ 66       T* asPtr() {
+ 67          return m_ptr;
+ 68       }
+ 69 };
+ 70 
+ 71 class AutoJavaString {
+ 72       JNIEnv* m_env;
+ 73       jstring m_str;
+ 74       const char* m_buf;
+ 75 
+ 76    public:
+ 77       AutoJavaString(JNIEnv* env, jstring str, const char* buf)
+ 78         : m_env(env), m_str(str), m_buf(buf) {
+ 79       }
+ 80 
+ 81       ~AutoJavaString() {
+ 82          m_env-&gt;ReleaseStringUTFChars(m_str, m_buf);
+ 83       }
+ 84 
+ 85       operator const char* () {
+ 86          return m_buf;
+ 87       }
+ 88 };
+ 89 
+ 90 // field and method IDs we want here
+ 91 
+ 92 static jfieldID imagePath_ID                    = 0;
+ 93 static jfieldID symbolPath_ID                   = 0;
+ 94 static jfieldID ptrIDebugClient_ID              = 0;
+ 95 static jfieldID ptrIDebugControl_ID             = 0;
+ 96 static jfieldID ptrIDebugDataSpaces_ID          = 0;
+ 97 static jfieldID ptrIDebugOutputCallbacks_ID     = 0;
+ 98 static jfieldID ptrIDebugAdvanced_ID            = 0;
+ 99 static jfieldID ptrIDebugSymbols_ID             = 0;
+100 static jfieldID ptrIDebugSystemObjects_ID       = 0;
+101 
+102 static jmethodID addLoadObject_ID               = 0;
+103 static jmethodID addThread_ID                   = 0;
+104 static jmethodID createClosestSymbol_ID         = 0;
+105 static jmethodID setThreadIntegerRegisterSet_ID = 0;
+106 
+107 #define CHECK_EXCEPTION_(value) if(env-&gt;ExceptionOccurred()) { return value; }
+108 #define CHECK_EXCEPTION if(env-&gt;ExceptionOccurred()) { return;}
+109 
+110 #define THROW_NEW_DEBUGGER_EXCEPTION_(str, value) { \
+111                           throwNewDebuggerException(env, str); return value; }
+112 
+113 #define THROW_NEW_DEBUGGER_EXCEPTION(str) { throwNewDebuggerException(env, str); \
+114  return;}
+115 
+116 static void throwNewDebuggerException(JNIEnv* env, const char* errMsg) {
+117   jclass clazz = env-&gt;FindClass(&quot;sun/jvm/hotspot/debugger/DebuggerException&quot;);
+118   CHECK_EXCEPTION;
+119   env-&gt;ThrowNew(clazz, errMsg);
+120 }
+121 
+122 /*
+123  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+124  * Method:    initIDs
+125  * Signature: ()V
+126  */
+127 JNIEXPORT void JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_initIDs
+128   (JNIEnv *env, jclass clazz) {
+129   imagePath_ID = env-&gt;GetStaticFieldID(clazz, &quot;imagePath&quot;, &quot;Ljava/lang/String;&quot;);
+130   CHECK_EXCEPTION;
+131 
+132   symbolPath_ID = env-&gt;GetStaticFieldID(clazz, &quot;symbolPath&quot;, &quot;Ljava/lang/String;&quot;);
+133   CHECK_EXCEPTION;
+134 
+135   ptrIDebugClient_ID = env-&gt;GetFieldID(clazz, &quot;ptrIDebugClient&quot;, &quot;J&quot;);
+136   CHECK_EXCEPTION;
+137 
+138   ptrIDebugControl_ID = env-&gt;GetFieldID(clazz, &quot;ptrIDebugControl&quot;, &quot;J&quot;);
+139   CHECK_EXCEPTION;
+140 
+141   ptrIDebugDataSpaces_ID = env-&gt;GetFieldID(clazz, &quot;ptrIDebugDataSpaces&quot;, &quot;J&quot;);
+142   CHECK_EXCEPTION;
+143 
+144   ptrIDebugOutputCallbacks_ID = env-&gt;GetFieldID(clazz,
+145                                             &quot;ptrIDebugOutputCallbacks&quot;, &quot;J&quot;);
+146   CHECK_EXCEPTION;
+147 
+148   ptrIDebugAdvanced_ID = env-&gt;GetFieldID(clazz, &quot;ptrIDebugAdvanced&quot;, &quot;J&quot;);
+149   CHECK_EXCEPTION;
+150 
+151   ptrIDebugSymbols_ID = env-&gt;GetFieldID(clazz,
+152                                          &quot;ptrIDebugSymbols&quot;, &quot;J&quot;);
+153   CHECK_EXCEPTION;
+154 
+155   ptrIDebugSystemObjects_ID = env-&gt;GetFieldID(clazz,
+156                                          &quot;ptrIDebugSystemObjects&quot;, &quot;J&quot;);
+157   CHECK_EXCEPTION;
+158 
+159   addLoadObject_ID = env-&gt;GetMethodID(clazz, &quot;addLoadObject&quot;,
+160                                          &quot;(Ljava/lang/String;JJ)V&quot;);
+161   CHECK_EXCEPTION;
+162 
+163   addThread_ID = env-&gt;GetMethodID(clazz, &quot;addThread&quot;, &quot;(J)V&quot;);
+164   CHECK_EXCEPTION;
+165 
+166   createClosestSymbol_ID = env-&gt;GetMethodID(clazz, &quot;createClosestSymbol&quot;,
+167     &quot;(Ljava/lang/String;J)Lsun/jvm/hotspot/debugger/cdbg/ClosestSymbol;&quot;);
+168   CHECK_EXCEPTION;
+169 
+170   setThreadIntegerRegisterSet_ID = env-&gt;GetMethodID(clazz,
+171                                          &quot;setThreadIntegerRegisterSet&quot;, &quot;(J[J)V&quot;);
+172   CHECK_EXCEPTION;
+173 
+174 }
+175 
+176 // class for IDebugOutputCallbacks
+177 
+178 class SAOutputCallbacks : public IDebugOutputCallbacks {
+179    LONG  m_refCount;
+180    char* m_msgBuffer;
+181 
+182    public:
+183       SAOutputCallbacks() : m_refCount(0), m_msgBuffer(0) {
+184       }
+185 
+186       ~SAOutputCallbacks() {
+187          clearBuffer();
+188       }
+189 
+190       const char* getBuffer() const {
+191          return m_msgBuffer;
+192       }
+193 
+194       void clearBuffer() {
+195          if (m_msgBuffer) {
+196             free(m_msgBuffer);
+197             m_msgBuffer = 0;
+198          }
+199       }
+200 
+201       STDMETHOD_(ULONG, AddRef)(THIS);
+202       STDMETHOD_(ULONG, Release)(THIS);
+203       STDMETHOD(QueryInterface)(THIS_
+204                                 IN REFIID interfaceId,
+205                                 OUT PVOID* ppInterface);
+206       STDMETHOD(Output)(THIS_
+207                         IN ULONG mask,
+208                         IN PCSTR msg);
+209 };
+210 
+211 STDMETHODIMP_(ULONG) SAOutputCallbacks::AddRef(THIS) {
+212    InterlockedIncrement(&amp;m_refCount);
+213    return m_refCount;
+214 }
+215 
+216 STDMETHODIMP_(ULONG) SAOutputCallbacks::Release(THIS) {
+217    LONG retVal;
+218    InterlockedDecrement(&amp;m_refCount);
+219    retVal = m_refCount;
+220    if (retVal == 0) {
+221       delete this;
+222    }
+223    return retVal;
+224 }
+225 
+226 STDMETHODIMP SAOutputCallbacks::QueryInterface(THIS_
+227                                           IN REFIID interfaceId,
+228                                           OUT PVOID* ppInterface) {
+229    *ppInterface = 0;
+230    HRESULT res = E_NOINTERFACE;
+231    if (TRUE == IsEqualIID(interfaceId, __uuidof(IUnknown)) ||
+232        TRUE == IsEqualIID(interfaceId, __uuidof(IDebugOutputCallbacks))) {
+233       *ppInterface = (IDebugOutputCallbacks*) this;
+234       AddRef();
+235       res = S_OK;
+236    }
+237    return res;
+238 }
+239 
+240 STDMETHODIMP SAOutputCallbacks::Output(THIS_
+241                                        IN ULONG mask,
+242                                        IN PCSTR msg) {
+243    int len = (int) (strlen(msg) + 1);
+244    if (m_msgBuffer == 0) {
+245       m_msgBuffer = (char*) malloc(len);
+246       if (m_msgBuffer == 0) {
+247          fprintf(stderr, &quot;out of memory debugger output!\n&quot;);
+248          return S_FALSE;
+249       }
+250       strcpy(m_msgBuffer, msg);
+251    } else {
+252       m_msgBuffer = (char*) realloc(m_msgBuffer, len + strlen(m_msgBuffer));
+253       if (m_msgBuffer == 0) {
+254          fprintf(stderr, &quot;out of memory debugger output!\n&quot;);
+255          return S_FALSE;
+256       }
+257       strcat(m_msgBuffer, msg);
+258    }
+259    return S_OK;
+260 }
+261 
+262 static bool getWindbgInterfaces(JNIEnv* env, jobject obj) {
+263   // get windbg interfaces ..
+264 
+265   IDebugClient* ptrIDebugClient = 0;
+266   if (DebugCreate(__uuidof(IDebugClient), (PVOID*) &amp;ptrIDebugClient) != S_OK) {
+267      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: not able to create IDebugClient object!&quot;, false);
+268   }
+269   env-&gt;SetLongField(obj, ptrIDebugClient_ID, (jlong) ptrIDebugClient);
+270 
+271   IDebugControl* ptrIDebugControl = 0;
+272   if (ptrIDebugClient-&gt;QueryInterface(__uuidof(IDebugControl), (PVOID*) &amp;ptrIDebugControl)
+273      != S_OK) {
+274      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: not able to get IDebugControl&quot;, false);
+275   }
+276   env-&gt;SetLongField(obj, ptrIDebugControl_ID, (jlong) ptrIDebugControl);
+277 
+278   IDebugDataSpaces* ptrIDebugDataSpaces = 0;
+279   if (ptrIDebugClient-&gt;QueryInterface(__uuidof(IDebugDataSpaces), (PVOID*) &amp;ptrIDebugDataSpaces)
+280      != S_OK) {
+281      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: not able to get IDebugDataSpaces object!&quot;, false);
+282   }
+283   env-&gt;SetLongField(obj, ptrIDebugDataSpaces_ID, (jlong) ptrIDebugDataSpaces);
+284 
+285   SAOutputCallbacks* ptrIDebugOutputCallbacks = new SAOutputCallbacks();
+286   ptrIDebugOutputCallbacks-&gt;AddRef();
+287   env-&gt;SetLongField(obj, ptrIDebugOutputCallbacks_ID, (jlong) ptrIDebugOutputCallbacks);
+288   CHECK_EXCEPTION_(false);
+289 
+290   IDebugAdvanced* ptrIDebugAdvanced = 0;
+291   if (ptrIDebugClient-&gt;QueryInterface(__uuidof(IDebugAdvanced), (PVOID*) &amp;ptrIDebugAdvanced)
+292      != S_OK) {
+293      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: not able to get IDebugAdvanced object!&quot;, false);
+294   }
+295   env-&gt;SetLongField(obj, ptrIDebugAdvanced_ID, (jlong) ptrIDebugAdvanced);
+296 
+297   IDebugSymbols* ptrIDebugSymbols = 0;
+298   if (ptrIDebugClient-&gt;QueryInterface(__uuidof(IDebugSymbols), (PVOID*) &amp;ptrIDebugSymbols)
+299      != S_OK) {
+300      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: not able to get IDebugSymbols object!&quot;, false);
+301   }
+302   env-&gt;SetLongField(obj, ptrIDebugSymbols_ID, (jlong) ptrIDebugSymbols);
+303 
+304   IDebugSystemObjects* ptrIDebugSystemObjects = 0;
+305   if (ptrIDebugClient-&gt;QueryInterface(__uuidof(IDebugSystemObjects), (PVOID*) &amp;ptrIDebugSystemObjects)
+306      != S_OK) {
+307      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: not able to get IDebugSystemObjects object!&quot;, false);
+308   }
+309   env-&gt;SetLongField(obj, ptrIDebugSystemObjects_ID, (jlong) ptrIDebugSystemObjects);
+310 
+311   return true;
+312 }
+313 
+314 static bool setImageAndSymbolPath(JNIEnv* env, jobject obj) {
+315   jboolean isCopy;
+316   jclass clazz = env-&gt;GetObjectClass(obj);
+317   CHECK_EXCEPTION_(false);
+318   jstring path;
+319   const char* buf;
+320 
+321   path = (jstring) env-&gt;GetStaticObjectField(clazz, imagePath_ID);
+322   CHECK_EXCEPTION_(false);
+323   if (path == NULL) {
+324      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: not able to get imagePath field ID!&quot;, false);
+325   }
+326   buf = env-&gt;GetStringUTFChars(path, &amp;isCopy);
+327   CHECK_EXCEPTION_(false);
+328   AutoJavaString imagePath(env, path, buf);
+329 
+330   path = (jstring) env-&gt;GetStaticObjectField(clazz, symbolPath_ID);
+331   CHECK_EXCEPTION_(false);
+332   if (path == NULL) {
+333      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: not able to get symbolPath field ID!&quot;, false);
+334   }
+335   buf = env-&gt;GetStringUTFChars(path, &amp;isCopy);
+336   CHECK_EXCEPTION_(false);
+337   AutoJavaString symbolPath(env, path, buf);
+338 
+339   IDebugSymbols* ptrIDebugSymbols = (IDebugSymbols*) env-&gt;GetLongField(obj,
+340                                                       ptrIDebugSymbols_ID);
+341   CHECK_EXCEPTION_(false);
+342 
+343   ptrIDebugSymbols-&gt;SetImagePath(imagePath);
+344   ptrIDebugSymbols-&gt;SetSymbolPath(symbolPath);
+345   return true;
+346 }
+347 
+348 static bool openDumpFile(JNIEnv* env, jobject obj, jstring coreFileName) {
+349   // open the dump file
+350   jboolean isCopy;
+351   const char* buf = env-&gt;GetStringUTFChars(coreFileName, &amp;isCopy);
+352   CHECK_EXCEPTION_(false);
+353   AutoJavaString coreFile(env, coreFileName, buf);
+354   if (setImageAndSymbolPath(env, obj) == false) {
+355      return false;
+356   }
+357 
+358   IDebugClient* ptrIDebugClient = (IDebugClient*) env-&gt;GetLongField(obj,
+359                                                       ptrIDebugClient_ID);
+360   CHECK_EXCEPTION_(false);
+361   if (ptrIDebugClient-&gt;OpenDumpFile(coreFile) != S_OK) {
+362      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: OpenDumpFile failed!&quot;, false);
+363   }
+364 
+365   IDebugControl* ptrIDebugControl = (IDebugControl*) env-&gt;GetLongField(obj,
+366                                                      ptrIDebugControl_ID);
+367   CHECK_EXCEPTION_(false);
+368   if (ptrIDebugControl-&gt;WaitForEvent(DEBUG_WAIT_DEFAULT, INFINITE) != S_OK) {
+369      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: WaitForEvent failed!&quot;, false);
+370   }
+371 
+372   return true;
+373 }
+374 
+375 
+376 static bool attachToProcess(JNIEnv* env, jobject obj, jint pid) {
+377   if (setImageAndSymbolPath(env, obj) == false) {
+378      return false;
+379   }
+380   IDebugClient* ptrIDebugClient = (IDebugClient*) env-&gt;GetLongField(obj,
+381                                                       ptrIDebugClient_ID);
+382   CHECK_EXCEPTION_(false);
+383 
+384   /***********************************************************************************
+385 
+386      We are attaching to a process in &#39;read-only&#39; mode. i.e., we do not want to
+387      put breakpoints, suspend/resume threads etc. For read-only JDI and HSDB kind of
+388      usage this should suffice.
+389 
+390      Please refer to DEBUG_ATTACH_NONINVASIVE mode source comments from dbgeng.h.
+391      In this mode, debug engine does not call DebugActiveProrcess. i.e., we are not
+392      actually debugging at all. We can safely &#39;detach&#39; from the process anytime
+393      we want and debuggee process is left as is on all Windows variants.
+394 
+395      This also makes JDI-on-SA installation/usage simpler because with this we would
+396      not need a tool like ServiceInstaller from http://www.kcmultimedia.com/smaster.
+397 
+398   ***********************************************************************************/
+399 
+400 
+401   if (ptrIDebugClient-&gt;AttachProcess(0, pid, DEBUG_ATTACH_NONINVASIVE) != S_OK) {
+402      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: AttachProcess failed!&quot;, false);
+403   }
+404 
+405   IDebugControl* ptrIDebugControl = (IDebugControl*) env-&gt;GetLongField(obj,
+406                                                      ptrIDebugControl_ID);
+407   CHECK_EXCEPTION_(false);
+408   if (ptrIDebugControl-&gt;WaitForEvent(DEBUG_WAIT_DEFAULT, INFINITE) != S_OK) {
+409      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: WaitForEvent failed!&quot;, false);
+410   }
+411 
+412   return true;
+413 }
+414 
+415 
+416 static bool addLoadObjects(JNIEnv* env, jobject obj) {
+417   IDebugSymbols* ptrIDebugSymbols = (IDebugSymbols*) env-&gt;GetLongField(obj,
+418                                                       ptrIDebugSymbols_ID);
+419   CHECK_EXCEPTION_(false);
+420   ULONG loaded = 0, unloaded = 0;
+421   if (ptrIDebugSymbols-&gt;GetNumberModules(&amp;loaded, &amp;unloaded) != S_OK) {
+422      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: GetNumberModules failed!&quot;, false);
+423   }
+424 
+425   AutoArrayPtr&lt;DEBUG_MODULE_PARAMETERS&gt; params(new DEBUG_MODULE_PARAMETERS[loaded]);
+426 
+427   if (params.asPtr() == 0) {
+428       THROW_NEW_DEBUGGER_EXCEPTION_(&quot;out of memory to allocate debug module params!&quot;, false);
+429   }
+430 
+431   if (ptrIDebugSymbols-&gt;GetModuleParameters(loaded, 0, NULL, params.asPtr()) != S_OK) {
+432      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: GetModuleParameters failed!&quot;, false);
+433   }
+434 
+435   for (int u = 0; u &lt; (int)loaded; u++) {
+436      TCHAR imageName[MAX_PATH];
+437      if (ptrIDebugSymbols-&gt;GetModuleNames(DEBUG_ANY_ID, params.asPtr()[u].Base,
+438                                       imageName, MAX_PATH, NULL, NULL,
+439                                       0, NULL, NULL, 0, NULL) != S_OK) {
+440         THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: GetModuleNames failed!&quot;, false);
+441      }
+442 
+443      jstring strName = env-&gt;NewStringUTF(imageName);
+444      CHECK_EXCEPTION_(false);
+445      env-&gt;CallVoidMethod(obj, addLoadObject_ID, strName, (jlong) params.asPtr()[u].Size,
+446                                (jlong) params.asPtr()[u].Base);
+447      CHECK_EXCEPTION_(false);
+448   }
+449 
+450   return true;
+451 }
+452 
+453 static bool addThreads(JNIEnv* env, jobject obj) {
+454   IDebugSystemObjects* ptrIDebugSystemObjects = (IDebugSystemObjects*) env-&gt;GetLongField(obj,
+455                                                       ptrIDebugSystemObjects_ID);
+456   CHECK_EXCEPTION_(false);
+457 
+458   ULONG numThreads = 0;
+459   if (ptrIDebugSystemObjects-&gt;GetNumberThreads(&amp;numThreads) != S_OK) {
+460      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: GetNumberThreads failed!&quot;, false);
+461   }
+462 
+463   AutoArrayPtr&lt;ULONG&gt; ptrSysThreadIds = new ULONG[numThreads];
+464 
+465   if (ptrSysThreadIds.asPtr() == 0) {
+466      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;out of memory to allocate thread ids!&quot;, false);
+467   }
+468 
+469   AutoArrayPtr&lt;ULONG&gt; ptrThreadIds = new ULONG[numThreads];
+470 
+471   if (ptrThreadIds.asPtr() == 0) {
+472      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;out of memory to allocate thread ids!&quot;, false);
+473   }
+474 
+475   if (ptrIDebugSystemObjects-&gt;GetThreadIdsByIndex(0, numThreads,
+476                                       ptrThreadIds.asPtr(), ptrSysThreadIds.asPtr()) != S_OK) {
+477      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: GetThreadIdsByIndex failed!&quot;, false);
+478   }
+479 
+480 
+481   IDebugAdvanced* ptrIDebugAdvanced = (IDebugAdvanced*) env-&gt;GetLongField(obj,
+482                                                       ptrIDebugAdvanced_ID);
+483   CHECK_EXCEPTION_(false);
+484 
+485   // for each thread, get register context and save it.
+486   for (ULONG t = 0; t &lt; numThreads; t++) {
+487      if (ptrIDebugSystemObjects-&gt;SetCurrentThreadId(ptrThreadIds.asPtr()[t]) != S_OK) {
+488         THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: SetCurrentThread failed!&quot;, false);
+489      }
+490 
+491      jlongArray regs = env-&gt;NewLongArray(NPRGREG);
+492      CHECK_EXCEPTION_(false);
+493 
+494      jboolean isCopy = JNI_FALSE;
+495      jlong* ptrRegs = env-&gt;GetLongArrayElements(regs, &amp;isCopy);
+496      CHECK_EXCEPTION_(false);
+497 
+498      // copy register values from the CONTEXT struct
+499      CONTEXT context;
+500      memset(&amp;context, 0, sizeof(CONTEXT));
+501 
+502 #undef REG_INDEX
+503 #ifdef _M_IX86
+504      #define REG_INDEX(x) sun_jvm_hotspot_debugger_x86_X86ThreadContext_##x
+505 
+506      context.ContextFlags = CONTEXT_FULL | CONTEXT_DEBUG_REGISTERS;
+507      ptrIDebugAdvanced-&gt;GetThreadContext(&amp;context, sizeof(CONTEXT));
+508 
+509      ptrRegs[REG_INDEX(GS)]  = context.SegGs;
+510      ptrRegs[REG_INDEX(FS)]  = context.SegFs;
+511      ptrRegs[REG_INDEX(ES)]  = context.SegEs;
+512      ptrRegs[REG_INDEX(DS)]  = context.SegDs;
+513 
+514      ptrRegs[REG_INDEX(EDI)] = context.Edi;
+515      ptrRegs[REG_INDEX(ESI)] = context.Esi;
+516      ptrRegs[REG_INDEX(EBX)] = context.Ebx;
+517      ptrRegs[REG_INDEX(EDX)] = context.Edx;
+518      ptrRegs[REG_INDEX(ECX)] = context.Ecx;
+519      ptrRegs[REG_INDEX(EAX)] = context.Eax;
+520 
+521      ptrRegs[REG_INDEX(FP)] = context.Ebp;
+522      ptrRegs[REG_INDEX(PC)] = context.Eip;
+523      ptrRegs[REG_INDEX(CS)]  = context.SegCs;
+524      ptrRegs[REG_INDEX(EFL)] = context.EFlags;
+525      ptrRegs[REG_INDEX(SP)] = context.Esp;
+526      ptrRegs[REG_INDEX(SS)]  = context.SegSs;
+527 
+528      ptrRegs[REG_INDEX(DR0)] = context.Dr0;
+529      ptrRegs[REG_INDEX(DR1)] = context.Dr1;
+530      ptrRegs[REG_INDEX(DR2)] = context.Dr2;
+531      ptrRegs[REG_INDEX(DR3)] = context.Dr3;
+532      ptrRegs[REG_INDEX(DR6)] = context.Dr6;
+533      ptrRegs[REG_INDEX(DR7)] = context.Dr7;
+534 
+535 #elif _M_AMD64
+536      #define REG_INDEX(x) sun_jvm_hotspot_debugger_amd64_AMD64ThreadContext_##x
+537 
+538      context.ContextFlags = CONTEXT_FULL | CONTEXT_DEBUG_REGISTERS;
+539      ptrIDebugAdvanced-&gt;GetThreadContext(&amp;context, sizeof(CONTEXT));
+540 
+541      // Segment Registers and processor flags
+542      ptrRegs[REG_INDEX(CS)]  = context.SegCs;
+543      ptrRegs[REG_INDEX(DS)]  = context.SegDs;
+544      ptrRegs[REG_INDEX(ES)]  = context.SegEs;
+545      ptrRegs[REG_INDEX(FS)]  = context.SegFs;
+546      ptrRegs[REG_INDEX(GS)]  = context.SegGs;
+547      ptrRegs[REG_INDEX(SS)]  = context.SegSs;
+548      ptrRegs[REG_INDEX(RFL)] = context.EFlags;
+549 
+550      // Integer registers
+551      ptrRegs[REG_INDEX(RDI)] = context.Rdi;
+552      ptrRegs[REG_INDEX(RSI)] = context.Rsi;
+553      ptrRegs[REG_INDEX(RAX)] = context.Rax;
+554      ptrRegs[REG_INDEX(RCX)] = context.Rcx;
+555      ptrRegs[REG_INDEX(RDX)] = context.Rdx;
+556      ptrRegs[REG_INDEX(RBX)] = context.Rbx;
+557      ptrRegs[REG_INDEX(RBP)] = context.Rbp;
+558      ptrRegs[REG_INDEX(RSP)] = context.Rsp;
+559 
+560      ptrRegs[REG_INDEX(R8)]  = context.R8;
+561      ptrRegs[REG_INDEX(R9)]  = context.R9;
+562      ptrRegs[REG_INDEX(R10)] = context.R10;
+563      ptrRegs[REG_INDEX(R11)] = context.R11;
+564      ptrRegs[REG_INDEX(R12)] = context.R12;
+565      ptrRegs[REG_INDEX(R13)] = context.R13;
+566      ptrRegs[REG_INDEX(R14)] = context.R14;
+567      ptrRegs[REG_INDEX(R15)] = context.R15;
+568 
+569      // Program counter
+570      ptrRegs[REG_INDEX(RIP)] = context.Rip;
+571 #endif
+572 
+573      env-&gt;ReleaseLongArrayElements(regs, ptrRegs, JNI_COMMIT);
+574      CHECK_EXCEPTION_(false);
+575 
+576      env-&gt;CallVoidMethod(obj, setThreadIntegerRegisterSet_ID,
+577                         (jlong) ptrThreadIds.asPtr()[t], regs);
+578      CHECK_EXCEPTION_(false);
+579 
+580      ULONG sysId;
+581      if (ptrIDebugSystemObjects-&gt;GetCurrentThreadSystemId(&amp;sysId) != S_OK) {
+582         THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: GetCurrentThreadSystemId failed!&quot;, false);
+583      }
+584 
+585      env-&gt;CallVoidMethod(obj, addThread_ID, (jlong) sysId);
+586      CHECK_EXCEPTION_(false);
+587   }
+588 
+589   return true;
+590 }
+591 
+592 /*
+593  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+594  * Method:    attach0
+595  * Signature: (Ljava/lang/String;Ljava/lang/String;)V
+596  */
+597 JNIEXPORT void JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_attach0__Ljava_lang_String_2Ljava_lang_String_2
+598   (JNIEnv *env, jobject obj, jstring execName, jstring coreFileName) {
+599 
+600   if (getWindbgInterfaces(env, obj) == false) {
+601      return;
+602   }
+603 
+604   if (openDumpFile(env, obj, coreFileName) == false) {
+605      return;
+606   }
+607 
+608   if (addLoadObjects(env, obj) == false) {
+609      return;
+610   }
+611 
+612   if (addThreads(env, obj) == false) {
+613      return;
+614   }
+615 }
+616 
+617 /*
+618  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+619  * Method:    attach0
+620  * Signature: (I)V
+621  */
+622 JNIEXPORT void JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_attach0__I
+623   (JNIEnv *env, jobject obj, jint pid) {
+624 
+625   if (getWindbgInterfaces(env, obj) == false) {
+626      return;
+627   }
+628 
+629   if (attachToProcess(env, obj, pid) == false) {
+630      return;
+631   }
+632 
+633   if (addLoadObjects(env, obj) == false) {
+634      return;
+635   }
+636 
+637   if (addThreads(env, obj) == false) {
+638      return;
+639   }
+640 }
+641 
+642 
+643 static bool releaseWindbgInterfaces(JNIEnv* env, jobject obj) {
+644   IDebugDataSpaces* ptrIDebugDataSpaces = (IDebugDataSpaces*) env-&gt;GetLongField(obj,
+645                                                       ptrIDebugDataSpaces_ID);
+646   CHECK_EXCEPTION_(false);
+647   if (ptrIDebugDataSpaces != 0) {
+648      ptrIDebugDataSpaces-&gt;Release();
+649   }
+650 
+651   IDebugOutputCallbacks* ptrIDebugOutputCallbacks = (IDebugOutputCallbacks*)
+652                           env-&gt;GetLongField(obj, ptrIDebugOutputCallbacks_ID);
+653   CHECK_EXCEPTION_(false);
+654   if (ptrIDebugOutputCallbacks != 0) {
+655      ptrIDebugOutputCallbacks-&gt;Release();
+656   }
+657 
+658   IDebugAdvanced* ptrIDebugAdvanced = (IDebugAdvanced*) env-&gt;GetLongField(obj,
+659                                                       ptrIDebugAdvanced_ID);
+660   CHECK_EXCEPTION_(false);
+661 
+662   if (ptrIDebugAdvanced != 0) {
+663      ptrIDebugAdvanced-&gt;Release();
+664   }
+665 
+666   IDebugSymbols* ptrIDebugSymbols = (IDebugSymbols*) env-&gt;GetLongField(obj,
+667                                                       ptrIDebugSymbols_ID);
+668   CHECK_EXCEPTION_(false);
+669   if (ptrIDebugSymbols != 0) {
+670      ptrIDebugSymbols-&gt;Release();
+671   }
+672 
+673   IDebugSystemObjects* ptrIDebugSystemObjects = (IDebugSystemObjects*) env-&gt;GetLongField(obj,
+674                                                       ptrIDebugSystemObjects_ID);
+675   CHECK_EXCEPTION_(false);
+676   if (ptrIDebugSystemObjects != 0) {
+677      ptrIDebugSystemObjects-&gt;Release();
+678   }
+679 
+680   IDebugControl* ptrIDebugControl = (IDebugControl*) env-&gt;GetLongField(obj,
+681                                                      ptrIDebugControl_ID);
+682   CHECK_EXCEPTION_(false);
+683   if (ptrIDebugControl != 0) {
+684      ptrIDebugControl-&gt;Release();
+685   }
+686 
+687   IDebugClient* ptrIDebugClient = (IDebugClient*) env-&gt;GetLongField(obj,
+688                                                       ptrIDebugClient_ID);
+689   CHECK_EXCEPTION_(false);
+690   if (ptrIDebugClient != 0) {
+691      ptrIDebugClient-&gt;Release();
+692   }
+693 
+694   return true;
+695 }
+696 
+697 /*
+698  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+699  * Method:    detach0
+700  * Signature: ()V
+701  */
+702 JNIEXPORT void JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_detach0
+703   (JNIEnv *env, jobject obj) {
+704   IDebugClient* ptrIDebugClient = (IDebugClient*) env-&gt;GetLongField(obj,
+705                                                       ptrIDebugClient_ID);
+706   CHECK_EXCEPTION;
+707   ptrIDebugClient-&gt;DetachProcesses();
+708   releaseWindbgInterfaces(env, obj);
+709 }
+710 
+711 
+712 /*
+713  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+714  * Method:    readBytesFromProcess0
+715  * Signature: (JJ)[B
+716  */
+717 JNIEXPORT jbyteArray JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_readBytesFromProcess0
+718   (JNIEnv *env, jobject obj, jlong address, jlong numBytes) {
+719   jbyteArray byteArray = env-&gt;NewByteArray((long) numBytes);
+720   CHECK_EXCEPTION_(0);
+721 
+722   jboolean isCopy = JNI_FALSE;
+723   jbyte* bytePtr = env-&gt;GetByteArrayElements(byteArray, &amp;isCopy);
+724   CHECK_EXCEPTION_(0);
+725 
+726   IDebugDataSpaces* ptrIDebugDataSpaces = (IDebugDataSpaces*) env-&gt;GetLongField(obj,
+727                                                        ptrIDebugDataSpaces_ID);
+728   if (env-&gt;ExceptionOccurred()) {
+729      env-&gt;ReleaseByteArrayElements(byteArray, bytePtr, JNI_ABORT);
+730      return 0;
+731   }
+732 
+733   ULONG bytesRead;
+734   if (ptrIDebugDataSpaces-&gt;ReadVirtual((ULONG64) address, (PVOID) bytePtr,
+735                                   (ULONG)numBytes, &amp;bytesRead) != S_OK) {
+736      env-&gt;ReleaseByteArrayElements(byteArray, bytePtr, JNI_ABORT);
+737      throwNewDebuggerException(env, &quot;Windbg Error: ReadVirtual failed!&quot;);
+738      return 0;
+739   }
+740 
+741   if (bytesRead != numBytes) {
+742      env-&gt;ReleaseByteArrayElements(byteArray, bytePtr, JNI_ABORT);
+743      return 0;
+744   }
+745   env-&gt;ReleaseByteArrayElements(byteArray, bytePtr, 0);
+746 
+747   CHECK_EXCEPTION_(0);
+748 
+749   return byteArray;
+750 }
+751 
+752 /*
+753  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+754  * Method:    getThreadIdFromSysId0
+755  * Signature: (J)J
+756  */
+757 JNIEXPORT jlong JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_getThreadIdFromSysId0
+758   (JNIEnv *env, jobject obj, jlong sysId) {
+759   IDebugSystemObjects* ptrIDebugSystemObjects = (IDebugSystemObjects*) env-&gt;GetLongField(obj,
+760                                                     ptrIDebugSystemObjects_ID);
+761   CHECK_EXCEPTION_(0);
+762 
+763   ULONG id = 0;
+764   if (ptrIDebugSystemObjects-&gt;GetThreadIdBySystemId((ULONG)sysId, &amp;id) != S_OK) {
+765      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: GetThreadIdBySystemId failed!&quot;, 0);
+766   }
+767 
+768   return (jlong) id;
+769 }
+770 
+771 // manage COM &#39;auto&#39; pointers (to avoid multiple Release
+772 // calls at every early (exception) returns). Similar to AutoArrayPtr.
+773 
+774 template &lt;class T&gt;
+775 class AutoCOMPtr {
+776       T* m_ptr;
+777 
+778    public:
+779       AutoCOMPtr(T* ptr) : m_ptr(ptr) {
+780       }
+781 
+782       ~AutoCOMPtr() {
+783          if (m_ptr) {
+784             m_ptr-&gt;Release();
+785          }
+786       }
+787 
+788       T* operator-&gt;() {
+789          return m_ptr;
+790       }
+791 };
+792 
+793 /*
+794  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+795  * Method:    consoleExecuteCommand0
+796  * Signature: (Ljava/lang/String;)Ljava/lang/String;
+797  */
+798 JNIEXPORT jstring JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_consoleExecuteCommand0
+799   (JNIEnv *env, jobject obj, jstring cmd) {
+800   jboolean isCopy = JNI_FALSE;
+801   const char* buf = env-&gt;GetStringUTFChars(cmd, &amp;isCopy);
+802   CHECK_EXCEPTION_(0);
+803   AutoJavaString command(env, cmd, buf);
+804 
+805   IDebugClient* ptrIDebugClient = (IDebugClient*) env-&gt;GetLongField(obj, ptrIDebugClient_ID);
+806   CHECK_EXCEPTION_(0);
+807 
+808   IDebugClient*  tmpClientPtr = 0;
+809   if (ptrIDebugClient-&gt;CreateClient(&amp;tmpClientPtr) != S_OK) {
+810      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: CreateClient failed!&quot;, 0);
+811   }
+812   AutoCOMPtr&lt;IDebugClient&gt; tmpClient(tmpClientPtr);
+813 
+814   IDebugControl* tmpControlPtr = 0;
+815   if (tmpClient-&gt;QueryInterface(__uuidof(IDebugControl), (PVOID*) &amp;tmpControlPtr) != S_OK) {
+816      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: QueryInterface (IDebugControl) failed&quot;, 0);
+817   }
+818   AutoCOMPtr&lt;IDebugControl&gt; tmpControl(tmpControlPtr);
+819 
+820   SAOutputCallbacks* saOutputCallbacks = (SAOutputCallbacks*) env-&gt;GetLongField(obj,
+821                                                                    ptrIDebugOutputCallbacks_ID);
+822   CHECK_EXCEPTION_(0);
+823 
+824   saOutputCallbacks-&gt;clearBuffer();
+825 
+826   if (tmpClient-&gt;SetOutputCallbacks(saOutputCallbacks) != S_OK) {
+827      THROW_NEW_DEBUGGER_EXCEPTION_(&quot;Windbg Error: SetOutputCallbacks failed!&quot;, 0);
+828   }
+829 
+830   tmpControl-&gt;Execute(DEBUG_OUTPUT_VERBOSE, command, DEBUG_EXECUTE_DEFAULT);
+831 
+832   const char* output = saOutputCallbacks-&gt;getBuffer();
+833   if (output == 0) {
+834      output = &quot;&quot;;
+835   }
+836 
+837   jstring res = env-&gt;NewStringUTF(output);
+838   saOutputCallbacks-&gt;clearBuffer();
+839   return res;
+840 }
+841 
+842 /*
+843  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+844  * Method:    lookupByName0
+845  * Signature: (Ljava/lang/String;Ljava/lang/String;)J
+846  */
+847 
+848 JNIEXPORT jlong JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_lookupByName0
+849 (JNIEnv *env, jobject obj, jstring objName, jstring sym) {
+850   IDebugSymbols* ptrIDebugSymbols = (IDebugSymbols*) env-&gt;GetLongField(obj,
+851                                                       ptrIDebugSymbols_ID);
+852   CHECK_EXCEPTION_(0);
+853 
+854   jboolean isCopy;
+855   const char* buf = env-&gt;GetStringUTFChars(sym, &amp;isCopy);
+856   CHECK_EXCEPTION_(0);
+857   AutoJavaString name(env, sym, buf);
+858 
+859   ULONG64 offset = 0L;
+860   if (strstr(name, &quot;::&quot;) != 0) {
+861     ptrIDebugSymbols-&gt;AddSymbolOptions(SYMOPT_UNDNAME);
+862   } else {
+863     ptrIDebugSymbols-&gt;RemoveSymbolOptions(SYMOPT_UNDNAME);
+864   }
+865   if (ptrIDebugSymbols-&gt;GetOffsetByName(name, &amp;offset) != S_OK) {
+866     return (jlong) 0;
+867   }
+868   return (jlong) offset;
+869 }
+870 
+871 #define SYMBOL_BUFSIZE 512
+872 /*
+873  * Class:     sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal
+874  * Method:    lookupByAddress0
+875  * Signature: (J)Lsun/jvm/hotspot/debugger/cdbg/ClosestSymbol;
+876  */
+877 JNIEXPORT jobject JNICALL Java_sun_jvm_hotspot_debugger_windbg_WindbgDebuggerLocal_lookupByAddress0
+878 (JNIEnv *env, jobject obj, jlong address) {
+879   IDebugSymbols* ptrIDebugSymbols = (IDebugSymbols*) env-&gt;GetLongField(obj,
+880                                                       ptrIDebugSymbols_ID);
+881   CHECK_EXCEPTION_(0);
+882 
+883   ULONG64 disp = 0L;
+884   char buf[SYMBOL_BUFSIZE];
+885   memset(buf, 0, sizeof(buf));
+886 
+887   if (ptrIDebugSymbols-&gt;GetNameByOffset(address, buf, sizeof(buf),0,&amp;disp)
+888       != S_OK) {
+889     return 0;
+890   }
+891 
+892   jstring sym = env-&gt;NewStringUTF(buf);
+893   CHECK_EXCEPTION_(0);
+894   jobject res = env-&gt;CallObjectMethod(obj, createClosestSymbol_ID, sym, disp);
+895   CHECK_EXCEPTION_(0);
+896   return res;
+897 }
+<a name="2" id="anc2"></a><b style="font-size: large; color: red">--- EOF ---</b>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<input id="eof" value="2" type="hidden" />
+</body>
+</html>

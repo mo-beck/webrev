@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\runtime\Threads.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\debugger\windbg\WindbgDebuggerLocal.java.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\..\..\..\..\windows\native\libsaproc\sawindbg.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\runtime\Threads.java</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 package sun.jvm.hotspot.runtime;
+ 26 
+ 27 import java.util.*;
+ 28 
+ 29 import sun.jvm.hotspot.debugger.*;
+ 30 import sun.jvm.hotspot.types.*;
+ 31 import sun.jvm.hotspot.runtime.solaris_sparc.SolarisSPARCJavaThreadPDAccess;
+ 32 import sun.jvm.hotspot.runtime.solaris_x86.SolarisX86JavaThreadPDAccess;
+ 33 import sun.jvm.hotspot.runtime.solaris_amd64.SolarisAMD64JavaThreadPDAccess;
+
+ 34 import sun.jvm.hotspot.runtime.win32_amd64.Win32AMD64JavaThreadPDAccess;
+ 35 import sun.jvm.hotspot.runtime.win32_x86.Win32X86JavaThreadPDAccess;
+ 36 import sun.jvm.hotspot.runtime.linux_x86.LinuxX86JavaThreadPDAccess;
+ 37 import sun.jvm.hotspot.runtime.linux_amd64.LinuxAMD64JavaThreadPDAccess;
+ 38 import sun.jvm.hotspot.runtime.linux_aarch64.LinuxAARCH64JavaThreadPDAccess;
+ 39 import sun.jvm.hotspot.runtime.linux_ppc64.LinuxPPC64JavaThreadPDAccess;
+ 40 import sun.jvm.hotspot.runtime.linux_sparc.LinuxSPARCJavaThreadPDAccess;
+ 41 import sun.jvm.hotspot.runtime.bsd_x86.BsdX86JavaThreadPDAccess;
+ 42 import sun.jvm.hotspot.runtime.bsd_amd64.BsdAMD64JavaThreadPDAccess;
+ 43 import sun.jvm.hotspot.utilities.*;
+ 44 
+ 45 class ThreadsList extends VMObject {
+ 46     private static AddressField  threadsField;
+ 47     private static CIntegerField lengthField;
+ 48 
+ 49     static {
+ 50         VM.registerVMInitializedObserver((o, d) -&gt; initialize(VM.getVM().getTypeDataBase()));
+ 51     }
+ 52 
+ 53     private static synchronized void initialize(TypeDataBase db) {
+</pre>
+<hr />
+<pre>
+ 92 
+ 93         // Instantiate appropriate platform-specific JavaThreadFactory
+ 94         String os  = VM.getVM().getOS();
+ 95         String cpu = VM.getVM().getCPU();
+ 96 
+ 97         access = null;
+ 98         // FIXME: find the platform specific PD class by reflection?
+ 99         if (os.equals(&quot;solaris&quot;)) {
+100             if (cpu.equals(&quot;sparc&quot;)) {
+101                 access = new SolarisSPARCJavaThreadPDAccess();
+102             } else if (cpu.equals(&quot;x86&quot;)) {
+103                 access = new SolarisX86JavaThreadPDAccess();
+104             } else if (cpu.equals(&quot;amd64&quot;)) {
+105                 access = new SolarisAMD64JavaThreadPDAccess();
+106             }
+107         } else if (os.equals(&quot;win32&quot;)) {
+108             if (cpu.equals(&quot;x86&quot;)) {
+109                 access =  new Win32X86JavaThreadPDAccess();
+110             } else if (cpu.equals(&quot;amd64&quot;)) {
+111                 access =  new Win32AMD64JavaThreadPDAccess();
+
+
+112             }
+113         } else if (os.equals(&quot;linux&quot;)) {
+114             if (cpu.equals(&quot;x86&quot;)) {
+115                 access = new LinuxX86JavaThreadPDAccess();
+116             } else if (cpu.equals(&quot;amd64&quot;)) {
+117                 access = new LinuxAMD64JavaThreadPDAccess();
+118             } else if (cpu.equals(&quot;sparc&quot;)) {
+119                 access = new LinuxSPARCJavaThreadPDAccess();
+120             } else if (cpu.equals(&quot;ppc64&quot;)) {
+121                 access = new LinuxPPC64JavaThreadPDAccess();
+122             } else if (cpu.equals(&quot;aarch64&quot;)) {
+123                 access = new LinuxAARCH64JavaThreadPDAccess();
+124             } else {
+125               try {
+126                 access = (JavaThreadPDAccess)
+127                   Class.forName(&quot;sun.jvm.hotspot.runtime.linux_&quot; +
+128                      cpu.toLowerCase() + &quot;.Linux&quot; + cpu.toUpperCase() +
+129                      &quot;JavaThreadPDAccess&quot;).newInstance();
+130               } catch (Exception e) {
+131                 throw new RuntimeException(&quot;OS/CPU combination &quot; + os + &quot;/&quot; + cpu +
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 package sun.jvm.hotspot.runtime;
+ 26 
+ 27 import java.util.*;
+ 28 
+ 29 import sun.jvm.hotspot.debugger.*;
+ 30 import sun.jvm.hotspot.types.*;
+ 31 import sun.jvm.hotspot.runtime.solaris_sparc.SolarisSPARCJavaThreadPDAccess;
+ 32 import sun.jvm.hotspot.runtime.solaris_x86.SolarisX86JavaThreadPDAccess;
+ 33 import sun.jvm.hotspot.runtime.solaris_amd64.SolarisAMD64JavaThreadPDAccess;
+<span class="line-added"> 34 import sun.jvm.hotspot.runtime.win32_aarch64.Win32AARCH64JavaThreadPDAccess;</span>
+ 35 import sun.jvm.hotspot.runtime.win32_amd64.Win32AMD64JavaThreadPDAccess;
+ 36 import sun.jvm.hotspot.runtime.win32_x86.Win32X86JavaThreadPDAccess;
+ 37 import sun.jvm.hotspot.runtime.linux_x86.LinuxX86JavaThreadPDAccess;
+ 38 import sun.jvm.hotspot.runtime.linux_amd64.LinuxAMD64JavaThreadPDAccess;
+ 39 import sun.jvm.hotspot.runtime.linux_aarch64.LinuxAARCH64JavaThreadPDAccess;
+ 40 import sun.jvm.hotspot.runtime.linux_ppc64.LinuxPPC64JavaThreadPDAccess;
+ 41 import sun.jvm.hotspot.runtime.linux_sparc.LinuxSPARCJavaThreadPDAccess;
+ 42 import sun.jvm.hotspot.runtime.bsd_x86.BsdX86JavaThreadPDAccess;
+ 43 import sun.jvm.hotspot.runtime.bsd_amd64.BsdAMD64JavaThreadPDAccess;
+ 44 import sun.jvm.hotspot.utilities.*;
+ 45 
+ 46 class ThreadsList extends VMObject {
+ 47     private static AddressField  threadsField;
+ 48     private static CIntegerField lengthField;
+ 49 
+ 50     static {
+ 51         VM.registerVMInitializedObserver((o, d) -&gt; initialize(VM.getVM().getTypeDataBase()));
+ 52     }
+ 53 
+ 54     private static synchronized void initialize(TypeDataBase db) {
+</pre>
+<hr />
+<pre>
+ 93 
+ 94         // Instantiate appropriate platform-specific JavaThreadFactory
+ 95         String os  = VM.getVM().getOS();
+ 96         String cpu = VM.getVM().getCPU();
+ 97 
+ 98         access = null;
+ 99         // FIXME: find the platform specific PD class by reflection?
+100         if (os.equals(&quot;solaris&quot;)) {
+101             if (cpu.equals(&quot;sparc&quot;)) {
+102                 access = new SolarisSPARCJavaThreadPDAccess();
+103             } else if (cpu.equals(&quot;x86&quot;)) {
+104                 access = new SolarisX86JavaThreadPDAccess();
+105             } else if (cpu.equals(&quot;amd64&quot;)) {
+106                 access = new SolarisAMD64JavaThreadPDAccess();
+107             }
+108         } else if (os.equals(&quot;win32&quot;)) {
+109             if (cpu.equals(&quot;x86&quot;)) {
+110                 access =  new Win32X86JavaThreadPDAccess();
+111             } else if (cpu.equals(&quot;amd64&quot;)) {
+112                 access =  new Win32AMD64JavaThreadPDAccess();
+<span class="line-added">113             } else if (cpu.equals(&quot;aarch64&quot;)) {</span>
+<span class="line-added">114                 access =  new Win32AARCH64JavaThreadPDAccess();</span>
+115             }
+116         } else if (os.equals(&quot;linux&quot;)) {
+117             if (cpu.equals(&quot;x86&quot;)) {
+118                 access = new LinuxX86JavaThreadPDAccess();
+119             } else if (cpu.equals(&quot;amd64&quot;)) {
+120                 access = new LinuxAMD64JavaThreadPDAccess();
+121             } else if (cpu.equals(&quot;sparc&quot;)) {
+122                 access = new LinuxSPARCJavaThreadPDAccess();
+123             } else if (cpu.equals(&quot;ppc64&quot;)) {
+124                 access = new LinuxPPC64JavaThreadPDAccess();
+125             } else if (cpu.equals(&quot;aarch64&quot;)) {
+126                 access = new LinuxAARCH64JavaThreadPDAccess();
+127             } else {
+128               try {
+129                 access = (JavaThreadPDAccess)
+130                   Class.forName(&quot;sun.jvm.hotspot.runtime.linux_&quot; +
+131                      cpu.toLowerCase() + &quot;.Linux&quot; + cpu.toUpperCase() +
+132                      &quot;JavaThreadPDAccess&quot;).newInstance();
+133               } catch (Exception e) {
+134                 throw new RuntimeException(&quot;OS/CPU combination &quot; + os + &quot;/&quot; + cpu +
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="..\debugger\windbg\WindbgDebuggerLocal.java.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\..\..\..\..\windows\native\libsaproc\sawindbg.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

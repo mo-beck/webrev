@@ -1,0 +1,16 @@
+diff a/src/hotspot/share/runtime/stubRoutines.cpp b/src/hotspot/share/runtime/stubRoutines.cpp
+--- a/src/hotspot/share/runtime/stubRoutines.cpp
++++ b/src/hotspot/share/runtime/stubRoutines.cpp
+@@ -390,11 +390,11 @@
+   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::aligned_conjoint_words), sizeof(jlong));
+   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::aligned_disjoint_words), sizeof(jlong));
+ 
+   // test safefetch routines
+   // Not on Windows 32bit until 8074860 is fixed
+-#if ! (defined(_WIN32) && defined(_M_IX86))
++#if ! (defined(_WIN32) && defined(_M_IX86)) && !defined(_M_ARM64)
+   test_safefetch32();
+   test_safefetchN();
+ #endif
+ 
+ #endif

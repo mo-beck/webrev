@@ -1,0 +1,131 @@
+diff a/src/hotspot/cpu/aarch64/assembler_aarch64.cpp b/src/hotspot/cpu/aarch64/assembler_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/assembler_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/assembler_aarch64.cpp
+@@ -29,11 +29,11 @@
+ #include "asm/assembler.hpp"
+ #include "asm/assembler.inline.hpp"
+ #include "interpreter/interpreter.hpp"
+ 
+ #ifndef PRODUCT
+-const unsigned long Assembler::asm_bp = 0x00007fffee09ac88;
++const uint64_t Assembler::asm_bp = 0x00007fffee09ac88;
+ #endif
+ 
+ #include "compiler/disassembler.hpp"
+ #include "memory/resourceArea.hpp"
+ #include "runtime/interfaceSupport.inline.hpp"
+@@ -51,10 +51,16 @@
+ 
+ #define BIND(label) bind(label); __ BLOCK_COMMENT(#label ":")
+ 
+ static float unpack(unsigned value);
+ 
++#ifdef _WIN64
++address Assembler::locate_next_instruction(address inst) {
++	return inst + Assembler::instruction_size;
++}
++#endif
++
+ short Assembler::SIMD_Size_in_bytes[] = {
+   // T8B, T16B, T4H, T8H, T2S, T4S, T1D, T2D, T1Q
+        8,   16,   8,  16,   8,  16,   8,  16,  16
+ };
+ 
+@@ -1457,11 +1463,10 @@
+        0x4cd17200, // ld1   {v0.16b}, [x16], x17
+       };
+     asm_check((unsigned int *)PC, vector_insns,
+               sizeof vector_insns / sizeof vector_insns[0]);
+   }
+-
+ #endif // ASSERT
+ }
+ 
+ #undef __
+ 
+@@ -1494,19 +1499,20 @@
+       Disassembler::decode((address)start + len, (address)start);
+     else
+       Disassembler::decode((address)start, (address)start + len);
+   }
+ 
+-  JNIEXPORT void das1(unsigned long insn) {
++  JNIEXPORT void das1(uint64_t insn) {
+     das(insn, 1);
+   }
+ }
+ 
+ #define gas_assert(ARG1) assert(ARG1, #ARG1)
+ 
+ #define __ as->
+ 
++
+ void Address::lea(MacroAssembler *as, Register r) const {
+   Relocation* reloc = _rspec.reloc();
+   relocInfo::relocType rtype = (relocInfo::relocType) reloc->type();
+ 
+   switch(_mode) {
+@@ -1518,11 +1524,11 @@
+     else
+       __ sub(r, _base, -_offset);
+       break;
+   }
+   case base_plus_offset_reg: {
+-    __ add(r, _base, _index, _ext.op(), MAX(_ext.shift(), 0));
++    __ add(r, _base, _index, _ext.op(), MAX2(_ext.shift(), 0));
+     break;
+   }
+   case literal: {
+     if (rtype == relocInfo::none)
+       __ mov(r, target());
+@@ -1533,31 +1539,31 @@
+   default:
+     ShouldNotReachHere();
+   }
+ }
+ 
+-void Assembler::adrp(Register reg1, const Address &dest, unsigned long &byte_offset) {
++void Assembler::adrp(Register reg1, const Address &dest, uint64_t &byte_offset) {
+   ShouldNotReachHere();
+ }
+ 
+ #undef __
+ 
+ #define starti Instruction_aarch64 do_not_use(this); set_current(&do_not_use)
+ 
+   void Assembler::adr(Register Rd, address adr) {
+-    long offset = adr - pc();
++    int64_t offset = adr - pc();
+     int offset_lo = offset & 3;
+     offset >>= 2;
+     starti;
+     f(0, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+     rf(Rd, 0);
+   }
+ 
+   void Assembler::_adrp(Register Rd, address adr) {
+     uint64_t pc_page = (uint64_t)pc() >> 12;
+     uint64_t adr_page = (uint64_t)adr >> 12;
+-    long offset = adr_page - pc_page;
++    int64_t offset = adr_page - pc_page;
+     int offset_lo = offset & 3;
+     offset >>= 2;
+     starti;
+     f(1, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+     rf(Rd, 0);
+@@ -1702,13 +1708,13 @@
+     srf(Rd, 0);
+ 
+   srf(Rn, 5);
+ }
+ 
+-bool Assembler::operand_valid_for_add_sub_immediate(long imm) {
++bool Assembler::operand_valid_for_add_sub_immediate(int64_t imm) {
+   bool shift = false;
+-  unsigned long uimm = uabs(imm);
++  uint64_t uimm = uabs(imm);
+   if (uimm < (1 << 12))
+     return true;
+   if (uimm < (1 << 24)
+       && ((uimm >> 12) << 12 == uimm)) {
+     return true;

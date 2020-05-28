@@ -1,0 +1,16 @@
+diff a/src/hotspot/cpu/aarch64/interpreterRT_aarch64.cpp b/src/hotspot/cpu/aarch64/interpreterRT_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/interpreterRT_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/interpreterRT_aarch64.cpp
+@@ -344,11 +344,11 @@
+     intptr_t from_obj = *(intptr_t*)(_from+Interpreter::local_offset_in_bytes(1));
+     _from -= 2*Interpreter::stackElementSize;
+ 
+     if (_num_fp_args < Argument::n_float_register_parameters_c) {
+       *_fp_args++ = from_obj;
+-      *_fp_identifiers |= (1 << _num_fp_args); // mark as double
++      *_fp_identifiers |= (1ULL << _num_fp_args); // mark as double
+       _num_fp_args++;
+     } else {
+       *_to++ = from_obj;
+       _num_fp_args++;
+     }

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\cpu\aarch64\interp_masm_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="immediate_aarch64.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="interpreterRT_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\interp_masm_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 166,11 ***</span>
+    ldrh(reg, Address(rbcp, bcp_offset));
+    rev16(reg, reg);
+  }
+  
+  void InterpreterMacroAssembler::get_dispatch() {
+<span class="line-modified">!   unsigned long offset;</span>
+    adrp(rdispatch, ExternalAddress((address)Interpreter::dispatch_table()), offset);
+    lea(rdispatch, Address(rdispatch, offset));
+  }
+  
+  void InterpreterMacroAssembler::get_cache_index_at_bcp(Register index,
+<span class="line-new-header">--- 166,11 ---</span>
+    ldrh(reg, Address(rbcp, bcp_offset));
+    rev16(reg, reg);
+  }
+  
+  void InterpreterMacroAssembler::get_dispatch() {
+<span class="line-modified">!   uint64_t offset;</span>
+    adrp(rdispatch, ExternalAddress((address)Interpreter::dispatch_table()), offset);
+    lea(rdispatch, Address(rdispatch, offset));
+  }
+  
+  void InterpreterMacroAssembler::get_cache_index_at_bcp(Register index,
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 280,11 ***</span>
+<span class="line-new-header">--- 280,16 ---</span>
+  }
+  
+  void InterpreterMacroAssembler::load_resolved_klass_at_offset(
+                               Register cpool, Register index, Register klass, Register temp) {
+    add(temp, cpool, index, LSL, LogBytesPerWord);
+<span class="line-added">+ #ifdef _WIN64</span>
+<span class="line-added">+   Address a1(temp, (int)sizeof(ConstantPool));</span>
+<span class="line-added">+   ldrh(temp, a1); // temp = resolved_klass_index</span>
+<span class="line-added">+ #else</span>
+    ldrh(temp, Address(temp, sizeof(ConstantPool))); // temp = resolved_klass_index
+<span class="line-added">+ #endif</span>
+    ldr(klass, Address(cpool,  ConstantPool::resolved_klasses_offset_in_bytes())); // klass = cpool-&gt;_resolved_klasses
+    add(klass, klass, temp, LSL, LogBytesPerWord);
+    ldr(klass, Address(klass, Array&lt;Klass*&gt;::base_offset_in_bytes()));
+  }
+  
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 764,11 ***</span>
+      // NOTE: the oopMark is in swap_reg %r0 as the result of cmpxchg
+      // NOTE2: aarch64 does not like to subtract sp from rn so take a
+      // copy
+      mov(rscratch1, sp);
+      sub(swap_reg, swap_reg, rscratch1);
+<span class="line-modified">!     ands(swap_reg, swap_reg, (unsigned long)(7 - os::vm_page_size()));</span>
+  
+      // Save the test result, for recursive case, the result is zero
+      str(swap_reg, Address(lock_reg, mark_offset));
+  
+      if (PrintBiasedLockingStatistics) {
+<span class="line-new-header">--- 769,11 ---</span>
+      // NOTE: the oopMark is in swap_reg %r0 as the result of cmpxchg
+      // NOTE2: aarch64 does not like to subtract sp from rn so take a
+      // copy
+      mov(rscratch1, sp);
+      sub(swap_reg, swap_reg, rscratch1);
+<span class="line-modified">!     ands(swap_reg, swap_reg, (uint64_t)(7 - os::vm_page_size()));</span>
+  
+      // Save the test result, for recursive case, the result is zero
+      str(swap_reg, Address(lock_reg, mark_offset));
+  
+      if (PrintBiasedLockingStatistics) {
+</pre>
+<center><a href="immediate_aarch64.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="interpreterRT_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\hotspot\os_cpu\windows_aarch64\os_windows_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+ 1 /*
+ 2  * Copyright (c) 1999, 2019, Oracle and/or its affiliates. All rights reserved.
+ 3  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
+ 4  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ 5  *
+ 6  * This code is free software; you can redistribute it and/or modify it
+ 7  * under the terms of the GNU General Public License version 2 only, as
+ 8  * published by the Free Software Foundation.
+ 9  *
+10  * This code is distributed in the hope that it will be useful, but WITHOUT
+11  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+12  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+13  * version 2 for more details (a copy is included in the LICENSE file that
+14  * accompanied this code).
+15  *
+16  * You should have received a copy of the GNU General Public License version
+17  * 2 along with this work; if not, write to the Free Software Foundation,
+18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+19  *
+20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+21  * or visit www.oracle.com if you need additional information or have any
+22  * questions.
+23  *
+24  */
+25 
+26 #ifndef OS_CPU_WINDOWS_AARCH64_OS_WINDOWS_AARCH64_HPP
+27 #define OS_CPU_WINDOWS_AARCH64_OS_WINDOWS_AARCH64_HPP
+28 
+29   static void setup_fpu();
+30   static bool supports_sse();
+31 
+32   //HighRes Timer on Windows: https://docs.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps
+33   //static jlong rdtsc();
+34 
+35   static bool is_allocatable(size_t bytes);
+36 
+37   // Atomically copy 64 bits of data
+38   static void atomic_copy64(const volatile void *src, volatile void *dst) {
+39     *(jlong *) dst = *(const jlong *) src;
+40   }
+41 
+42   static int32_t(*atomic_xchg_func)          (int, volatile int*);
+43   static int64_t(*atomic_xchg_long_func)     (int64_t, volatile int64_t*);
+44 
+45   static int8_t(*atomic_cmpxchg_byte_func)  (int8_t, volatile int8_t*, int8_t);
+46   static int32_t(*atomic_cmpxchg_func)       (int32_t, volatile int32_t*, int32_t);
+47   static int64_t(*atomic_cmpxchg_long_func)  (int64_t, volatile int64_t*, int64_t);
+48 
+49   static int32_t(*atomic_add_func)           (int32_t, volatile int32_t*);
+50   static int64_t(*atomic_add_long_func)      (int64_t, volatile int64_t*);
+51 
+52   static int32_t   atomic_xchg_bootstrap(int32_t, volatile int32_t*);
+53   static int64_t   atomic_xchg_long_bootstrap(int64_t, volatile int64_t*);
+54 
+55   static int32_t   atomic_cmpxchg_bootstrap(int32_t, volatile int32_t*, int32_t);
+56   static int8_t    atomic_cmpxchg_byte_bootstrap(int8_t, volatile int8_t*, int8_t);
+57 
+58   static int32_t  atomic_add_bootstrap(int32_t, volatile int32_t*);
+59   static int64_t  atomic_add_long_bootstrap(int64_t, volatile int64_t*);
+60   static int64_t atomic_cmpxchg_long_bootstrap(int64_t, volatile int64_t*, int64_t);
+61 
+62 #endif // OS_CPU_WINDOWS_AARCH64_OS_WINDOWS_AARCH64_HPP
+    </pre>
+  </body>
+</html>

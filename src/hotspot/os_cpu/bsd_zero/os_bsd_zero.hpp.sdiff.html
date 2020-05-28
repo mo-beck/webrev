@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\os_cpu\bsd_zero\os_bsd_zero.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\bsd_x86\os_bsd_x86.hpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\linux_aarch64\os_linux_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\os_cpu\bsd_zero\os_bsd_zero.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+13  * version 2 for more details (a copy is included in the LICENSE file that
+14  * accompanied this code).
+15  *
+16  * You should have received a copy of the GNU General Public License version
+17  * 2 along with this work; if not, write to the Free Software Foundation,
+18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+19  *
+20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+21  * or visit www.oracle.com if you need additional information or have any
+22  * questions.
+23  *
+24  */
+25 
+26 #ifndef OS_CPU_BSD_ZERO_OS_BSD_ZERO_HPP
+27 #define OS_CPU_BSD_ZERO_OS_BSD_ZERO_HPP
+28 
+29   static void setup_fpu() {}
+30 
+31   static bool is_allocatable(size_t bytes);
+32 
+<span class="line-removed">33   // Used to register dynamic code cache area with the OS</span>
+<span class="line-removed">34   // Note: Currently only used in 64 bit Windows implementations</span>
+<span class="line-removed">35   static bool register_code_area(char *low, char *high) { return true; }</span>
+<span class="line-removed">36 </span>
+37   // Atomically copy 64 bits of data
+38   static void atomic_copy64(const volatile void *src, volatile void *dst) {
+39 #if defined(PPC32)
+40     double tmp;
+41     asm volatile (&quot;lfd  %0, 0(%1)\n&quot;
+42                   &quot;stfd %0, 0(%2)\n&quot;
+43                   : &quot;=f&quot;(tmp)
+44                   : &quot;b&quot;(src), &quot;b&quot;(dst));
+45 #elif defined(S390) &amp;&amp; !defined(_LP64)
+46     double tmp;
+47     asm volatile (&quot;ld  %0, 0(%1)\n&quot;
+48                   &quot;std %0, 0(%2)\n&quot;
+49                   : &quot;=r&quot;(tmp)
+50                   : &quot;a&quot;(src), &quot;a&quot;(dst));
+51 #else
+52     *(jlong *) dst = *(const jlong *) src;
+53 #endif
+54   }
+55 
+56 #endif // OS_CPU_BSD_ZERO_OS_BSD_ZERO_HPP
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+13  * version 2 for more details (a copy is included in the LICENSE file that
+14  * accompanied this code).
+15  *
+16  * You should have received a copy of the GNU General Public License version
+17  * 2 along with this work; if not, write to the Free Software Foundation,
+18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+19  *
+20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+21  * or visit www.oracle.com if you need additional information or have any
+22  * questions.
+23  *
+24  */
+25 
+26 #ifndef OS_CPU_BSD_ZERO_OS_BSD_ZERO_HPP
+27 #define OS_CPU_BSD_ZERO_OS_BSD_ZERO_HPP
+28 
+29   static void setup_fpu() {}
+30 
+31   static bool is_allocatable(size_t bytes);
+32 
+
+
+
+
+33   // Atomically copy 64 bits of data
+34   static void atomic_copy64(const volatile void *src, volatile void *dst) {
+35 #if defined(PPC32)
+36     double tmp;
+37     asm volatile (&quot;lfd  %0, 0(%1)\n&quot;
+38                   &quot;stfd %0, 0(%2)\n&quot;
+39                   : &quot;=f&quot;(tmp)
+40                   : &quot;b&quot;(src), &quot;b&quot;(dst));
+41 #elif defined(S390) &amp;&amp; !defined(_LP64)
+42     double tmp;
+43     asm volatile (&quot;ld  %0, 0(%1)\n&quot;
+44                   &quot;std %0, 0(%2)\n&quot;
+45                   : &quot;=r&quot;(tmp)
+46                   : &quot;a&quot;(src), &quot;a&quot;(dst));
+47 #else
+48     *(jlong *) dst = *(const jlong *) src;
+49 #endif
+50   }
+51 
+52 #endif // OS_CPU_BSD_ZERO_OS_BSD_ZERO_HPP
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="..\bsd_x86\os_bsd_x86.hpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\linux_aarch64\os_linux_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

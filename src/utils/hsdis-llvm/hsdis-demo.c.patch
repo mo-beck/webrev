@@ -1,0 +1,3 @@
+diff a/src/utils/hsdis/hsdis-demo.c b/src/utils/hsdis-llvm/hsdis-demo.c
+--- a/src/utils/hsdis/hsdis-demo.c
++++ b/src/utils/hsdis-llvm/hsdis-demo.c

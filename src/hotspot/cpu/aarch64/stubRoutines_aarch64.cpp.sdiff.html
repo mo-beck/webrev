@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\stubRoutines_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="stubGenerator_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="stubRoutines_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\stubRoutines_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 44 address StubRoutines::aarch64::_float_sign_flip = NULL;
+ 45 address StubRoutines::aarch64::_double_sign_mask = NULL;
+ 46 address StubRoutines::aarch64::_double_sign_flip = NULL;
+ 47 address StubRoutines::aarch64::_zero_blocks = NULL;
+ 48 address StubRoutines::aarch64::_has_negatives = NULL;
+ 49 address StubRoutines::aarch64::_has_negatives_long = NULL;
+ 50 address StubRoutines::aarch64::_large_array_equals = NULL;
+ 51 address StubRoutines::aarch64::_compare_long_string_LL = NULL;
+ 52 address StubRoutines::aarch64::_compare_long_string_UU = NULL;
+ 53 address StubRoutines::aarch64::_compare_long_string_LU = NULL;
+ 54 address StubRoutines::aarch64::_compare_long_string_UL = NULL;
+ 55 address StubRoutines::aarch64::_string_indexof_linear_ll = NULL;
+ 56 address StubRoutines::aarch64::_string_indexof_linear_uu = NULL;
+ 57 address StubRoutines::aarch64::_string_indexof_linear_ul = NULL;
+ 58 address StubRoutines::aarch64::_large_byte_array_inflate = NULL;
+ 59 bool StubRoutines::aarch64::_completed = false;
+ 60 
+ 61 /**
+ 62  *  crc_table[] from jdk/src/share/native/java/util/zip/zlib-1.2.5/crc32.h
+ 63  */
+<span class="line-modified"> 64 juint StubRoutines::aarch64::_crc_table[] ATTRIBUTE_ALIGNED(4096) =</span>
+ 65 {
+ 66     // Table 0
+ 67     0x00000000UL, 0x77073096UL, 0xee0e612cUL, 0x990951baUL, 0x076dc419UL,
+ 68     0x706af48fUL, 0xe963a535UL, 0x9e6495a3UL, 0x0edb8832UL, 0x79dcb8a4UL,
+ 69     0xe0d5e91eUL, 0x97d2d988UL, 0x09b64c2bUL, 0x7eb17cbdUL, 0xe7b82d07UL,
+ 70     0x90bf1d91UL, 0x1db71064UL, 0x6ab020f2UL, 0xf3b97148UL, 0x84be41deUL,
+ 71     0x1adad47dUL, 0x6ddde4ebUL, 0xf4d4b551UL, 0x83d385c7UL, 0x136c9856UL,
+ 72     0x646ba8c0UL, 0xfd62f97aUL, 0x8a65c9ecUL, 0x14015c4fUL, 0x63066cd9UL,
+ 73     0xfa0f3d63UL, 0x8d080df5UL, 0x3b6e20c8UL, 0x4c69105eUL, 0xd56041e4UL,
+ 74     0xa2677172UL, 0x3c03e4d1UL, 0x4b04d447UL, 0xd20d85fdUL, 0xa50ab56bUL,
+ 75     0x35b5a8faUL, 0x42b2986cUL, 0xdbbbc9d6UL, 0xacbcf940UL, 0x32d86ce3UL,
+ 76     0x45df5c75UL, 0xdcd60dcfUL, 0xabd13d59UL, 0x26d930acUL, 0x51de003aUL,
+ 77     0xc8d75180UL, 0xbfd06116UL, 0x21b4f4b5UL, 0x56b3c423UL, 0xcfba9599UL,
+ 78     0xb8bda50fUL, 0x2802b89eUL, 0x5f058808UL, 0xc60cd9b2UL, 0xb10be924UL,
+ 79     0x2f6f7c87UL, 0x58684c11UL, 0xc1611dabUL, 0xb6662d3dUL, 0x76dc4190UL,
+ 80     0x01db7106UL, 0x98d220bcUL, 0xefd5102aUL, 0x71b18589UL, 0x06b6b51fUL,
+ 81     0x9fbfe4a5UL, 0xe8b8d433UL, 0x7807c9a2UL, 0x0f00f934UL, 0x9609a88eUL,
+ 82     0xe10e9818UL, 0x7f6a0dbbUL, 0x086d3d2dUL, 0x91646c97UL, 0xe6635c01UL,
+ 83     0x6b6b51f4UL, 0x1c6c6162UL, 0x856530d8UL, 0xf262004eUL, 0x6c0695edUL,
+ 84     0x1b01a57bUL, 0x8208f4c1UL, 0xf50fc457UL, 0x65b0d9c6UL, 0x12b7e950UL,
+</pre>
+<hr />
+<pre>
+271     0x8c5d7112UL, 0x34e11677UL, 0xa9362eceUL, 0x118a49abUL, 0x033fe645UL,
+272     0xbb838120UL, 0xe3e09176UL, 0x5b5cf613UL, 0x49e959fdUL, 0xf1553e98UL,
+273     0x6c820621UL, 0xd43e6144UL, 0xc68bceaaUL, 0x7e37a9cfUL, 0xd67f4138UL,
+274     0x6ec3265dUL, 0x7c7689b3UL, 0xc4caeed6UL, 0x591dd66fUL, 0xe1a1b10aUL,
+275     0xf3141ee4UL, 0x4ba87981UL, 0x13cb69d7UL, 0xab770eb2UL, 0xb9c2a15cUL,
+276     0x017ec639UL, 0x9ca9fe80UL, 0x241599e5UL, 0x36a0360bUL, 0x8e1c516eUL,
+277     0x866616a7UL, 0x3eda71c2UL, 0x2c6fde2cUL, 0x94d3b949UL, 0x090481f0UL,
+278     0xb1b8e695UL, 0xa30d497bUL, 0x1bb12e1eUL, 0x43d23e48UL, 0xfb6e592dUL,
+279     0xe9dbf6c3UL, 0x516791a6UL, 0xccb0a91fUL, 0x740cce7aUL, 0x66b96194UL,
+280     0xde0506f1UL,
+281     // Constants for Neon CRC232 implementation
+282     // k3 = 0x78ED02D5 = x^288 mod poly - bit reversed
+283     // k4 = 0xED627DAE = x^256 mod poly - bit reversed
+284     0x78ED02D5UL, 0xED627DAEUL,         // k4:k3
+285     0xED78D502UL, 0x62EDAE7DUL,         // byte swap
+286     0x02D578EDUL, 0x7DAEED62UL,         // word swap
+287     0xD502ED78UL, 0xAE7D62EDUL,         // byte swap of word swap
+288 };
+289 
+290 // Accumulation coefficients for adler32 upper 16 bits
+<span class="line-modified">291 jubyte StubRoutines::aarch64::_adler_table[] __attribute__ ((aligned(64))) = {</span>
+292     16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+293 };
+294 
+<span class="line-modified">295 juint StubRoutines::aarch64::_npio2_hw[] __attribute__ ((aligned(64))) = {</span>
+296     // first, various coefficient values: 0.5, invpio2, pio2_1, pio2_1t, pio2_2,
+297     // pio2_2t, pio2_3, pio2_3t
+298     // This is a small optimization wich keeping double[8] values in int[] table
+299     // to have less address calculation instructions
+300     //
+301     // invpio2:  53 bits of 2/pi (enough for cases when trigonometric argument is small)
+302     // pio2_1:   first  33 bit of pi/2
+303     // pio2_1t:  pi/2 - pio2_1
+304     // pio2_2:   second 33 bit of pi/2
+305     // pio2_2t:  pi/2 - (pio2_1+pio2_2)
+306     // pio2_3:   third  33 bit of pi/2
+307     // pio2_3t:  pi/2 - (pio2_1+pio2_2+pio2_3)
+308     0x00000000, 0x3fe00000, // 0.5
+309     0x6DC9C883, 0x3FE45F30, // invpio2 = 6.36619772367581382433e-01
+310     0x54400000, 0x3FF921FB, // pio2_1 = 1.57079632673412561417e+00
+311     0x1A626331, 0x3DD0B461, // pio2_1t = 6.07710050650619224932e-11
+312     0x1A600000, 0x3DD0B461, // pio2_2 = 6.07710050630396597660e-11
+313     0x2E037073, 0x3BA3198A, // pio2_2t = 2.02226624879595063154e-21
+314     0x2E000000, 0x3BA3198A, // pio2_3 = 2.02226624871116645580e-21
+315     0x252049C1, 0x397B839A, // pio2_3t = 8.47842766036889956997e-32
+316     // now, npio2_hw itself
+317     0x3FF921FB, 0x400921FB, 0x4012D97C, 0x401921FB, 0x401F6A7A, 0x4022D97C,
+318     0x4025FDBB, 0x402921FB, 0x402C463A, 0x402F6A7A, 0x4031475C, 0x4032D97C,
+319     0x40346B9C, 0x4035FDBB, 0x40378FDB, 0x403921FB, 0x403AB41B, 0x403C463A,
+320     0x403DD85A, 0x403F6A7A, 0x40407E4C, 0x4041475C, 0x4042106C, 0x4042D97C,
+321     0x4043A28C, 0x40446B9C, 0x404534AC, 0x4045FDBB, 0x4046C6CB, 0x40478FDB,
+322     0x404858EB, 0x404921FB
+323 };
+324 
+325 // Coefficients for sin(x) polynomial approximation: S1..S6.
+326 // See kernel_sin comments in macroAssembler_aarch64_trig.cpp for details
+<span class="line-modified">327 jdouble StubRoutines::aarch64::_dsin_coef[] __attribute__ ((aligned(64))) = {</span>
+<span class="line-modified">328     -1.66666666666666324348e-01, // 0xBFC5555555555549</span>
+<span class="line-modified">329      8.33333333332248946124e-03, // 0x3F8111111110F8A6</span>
+<span class="line-modified">330     -1.98412698298579493134e-04, // 0xBF2A01A019C161D5</span>
+<span class="line-modified">331      2.75573137070700676789e-06, // 0x3EC71DE357B1FE7D</span>
+<span class="line-modified">332     -2.50507602534068634195e-08, // 0xBE5AE5E68A2B9CEB</span>
+<span class="line-modified">333      1.58969099521155010221e-10  // 0x3DE5D93A5ACFD57C</span>
+334 };
+335 
+336 // Coefficients for cos(x) polynomial approximation: C1..C6.
+337 // See kernel_cos comments in macroAssembler_aarch64_trig.cpp for details
+<span class="line-modified">338 jdouble StubRoutines::aarch64::_dcos_coef[] __attribute__ ((aligned(64))) = {</span>
+<span class="line-modified">339      4.16666666666666019037e-02, // c0x3FA555555555554C</span>
+<span class="line-modified">340     -1.38888888888741095749e-03, // 0xBF56C16C16C15177</span>
+<span class="line-modified">341      2.48015872894767294178e-05, // 0x3EFA01A019CB1590</span>
+<span class="line-modified">342     -2.75573143513906633035e-07, // 0xBE927E4F809C52AD</span>
+<span class="line-modified">343      2.08757232129817482790e-09, // 0x3E21EE9EBDB4B1C4</span>
+<span class="line-modified">344     -1.13596475577881948265e-11  // 0xBDA8FAE9BE8838D4</span>
+345 };
+346 
+347 // Table of constants for 2/pi, 396 Hex digits (476 decimal) of 2/pi.
+348 // Used in cases of very large argument. 396 hex digits is enough to support
+349 // required precision.
+350 // Converted to double to avoid unnecessary conversion in code
+351 // NOTE: table looks like original int table: {0xA2F983, 0x6E4E44,...} with
+352 //       only (double) conversion added
+<span class="line-modified">353 jdouble StubRoutines::aarch64::_two_over_pi[] __attribute__ ((aligned(64))) = {</span>
+354   (double)0xA2F983, (double)0x6E4E44, (double)0x1529FC, (double)0x2757D1, (double)0xF534DD, (double)0xC0DB62,
+355   (double)0x95993C, (double)0x439041, (double)0xFE5163, (double)0xABDEBB, (double)0xC561B7, (double)0x246E3A,
+356   (double)0x424DD2, (double)0xE00649, (double)0x2EEA09, (double)0xD1921C, (double)0xFE1DEB, (double)0x1CB129,
+357   (double)0xA73EE8, (double)0x8235F5, (double)0x2EBB44, (double)0x84E99C, (double)0x7026B4, (double)0x5F7E41,
+358   (double)0x3991D6, (double)0x398353, (double)0x39F49C, (double)0x845F8B, (double)0xBDF928, (double)0x3B1FF8,
+359   (double)0x97FFDE, (double)0x05980F, (double)0xEF2F11, (double)0x8B5A0A, (double)0x6D1F6D, (double)0x367ECF,
+360   (double)0x27CB09, (double)0xB74F46, (double)0x3F669E, (double)0x5FEA2D, (double)0x7527BA, (double)0xC7EBE5,
+361   (double)0xF17B3D, (double)0x0739F7, (double)0x8A5292, (double)0xEA6BFB, (double)0x5FB11F, (double)0x8D5D08,
+362   (double)0x560330, (double)0x46FC7B, (double)0x6BABF0, (double)0xCFBC20, (double)0x9AF436, (double)0x1DA9E3,
+363   (double)0x91615E, (double)0xE61B08, (double)0x659985, (double)0x5F14A0, (double)0x68408D, (double)0xFFD880,
+364   (double)0x4D7327, (double)0x310606, (double)0x1556CA, (double)0x73A8C9, (double)0x60E27B, (double)0xC08C6B,
+365 };
+366 
+367 // Pi over 2 value
+<span class="line-modified">368 jdouble StubRoutines::aarch64::_pio2[] __attribute__ ((aligned(64))) = {</span>
+<span class="line-modified">369   1.57079625129699707031e+00, // 0x3FF921FB40000000</span>
+<span class="line-modified">370   7.54978941586159635335e-08, // 0x3E74442D00000000</span>
+<span class="line-modified">371   5.39030252995776476554e-15, // 0x3CF8469880000000</span>
+<span class="line-modified">372   3.28200341580791294123e-22, // 0x3B78CC5160000000</span>
+<span class="line-modified">373   1.27065575308067607349e-29, // 0x39F01B8380000000</span>
+<span class="line-modified">374   1.22933308981111328932e-36, // 0x387A252040000000</span>
+<span class="line-modified">375   2.73370053816464559624e-44, // 0x36E3822280000000</span>
+<span class="line-modified">376   2.16741683877804819444e-51, // 0x3569F31D00000000</span>
+377 };
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 44 address StubRoutines::aarch64::_float_sign_flip = NULL;
+ 45 address StubRoutines::aarch64::_double_sign_mask = NULL;
+ 46 address StubRoutines::aarch64::_double_sign_flip = NULL;
+ 47 address StubRoutines::aarch64::_zero_blocks = NULL;
+ 48 address StubRoutines::aarch64::_has_negatives = NULL;
+ 49 address StubRoutines::aarch64::_has_negatives_long = NULL;
+ 50 address StubRoutines::aarch64::_large_array_equals = NULL;
+ 51 address StubRoutines::aarch64::_compare_long_string_LL = NULL;
+ 52 address StubRoutines::aarch64::_compare_long_string_UU = NULL;
+ 53 address StubRoutines::aarch64::_compare_long_string_LU = NULL;
+ 54 address StubRoutines::aarch64::_compare_long_string_UL = NULL;
+ 55 address StubRoutines::aarch64::_string_indexof_linear_ll = NULL;
+ 56 address StubRoutines::aarch64::_string_indexof_linear_uu = NULL;
+ 57 address StubRoutines::aarch64::_string_indexof_linear_ul = NULL;
+ 58 address StubRoutines::aarch64::_large_byte_array_inflate = NULL;
+ 59 bool StubRoutines::aarch64::_completed = false;
+ 60 
+ 61 /**
+ 62  *  crc_table[] from jdk/src/share/native/java/util/zip/zlib-1.2.5/crc32.h
+ 63  */
+<span class="line-modified"> 64 ATTRIBUTE_ALIGNED(4096) juint StubRoutines::aarch64::_crc_table[] =</span>
+ 65 {
+ 66     // Table 0
+ 67     0x00000000UL, 0x77073096UL, 0xee0e612cUL, 0x990951baUL, 0x076dc419UL,
+ 68     0x706af48fUL, 0xe963a535UL, 0x9e6495a3UL, 0x0edb8832UL, 0x79dcb8a4UL,
+ 69     0xe0d5e91eUL, 0x97d2d988UL, 0x09b64c2bUL, 0x7eb17cbdUL, 0xe7b82d07UL,
+ 70     0x90bf1d91UL, 0x1db71064UL, 0x6ab020f2UL, 0xf3b97148UL, 0x84be41deUL,
+ 71     0x1adad47dUL, 0x6ddde4ebUL, 0xf4d4b551UL, 0x83d385c7UL, 0x136c9856UL,
+ 72     0x646ba8c0UL, 0xfd62f97aUL, 0x8a65c9ecUL, 0x14015c4fUL, 0x63066cd9UL,
+ 73     0xfa0f3d63UL, 0x8d080df5UL, 0x3b6e20c8UL, 0x4c69105eUL, 0xd56041e4UL,
+ 74     0xa2677172UL, 0x3c03e4d1UL, 0x4b04d447UL, 0xd20d85fdUL, 0xa50ab56bUL,
+ 75     0x35b5a8faUL, 0x42b2986cUL, 0xdbbbc9d6UL, 0xacbcf940UL, 0x32d86ce3UL,
+ 76     0x45df5c75UL, 0xdcd60dcfUL, 0xabd13d59UL, 0x26d930acUL, 0x51de003aUL,
+ 77     0xc8d75180UL, 0xbfd06116UL, 0x21b4f4b5UL, 0x56b3c423UL, 0xcfba9599UL,
+ 78     0xb8bda50fUL, 0x2802b89eUL, 0x5f058808UL, 0xc60cd9b2UL, 0xb10be924UL,
+ 79     0x2f6f7c87UL, 0x58684c11UL, 0xc1611dabUL, 0xb6662d3dUL, 0x76dc4190UL,
+ 80     0x01db7106UL, 0x98d220bcUL, 0xefd5102aUL, 0x71b18589UL, 0x06b6b51fUL,
+ 81     0x9fbfe4a5UL, 0xe8b8d433UL, 0x7807c9a2UL, 0x0f00f934UL, 0x9609a88eUL,
+ 82     0xe10e9818UL, 0x7f6a0dbbUL, 0x086d3d2dUL, 0x91646c97UL, 0xe6635c01UL,
+ 83     0x6b6b51f4UL, 0x1c6c6162UL, 0x856530d8UL, 0xf262004eUL, 0x6c0695edUL,
+ 84     0x1b01a57bUL, 0x8208f4c1UL, 0xf50fc457UL, 0x65b0d9c6UL, 0x12b7e950UL,
+</pre>
+<hr />
+<pre>
+271     0x8c5d7112UL, 0x34e11677UL, 0xa9362eceUL, 0x118a49abUL, 0x033fe645UL,
+272     0xbb838120UL, 0xe3e09176UL, 0x5b5cf613UL, 0x49e959fdUL, 0xf1553e98UL,
+273     0x6c820621UL, 0xd43e6144UL, 0xc68bceaaUL, 0x7e37a9cfUL, 0xd67f4138UL,
+274     0x6ec3265dUL, 0x7c7689b3UL, 0xc4caeed6UL, 0x591dd66fUL, 0xe1a1b10aUL,
+275     0xf3141ee4UL, 0x4ba87981UL, 0x13cb69d7UL, 0xab770eb2UL, 0xb9c2a15cUL,
+276     0x017ec639UL, 0x9ca9fe80UL, 0x241599e5UL, 0x36a0360bUL, 0x8e1c516eUL,
+277     0x866616a7UL, 0x3eda71c2UL, 0x2c6fde2cUL, 0x94d3b949UL, 0x090481f0UL,
+278     0xb1b8e695UL, 0xa30d497bUL, 0x1bb12e1eUL, 0x43d23e48UL, 0xfb6e592dUL,
+279     0xe9dbf6c3UL, 0x516791a6UL, 0xccb0a91fUL, 0x740cce7aUL, 0x66b96194UL,
+280     0xde0506f1UL,
+281     // Constants for Neon CRC232 implementation
+282     // k3 = 0x78ED02D5 = x^288 mod poly - bit reversed
+283     // k4 = 0xED627DAE = x^256 mod poly - bit reversed
+284     0x78ED02D5UL, 0xED627DAEUL,         // k4:k3
+285     0xED78D502UL, 0x62EDAE7DUL,         // byte swap
+286     0x02D578EDUL, 0x7DAEED62UL,         // word swap
+287     0xD502ED78UL, 0xAE7D62EDUL,         // byte swap of word swap
+288 };
+289 
+290 // Accumulation coefficients for adler32 upper 16 bits
+<span class="line-modified">291 ATTRIBUTE_ALIGNED(64) jubyte StubRoutines::aarch64::_adler_table[] = {</span>
+292     16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
+293 };
+294 
+<span class="line-modified">295 ATTRIBUTE_ALIGNED(64) juint StubRoutines::aarch64::_npio2_hw[] = {</span>
+296     // first, various coefficient values: 0.5, invpio2, pio2_1, pio2_1t, pio2_2,
+297     // pio2_2t, pio2_3, pio2_3t
+298     // This is a small optimization wich keeping double[8] values in int[] table
+299     // to have less address calculation instructions
+300     //
+301     // invpio2:  53 bits of 2/pi (enough for cases when trigonometric argument is small)
+302     // pio2_1:   first  33 bit of pi/2
+303     // pio2_1t:  pi/2 - pio2_1
+304     // pio2_2:   second 33 bit of pi/2
+305     // pio2_2t:  pi/2 - (pio2_1+pio2_2)
+306     // pio2_3:   third  33 bit of pi/2
+307     // pio2_3t:  pi/2 - (pio2_1+pio2_2+pio2_3)
+308     0x00000000, 0x3fe00000, // 0.5
+309     0x6DC9C883, 0x3FE45F30, // invpio2 = 6.36619772367581382433e-01
+310     0x54400000, 0x3FF921FB, // pio2_1 = 1.57079632673412561417e+00
+311     0x1A626331, 0x3DD0B461, // pio2_1t = 6.07710050650619224932e-11
+312     0x1A600000, 0x3DD0B461, // pio2_2 = 6.07710050630396597660e-11
+313     0x2E037073, 0x3BA3198A, // pio2_2t = 2.02226624879595063154e-21
+314     0x2E000000, 0x3BA3198A, // pio2_3 = 2.02226624871116645580e-21
+315     0x252049C1, 0x397B839A, // pio2_3t = 8.47842766036889956997e-32
+316     // now, npio2_hw itself
+317     0x3FF921FB, 0x400921FB, 0x4012D97C, 0x401921FB, 0x401F6A7A, 0x4022D97C,
+318     0x4025FDBB, 0x402921FB, 0x402C463A, 0x402F6A7A, 0x4031475C, 0x4032D97C,
+319     0x40346B9C, 0x4035FDBB, 0x40378FDB, 0x403921FB, 0x403AB41B, 0x403C463A,
+320     0x403DD85A, 0x403F6A7A, 0x40407E4C, 0x4041475C, 0x4042106C, 0x4042D97C,
+321     0x4043A28C, 0x40446B9C, 0x404534AC, 0x4045FDBB, 0x4046C6CB, 0x40478FDB,
+322     0x404858EB, 0x404921FB
+323 };
+324 
+325 // Coefficients for sin(x) polynomial approximation: S1..S6.
+326 // See kernel_sin comments in macroAssembler_aarch64_trig.cpp for details
+<span class="line-modified">327 ATTRIBUTE_ALIGNED(64) julong StubRoutines::aarch64::_dsin_coef[] = {</span>
+<span class="line-modified">328     0xBFC5555555555549, //  1.66666666666666324348e-01</span>
+<span class="line-modified">329     0x3F8111111110F8A6, //  8.33333333332248946124e-03</span>
+<span class="line-modified">330     0xBF2A01A019C161D5, // -1.98412698298579493134e-04</span>
+<span class="line-modified">331     0x3EC71DE357B1FE7D, //  2.75573137070700676789e-06</span>
+<span class="line-modified">332     0xBE5AE5E68A2B9CEB, // -2.50507602534068634195e-08</span>
+<span class="line-modified">333     0x3DE5D93A5ACFD57C  //  1.58969099521155010221e-10</span>
+334 };
+335 
+336 // Coefficients for cos(x) polynomial approximation: C1..C6.
+337 // See kernel_cos comments in macroAssembler_aarch64_trig.cpp for details
+<span class="line-modified">338 ATTRIBUTE_ALIGNED(64) julong StubRoutines::aarch64::_dcos_coef[] = {</span>
+<span class="line-modified">339     0x3FA555555555554C, //  4.16666666666666019037e-02</span>
+<span class="line-modified">340     0xBF56C16C16C15177, // -1.38888888888741095749e-03</span>
+<span class="line-modified">341     0x3EFA01A019CB1590, //  2.48015872894767294178e-05</span>
+<span class="line-modified">342     0xBE927E4F809C52AD, // -2.75573143513906633035e-07</span>
+<span class="line-modified">343     0x3E21EE9EBDB4B1C4, //  2.08757232129817482790e-09</span>
+<span class="line-modified">344     0xBDA8FAE9BE8838D4  // -1.13596475577881948265e-11</span>
+345 };
+346 
+347 // Table of constants for 2/pi, 396 Hex digits (476 decimal) of 2/pi.
+348 // Used in cases of very large argument. 396 hex digits is enough to support
+349 // required precision.
+350 // Converted to double to avoid unnecessary conversion in code
+351 // NOTE: table looks like original int table: {0xA2F983, 0x6E4E44,...} with
+352 //       only (double) conversion added
+<span class="line-modified">353 ATTRIBUTE_ALIGNED(64) jdouble StubRoutines::aarch64::_two_over_pi[] = {</span>
+354   (double)0xA2F983, (double)0x6E4E44, (double)0x1529FC, (double)0x2757D1, (double)0xF534DD, (double)0xC0DB62,
+355   (double)0x95993C, (double)0x439041, (double)0xFE5163, (double)0xABDEBB, (double)0xC561B7, (double)0x246E3A,
+356   (double)0x424DD2, (double)0xE00649, (double)0x2EEA09, (double)0xD1921C, (double)0xFE1DEB, (double)0x1CB129,
+357   (double)0xA73EE8, (double)0x8235F5, (double)0x2EBB44, (double)0x84E99C, (double)0x7026B4, (double)0x5F7E41,
+358   (double)0x3991D6, (double)0x398353, (double)0x39F49C, (double)0x845F8B, (double)0xBDF928, (double)0x3B1FF8,
+359   (double)0x97FFDE, (double)0x05980F, (double)0xEF2F11, (double)0x8B5A0A, (double)0x6D1F6D, (double)0x367ECF,
+360   (double)0x27CB09, (double)0xB74F46, (double)0x3F669E, (double)0x5FEA2D, (double)0x7527BA, (double)0xC7EBE5,
+361   (double)0xF17B3D, (double)0x0739F7, (double)0x8A5292, (double)0xEA6BFB, (double)0x5FB11F, (double)0x8D5D08,
+362   (double)0x560330, (double)0x46FC7B, (double)0x6BABF0, (double)0xCFBC20, (double)0x9AF436, (double)0x1DA9E3,
+363   (double)0x91615E, (double)0xE61B08, (double)0x659985, (double)0x5F14A0, (double)0x68408D, (double)0xFFD880,
+364   (double)0x4D7327, (double)0x310606, (double)0x1556CA, (double)0x73A8C9, (double)0x60E27B, (double)0xC08C6B,
+365 };
+366 
+367 // Pi over 2 value
+<span class="line-modified">368 ATTRIBUTE_ALIGNED(64) julong StubRoutines::aarch64::_pio2[] = {</span>
+<span class="line-modified">369   0x3FF921FB40000000, // 1.57079625129699707031e+00</span>
+<span class="line-modified">370   0x3E74442D00000000, // 7.54978941586159635335e-08</span>
+<span class="line-modified">371   0x3CF8469880000000, // 5.39030252995776476554e-15</span>
+<span class="line-modified">372   0x3B78CC5160000000, // 3.28200341580791294123e-22</span>
+<span class="line-modified">373   0x39F01B8380000000, // 1.27065575308067607349e-29</span>
+<span class="line-modified">374   0x387A252040000000, // 1.22933308981111328932e-36</span>
+<span class="line-modified">375   0x36E3822280000000, // 2.73370053816464559624e-44</span>
+<span class="line-modified">376   0x3569F31D00000000  // 2.16741683877804819444e-51</span>
+377 };
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="stubGenerator_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="stubRoutines_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

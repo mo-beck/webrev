@@ -1,0 +1,20 @@
+diff a/src/hotspot/cpu/aarch64/icache_aarch64.hpp b/src/hotspot/cpu/aarch64/icache_aarch64.hpp
+--- a/src/hotspot/cpu/aarch64/icache_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/icache_aarch64.hpp
+@@ -29,10 +29,16 @@
+ // Interface for updating the instruction cache.  Whenever the VM
+ // modifies code, part of the processor instruction cache potentially
+ // has to be flushed.
+ 
+ class ICache : public AbstractICache {
++ private:
++#ifdef _WIN64
++  static void __clear_cache(char *start, char *end) {
++    FlushInstructionCache((HANDLE)GetCurrentProcess(), start, (SIZE_T)(end - start));
++  }
++#endif
+  public:
+   static void initialize();
+   static void invalidate_word(address addr) {
+     __clear_cache((char *)addr, (char *)(addr + 3));
+   }

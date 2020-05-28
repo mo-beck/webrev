@@ -1,0 +1,595 @@
+diff a/src/hotspot/os/windows/os_windows.cpp b/src/hotspot/os/windows/os_windows.cpp
+--- a/src/hotspot/os/windows/os_windows.cpp
++++ b/src/hotspot/os/windows/os_windows.cpp
+@@ -29,10 +29,11 @@
+ #include "jvm.h"
+ #include "classfile/classLoader.hpp"
+ #include "classfile/systemDictionary.hpp"
+ #include "classfile/vmSymbols.hpp"
+ #include "code/icBuffer.hpp"
++#include "code/nativeInst.hpp"
+ #include "code/vtableStubs.hpp"
+ #include "compiler/compileBroker.hpp"
+ #include "compiler/disassembler.hpp"
+ #include "interpreter/interpreter.hpp"
+ #include "logging/log.hpp"
+@@ -120,18 +121,17 @@
+ static FILETIME process_user_time;
+ static FILETIME process_kernel_time;
+ 
+ #ifdef _M_AMD64
+   #define __CPU__ amd64
++#elif defined _M_ARM64
++  #define __CPU__ aarch64
+ #else
+   #define __CPU__ i486
+ #endif
+ 
+-#if INCLUDE_AOT
+ PVOID  topLevelVectoredExceptionHandler = NULL;
+-LONG WINAPI topLevelVectoredExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo);
+-#endif
+ 
+ // save DLL module handle, used by GetModuleFileName
+ 
+ HINSTANCE vm_lib_handle;
+ 
+@@ -147,16 +147,14 @@
+     break;
+   case DLL_PROCESS_DETACH:
+     if (ForceTimeHighResolution) {
+       timeEndPeriod(1L);
+     }
+-#if INCLUDE_AOT
+     if (topLevelVectoredExceptionHandler != NULL) {
+       RemoveVectoredExceptionHandler(topLevelVectoredExceptionHandler);
+       topLevelVectoredExceptionHandler = NULL;
+     }
+-#endif
+     break;
+   default:
+     break;
+   }
+   return true;
+@@ -420,12 +418,10 @@
+     return res;
+   }
+   return NULL;
+ }
+ 
+-LONG WINAPI topLevelExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo);
+-
+ // Thread start routine for all newly created threads
+ static unsigned __stdcall thread_native_entry(Thread* thread) {
+ 
+   thread->record_stack_base_and_size();
+ 
+@@ -456,19 +452,14 @@
+     res = 20115;    // java thread
+   }
+ 
+   log_info(os, thread)("Thread is alive (tid: " UINTX_FORMAT ").", os::current_thread_id());
+ 
+-  // Install a win32 structured exception handler around every thread created
+-  // by VM, so VM can generate error dump when an exception occurred in non-
+-  // Java thread (e.g. VM thread).
+-  __try {
+-    thread->call_run();
+-  } __except(topLevelExceptionFilter(
+-                                     (_EXCEPTION_POINTERS*)_exception_info())) {
+-    // Nothing to do.
+-  }
++  // Any exception is caught by the Vectored Exception Handler, so VM can
++  // generate error dump when an exception occurred in non-Java thread
++  // (e.g. VM thread).
++  thread->call_run();
+ 
+   // Note: at this point the thread object may already have deleted itself.
+   // Do not dereference it from here on out.
+ 
+   log_info(os, thread)("Thread finished (tid: " UINTX_FORMAT ").", os::current_thread_id());
+@@ -1427,19 +1418,22 @@
+     char* arch_name;
+   } arch_t;
+ 
+   static const arch_t arch_array[] = {
+     {IMAGE_FILE_MACHINE_I386,      (char*)"IA 32"},
+-    {IMAGE_FILE_MACHINE_AMD64,     (char*)"AMD 64"}
++    {IMAGE_FILE_MACHINE_AMD64,     (char*)"AMD 64"},
++    {IMAGE_FILE_MACHINE_ARM64,	   (char*)"ARM 64"}
+   };
+ #if (defined _M_AMD64)
+   static const uint16_t running_arch = IMAGE_FILE_MACHINE_AMD64;
+ #elif (defined _M_IX86)
+   static const uint16_t running_arch = IMAGE_FILE_MACHINE_I386;
++#elif (defined _M_ARM64)
++  static const uint16_t running_arch = IMAGE_FILE_MACHINE_ARM64;
+ #else
+   #error Method os::dll_load requires that one of following \
+-         is defined :_M_AMD64 or _M_IX86
++         is defined :_M_AMD64 or _M_IX86 or _M_ARM64
+ #endif
+ 
+ 
+   // Obtain a string for printf operation
+   // lib_arch_str shall contain string what platform this .dll was built for
+@@ -1732,11 +1726,12 @@
+   // Retrieve SYSTEM_INFO from GetNativeSystemInfo call so that we could
+   // find out whether we are running on 64 bit processor or not
+   SYSTEM_INFO si;
+   ZeroMemory(&si, sizeof(SYSTEM_INFO));
+   GetNativeSystemInfo(&si);
+-  if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
++  if ((si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) ||
++      (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64)) {
+     st->print(" , 64 bit");
+   }
+ 
+   st->print(" Build %d", build_number);
+   st->print(" (%d.%d.%d.%d)", major_version, minor_version, build_number, build_minor);
+@@ -2147,10 +2142,17 @@
+   if (thread) {
+     thread->set_saved_exception_pc((address)(DWORD_PTR)exceptionInfo->ContextRecord->Rip);
+   }
+   // Set pc to handler
+   exceptionInfo->ContextRecord->Rip = (DWORD64)handler;
++#elif defined(_M_ARM64)
++  // Do not blow up if no thread info available.
++  if (thread) {
++    thread->set_saved_exception_pc((address)(DWORD_PTR)exceptionInfo->ContextRecord->Pc);
++  }
++  // Set pc to handler
++  exceptionInfo->ContextRecord->Pc = (DWORD64)handler;
+ #else
+   // Do not blow up if no thread info available.
+   if (thread) {
+     thread->set_saved_exception_pc((address)(DWORD_PTR)exceptionInfo->ContextRecord->Eip);
+   }
+@@ -2254,10 +2256,20 @@
+   // Do not set ctx->Rax as it already contains the correct value (either 32 or 64 bit, depending on the operation)
+   // this is the case because the exception only happens for -MinValue/-1 and -MinValue is always in rax because of the
+   // idiv opcode (0xF7).
+   ctx->Rdx = (DWORD)0;             // remainder
+   // Continue the execution
++#elif defined(_M_ARM64)
++  PCONTEXT ctx = exceptionInfo->ContextRecord;
++  address pc = (address)ctx->Sp;
++  assert(pc[0] == 0x83, "not an sdiv opcode"); //Fixme did i get the right opcode?
++  assert(ctx->X4 == min_jint, "unexpected idiv exception");
++  // set correct result values and continue after idiv instruction
++  ctx->Pc = (uint64_t)pc + 4;        // idiv reg, reg, reg  is 4 bytes
++  ctx->X4 = (uint64_t)min_jint;      // result
++  ctx->X5 = (uint64_t)0;             // remainder
++  // Continue the execution
+ #else
+   PCONTEXT ctx = exceptionInfo->ContextRecord;
+   address pc = (address)ctx->Eip;
+   assert(pc[0] == 0xF7, "not an idiv opcode");
+   assert((pc[1] & ~0x7) == 0xF8, "cannot handle non-register operands");
+@@ -2269,10 +2281,11 @@
+   // Continue the execution
+ #endif
+   return EXCEPTION_CONTINUE_EXECUTION;
+ }
+ 
++#if defined(_M_AMD64) || defined(_M_IX86)
+ //-----------------------------------------------------------------------------
+ LONG WINAPI Handle_FLT_Exception(struct _EXCEPTION_POINTERS* exceptionInfo) {
+   PCONTEXT ctx = exceptionInfo->ContextRecord;
+ #ifndef  _WIN64
+   // handle exception caused by native method modifying control word
+@@ -2314,78 +2327,31 @@
+   }
+ #endif // !_WIN64
+ 
+   return EXCEPTION_CONTINUE_SEARCH;
+ }
++#endif
+ 
+-static inline void report_error(Thread* t, DWORD exception_code,
++void report_error(Thread* t, DWORD exception_code,
++                                address addr, void* siginfo, void* context);
++void report_error(Thread* t, DWORD exception_code,
+                                 address addr, void* siginfo, void* context) {
+   VMError::report_and_die(t, exception_code, addr, siginfo, context);
+ 
+   // If UseOsErrorReporting, this will return here and save the error file
+   // somewhere where we can find it in the minidump.
+ }
+ 
+-bool os::win32::get_frame_at_stack_banging_point(JavaThread* thread,
+-        struct _EXCEPTION_POINTERS* exceptionInfo, address pc, frame* fr) {
+-  PEXCEPTION_RECORD exceptionRecord = exceptionInfo->ExceptionRecord;
+-  address addr = (address) exceptionRecord->ExceptionInformation[1];
+-  if (Interpreter::contains(pc)) {
+-    *fr = os::fetch_frame_from_context((void*)exceptionInfo->ContextRecord);
+-    if (!fr->is_first_java_frame()) {
+-      // get_frame_at_stack_banging_point() is only called when we
+-      // have well defined stacks so java_sender() calls do not need
+-      // to assert safe_for_sender() first.
+-      *fr = fr->java_sender();
+-    }
+-  } else {
+-    // more complex code with compiled code
+-    assert(!Interpreter::contains(pc), "Interpreted methods should have been handled above");
+-    CodeBlob* cb = CodeCache::find_blob(pc);
+-    if (cb == NULL || !cb->is_nmethod() || cb->is_frame_complete_at(pc)) {
+-      // Not sure where the pc points to, fallback to default
+-      // stack overflow handling
+-      return false;
+-    } else {
+-      *fr = os::fetch_frame_from_context((void*)exceptionInfo->ContextRecord);
+-      // in compiled code, the stack banging is performed just after the return pc
+-      // has been pushed on the stack
+-      *fr = frame(fr->sp() + 1, fr->fp(), (address)*(fr->sp()));
+-      if (!fr->is_java_frame()) {
+-        // See java_sender() comment above.
+-        *fr = fr->java_sender();
+-      }
+-    }
+-  }
+-  assert(fr->is_java_frame(), "Safety check");
+-  return true;
+-}
+-
+-#if INCLUDE_AOT
+-LONG WINAPI topLevelVectoredExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo) {
+-  PEXCEPTION_RECORD exceptionRecord = exceptionInfo->ExceptionRecord;
+-  address addr = (address) exceptionRecord->ExceptionInformation[1];
+-  address pc = (address) exceptionInfo->ContextRecord->Rip;
+-
+-  // Handle the case where we get an implicit exception in AOT generated
+-  // code.  AOT DLL's loaded are not registered for structured exceptions.
+-  // If the exception occurred in the codeCache or AOT code, pass control
+-  // to our normal exception handler.
+-  CodeBlob* cb = CodeCache::find_blob(pc);
+-  if (cb != NULL) {
+-    return topLevelExceptionFilter(exceptionInfo);
+-  }
+-
+-  return EXCEPTION_CONTINUE_SEARCH;
+-}
+-#endif
+-
+ //-----------------------------------------------------------------------------
+ LONG WINAPI topLevelExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo) {
+   if (InterceptOSException) return EXCEPTION_CONTINUE_SEARCH;
+   DWORD exception_code = exceptionInfo->ExceptionRecord->ExceptionCode;
+-#ifdef _M_AMD64
++  PEXCEPTION_RECORD exception_record = exceptionInfo->ExceptionRecord;
++  address addr = (address) exception_record->ExceptionInformation[1];
++#if defined(_M_ARM64)
++  address pc = (address)exceptionInfo->ContextRecord->Pc;
++#elif defined(_M_AMD64)
+   address pc = (address) exceptionInfo->ContextRecord->Rip;
+ #else
+   address pc = (address) exceptionInfo->ContextRecord->Eip;
+ #endif
+   Thread* t = Thread::current_or_null_safe();
+@@ -2399,13 +2365,11 @@
+   // Execution protection violation - win32 running on AMD64 only
+   // Handled first to avoid misdiagnosis as a "normal" access violation;
+   // This is safe to do because we have a new/unique ExceptionInformation
+   // code for this condition.
+   if (exception_code == EXCEPTION_ACCESS_VIOLATION) {
+-    PEXCEPTION_RECORD exceptionRecord = exceptionInfo->ExceptionRecord;
+-    int exception_subcode = (int) exceptionRecord->ExceptionInformation[0];
+-    address addr = (address) exceptionRecord->ExceptionInformation[1];
++    int exception_subcode = (int) exception_record->ExceptionInformation[0];
+ 
+     if (exception_subcode == EXCEPTION_INFO_EXEC_VIOLATION) {
+       int page_size = os::vm_page_size();
+ 
+       // Make sure the pc and the faulting address are sane.
+@@ -2472,36 +2436,39 @@
+       return EXCEPTION_CONTINUE_SEARCH;
+     }
+   }
+ #endif // _WIN64
+ 
++#if defined(_M_AMD64) || defined(_M_IX86)
+   if ((exception_code == EXCEPTION_ACCESS_VIOLATION) &&
+       VM_Version::is_cpuinfo_segv_addr(pc)) {
+     // Verify that OS save/restore AVX registers.
+     return Handle_Exception(exceptionInfo, VM_Version::cpuinfo_cont_addr());
+   }
++#endif
+ 
+   if (t != NULL && t->is_Java_thread()) {
+     JavaThread* thread = (JavaThread*) t;
+     bool in_java = thread->thread_state() == _thread_in_Java;
++    bool in_native = thread->thread_state() == _thread_in_native;
++    bool in_vm = thread->thread_state() == _thread_in_vm;
++    CodeBlob* cb = in_java ? CodeCache::find_blob_unsafe(pc) : NULL;
+ 
+     // Handle potential stack overflows up front.
+     if (exception_code == EXCEPTION_STACK_OVERFLOW) {
+       if (thread->stack_guards_enabled()) {
+         if (in_java) {
+           frame fr;
+-          PEXCEPTION_RECORD exceptionRecord = exceptionInfo->ExceptionRecord;
+-          address addr = (address) exceptionRecord->ExceptionInformation[1];
+           if (os::win32::get_frame_at_stack_banging_point(thread, exceptionInfo, pc, &fr)) {
+             assert(fr.is_java_frame(), "Must be a Java frame");
+             SharedRuntime::look_for_reserved_stack_annotated_method(thread, fr);
+           }
+         }
+         // Yellow zone violation.  The o/s has unprotected the first yellow
+         // zone page for us.  Note:  must call disable_stack_yellow_zone to
+         // update the enabled status, even if the zone contains only one page.
+-        assert(thread->thread_state() != _thread_in_vm, "Undersized StackShadowPages");
++        assert(!in_vm, "Undersized StackShadowPages");
+         thread->disable_stack_yellow_reserved_zone();
+         // If not in java code, return and hope for the best.
+         return in_java
+             ? Handle_Exception(exceptionInfo, SharedRuntime::continuation_for_implicit_exception(thread, pc, SharedRuntime::STACK_OVERFLOW))
+             :  EXCEPTION_CONTINUE_EXECUTION;
+@@ -2512,14 +2479,12 @@
+         report_error(t, exception_code, pc, exceptionInfo->ExceptionRecord,
+                       exceptionInfo->ContextRecord);
+         return EXCEPTION_CONTINUE_SEARCH;
+       }
+     } else if (exception_code == EXCEPTION_ACCESS_VIOLATION) {
+-      // Either stack overflow or null pointer exception.
+       if (in_java) {
+-        PEXCEPTION_RECORD exceptionRecord = exceptionInfo->ExceptionRecord;
+-        address addr = (address) exceptionRecord->ExceptionInformation[1];
++        // Either stack overflow or null pointer exception.
+         address stack_end = thread->stack_end();
+         if (addr < stack_end && addr >= stack_end - os::vm_page_size()) {
+           // Stack overflow.
+           assert(!os::uses_stack_guard_pages(),
+                  "should be caught by red zone code above.");
+@@ -2527,101 +2492,104 @@
+                                   SharedRuntime::continuation_for_implicit_exception(thread, pc, SharedRuntime::STACK_OVERFLOW));
+         }
+         // Check for safepoint polling and implicit null
+         // We only expect null pointers in the stubs (vtable)
+         // the rest are checked explicitly now.
+-        CodeBlob* cb = CodeCache::find_blob(pc);
+         if (cb != NULL) {
+           if (os::is_poll_address(addr)) {
+             address stub = SharedRuntime::get_poll_stub(pc);
+             return Handle_Exception(exceptionInfo, stub);
+           }
+         }
+-        {
+ #ifdef _WIN64
+-          // If it's a legal stack address map the entire region in
+-          //
+-          PEXCEPTION_RECORD exceptionRecord = exceptionInfo->ExceptionRecord;
+-          address addr = (address) exceptionRecord->ExceptionInformation[1];
+-          if (addr > thread->stack_reserved_zone_base() && addr < thread->stack_base()) {
+-            addr = (address)((uintptr_t)addr &
+-                             (~((uintptr_t)os::vm_page_size() - (uintptr_t)1)));
+-            os::commit_memory((char *)addr, thread->stack_base() - addr,
+-                              !ExecMem);
+-            return EXCEPTION_CONTINUE_EXECUTION;
+-          } else
++        // If it's a legal stack address map the entire region in
++        //
++        if (addr > thread->stack_reserved_zone_base() && addr < thread->stack_base()) {
++          addr = (address)((uintptr_t)addr & (~((uintptr_t)os::vm_page_size() - (uintptr_t)1)));
++          os::commit_memory((char *)addr, thread->stack_base() - addr, !ExecMem);
++          return EXCEPTION_CONTINUE_EXECUTION;
++        }
+ #endif
+-          {
+-            // Null pointer exception.
+-            if (MacroAssembler::uses_implicit_null_check((void*)addr)) {
+-              address stub = SharedRuntime::continuation_for_implicit_exception(thread, pc, SharedRuntime::IMPLICIT_NULL);
+-              if (stub != NULL) return Handle_Exception(exceptionInfo, stub);
+-            }
+-            report_error(t, exception_code, pc, exceptionInfo->ExceptionRecord,
+-                         exceptionInfo->ContextRecord);
+-            return EXCEPTION_CONTINUE_SEARCH;
+-          }
++        // Null pointer exception.
++        if (MacroAssembler::uses_implicit_null_check((void*)addr)) {
++          address stub = SharedRuntime::continuation_for_implicit_exception(thread, pc, SharedRuntime::IMPLICIT_NULL);
++          if (stub != NULL) return Handle_Exception(exceptionInfo, stub);
++        }
++      }
++
++      // Unsafe memory access
++      CompiledMethod* nm = cb != NULL ? cb->as_compiled_method_or_null() : NULL;
++      bool is_unsafe_arraycopy = (in_native || in_java) && UnsafeCopyMemory::contains_pc(pc);
++      if (is_unsafe_arraycopy ||
++          ((in_native || in_vm) && thread->doing_unsafe_access()) ||
++          (nm != NULL && nm->has_unsafe_access())) {
++        address next_pc =  Assembler::locate_next_instruction(pc);
++        if (is_unsafe_arraycopy) {
++          next_pc = UnsafeCopyMemory::page_error_continue_pc(pc);
+         }
++        return Handle_Exception(exceptionInfo, SharedRuntime::handle_unsafe_access(thread, next_pc));
+       }
+ 
+ #ifdef _WIN64
+       // Special care for fast JNI field accessors.
+       // jni_fast_Get<Primitive>Field can trap at certain pc's if a GC kicks
+       // in and the heap gets shrunk before the field access.
+-      if (exception_code == EXCEPTION_ACCESS_VIOLATION) {
+-        address addr = JNI_FastGetField::find_slowcase_pc(pc);
+-        if (addr != (address)-1) {
+-          return Handle_Exception(exceptionInfo, addr);
+-        }
++      address slowcase_pc = JNI_FastGetField::find_slowcase_pc(pc);
++      if (slowcase_pc != (address)-1) {
++        return Handle_Exception(exceptionInfo, slowcase_pc);
+       }
+ #endif
+ 
+       // Stack overflow or null pointer exception in native code.
+       report_error(t, exception_code, pc, exceptionInfo->ExceptionRecord,
+                    exceptionInfo->ContextRecord);
+       return EXCEPTION_CONTINUE_SEARCH;
+-    } // /EXCEPTION_ACCESS_VIOLATION
+-    // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+-
+-    if (exception_code == EXCEPTION_IN_PAGE_ERROR) {
+-      CompiledMethod* nm = NULL;
+-      JavaThread* thread = (JavaThread*)t;
+-      if (in_java) {
+-        CodeBlob* cb = CodeCache::find_blob_unsafe(pc);
+-        nm = (cb != NULL) ? cb->as_compiled_method_or_null() : NULL;
+-      }
+-
+-      bool is_unsafe_arraycopy = (thread->thread_state() == _thread_in_native || in_java) && UnsafeCopyMemory::contains_pc(pc);
+-      if (((thread->thread_state() == _thread_in_vm ||
+-           thread->thread_state() == _thread_in_native ||
+-           is_unsafe_arraycopy) &&
+-          thread->doing_unsafe_access()) ||
++    } else if (exception_code == EXCEPTION_IN_PAGE_ERROR) {
++      CompiledMethod* nm = cb != NULL ? cb->as_compiled_method_or_null() : NULL;
++      bool is_unsafe_arraycopy = (in_native || in_java) && UnsafeCopyMemory::contains_pc(pc);
++      if (((in_vm || in_native || is_unsafe_arraycopy) && thread->doing_unsafe_access()) ||
+           (nm != NULL && nm->has_unsafe_access())) {
+         address next_pc =  Assembler::locate_next_instruction(pc);
+         if (is_unsafe_arraycopy) {
+           next_pc = UnsafeCopyMemory::page_error_continue_pc(pc);
+         }
+         return Handle_Exception(exceptionInfo, SharedRuntime::handle_unsafe_access(thread, next_pc));
+       }
+     }
+ 
++#ifdef _M_ARM64
++    if (in_java &&
++        (exception_code == EXCEPTION_ILLEGAL_INSTRUCTION ||
++          exception_code == EXCEPTION_ILLEGAL_INSTRUCTION_2)) {
++      if (nativeInstruction_at(pc)->is_sigill_zombie_not_entrant()) {
++        if (TraceTraps) {
++          tty->print_cr("trap: zombie_not_entrant");
++        }
++        return Handle_Exception(exceptionInfo, SharedRuntime::get_handle_wrong_method_stub());
++      }
++    }
++#endif
++
+     if (in_java) {
+       switch (exception_code) {
+       case EXCEPTION_INT_DIVIDE_BY_ZERO:
+         return Handle_Exception(exceptionInfo, SharedRuntime::continuation_for_implicit_exception(thread, pc, SharedRuntime::IMPLICIT_DIVIDE_BY_ZERO));
+ 
+       case EXCEPTION_INT_OVERFLOW:
+         return Handle_IDiv_Exception(exceptionInfo);
+ 
+       } // switch
+     }
++
++#if defined(_M_AMD64) || defined(_M_IX86)
+     if (((thread->thread_state() == _thread_in_Java) ||
+          (thread->thread_state() == _thread_in_native)) &&
+          exception_code != EXCEPTION_UNCAUGHT_CXX_EXCEPTION) {
+       LONG result=Handle_FLT_Exception(exceptionInfo);
+       if (result==EXCEPTION_CONTINUE_EXECUTION) return result;
+     }
++#endif
+   }
+ 
+   if (exception_code != EXCEPTION_BREAKPOINT) {
+     report_error(t, exception_code, pc, exceptionInfo->ExceptionRecord,
+                  exceptionInfo->ContextRecord);
+@@ -3469,11 +3437,16 @@
+ 
+ char* os::non_memory_address_word() {
+   // Must never look like an address returned by reserve_memory,
+   // even in its subfields (as defined by the CPU immediate fields,
+   // if the CPU splits constants across multiple instructions).
++#ifdef _M_ARM64
++  // AArch64 has a maximum addressable space of 48-bits
++  return (char*)((1ull << 48) - 1);
++#else
+   return (char*)-1;
++#endif
+ }
+ 
+ #define MAX_ERROR_COUNT 100
+ #define SYS_THREAD_ERROR 0xffffffffUL
+ 
+@@ -3665,10 +3638,38 @@
+          "stack size not a multiple of page size");
+ 
+   initialize_performance_counter();
+ }
+ 
++int os::win32::get_cacheline_size() {
++  PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = NULL;
++  DWORD returnLength = 0;
++
++  // See https://docs.microsoft.com/en-us/windows/win32/api/sysinfoapi/nf-sysinfoapi-getlogicalprocessorinformation
++
++  GetLogicalProcessorInformation(NULL, &returnLength);
++  assert(GetLastError() == ERROR_INSUFFICIENT_BUFFER, "Unexpected return from GetLogicalProcessorInformation");
++
++  buffer = (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION)os::malloc(returnLength, mtInternal);
++  BOOL rc = GetLogicalProcessorInformation(buffer, &returnLength);
++  assert(rc, "Unexpected return from GetLogicalProcessorInformation");
++
++  int line_sz = -1;
++  for (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION ptr = buffer; ptr < buffer + returnLength / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION); ptr++) {
++    switch (ptr->Relationship) {
++    case RelationCache:
++      // Cache data is in ptr->Cache, one CACHE_DESCRIPTOR structure for each cache.
++      PCACHE_DESCRIPTOR Cache = &ptr->Cache;
++      if (Cache->Level == 1) {
++        line_sz = Cache->LineSize;
++      }
++      break;
++    }
++  }
++  os::free(buffer);
++  return line_sz;
++}
+ 
+ HINSTANCE os::win32::load_Windows_dll(const char* name, char *ebuf,
+                                       int ebuflen) {
+   char path[MAX_PATH];
+   DWORD size;
+@@ -3992,20 +3993,11 @@
+   // This could be set any time but all platforms
+   // have to set it the same so we have to mirror Solaris.
+   DEBUG_ONLY(os::set_mutex_init_done();)
+ 
+   // Setup Windows Exceptions
+-
+-#if INCLUDE_AOT
+-  // If AOT is enabled we need to install a vectored exception handler
+-  // in order to forward implicit exceptions from code in AOT
+-  // generated DLLs.  This is necessary since these DLLs are not
+-  // registered for structured exceptions like codecache methods are.
+-  if (AOTLibrary != NULL && (UseAOT || FLAG_IS_DEFAULT(UseAOT))) {
+-    topLevelVectoredExceptionHandler = AddVectoredExceptionHandler( 1, topLevelVectoredExceptionFilter);
+-  }
+-#endif
++  topLevelVectoredExceptionHandler = AddVectoredExceptionHandler(1, topLevelExceptionFilter);
+ 
+   // for debugging float code generation bugs
+   if (ForceFloatExceptions) {
+ #ifndef  _WIN64
+     static long fp_control_word = 0;
+@@ -4096,11 +4088,11 @@
+ 
+   if (UseNUMA && !ForceNUMA) {
+     UseNUMA = false; // We don't fully support this yet
+   }
+ 
+-  if (UseNUMAInterleaving) {
++  if (UseNUMA) {
+     // first check whether this Windows OS supports VirtualAllocExNuma, if not ignore this flag
+     bool success = numa_interleaving_init();
+     if (!success) UseNUMAInterleaving = false;
+   }
+ 
+@@ -5444,11 +5436,11 @@
+ }
+ 
+ // WINDOWS CONTEXT Flags for THREAD_SAMPLING
+ #if defined(IA32)
+   #define sampling_context_flags (CONTEXT_FULL | CONTEXT_FLOATING_POINT | CONTEXT_EXTENDED_REGISTERS)
+-#elif defined (AMD64)
++#elif defined(AMD64) || defined(_M_ARM64)
+   #define sampling_context_flags (CONTEXT_FULL | CONTEXT_FLOATING_POINT)
+ #endif
+ 
+ // returns true if thread could be suspended,
+ // false otherwise

@@ -1,0 +1,15 @@
+diff a/src/hotspot/cpu/aarch64/compiledIC_aot_aarch64.cpp b/src/hotspot/cpu/aarch64/compiledIC_aot_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/compiledIC_aot_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/compiledIC_aot_aarch64.cpp
+@@ -20,10 +20,11 @@
+  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+  * or visit www.oracle.com if you need additional information or have any
+  * questions.
+  */
+ 
++#include "precompiled.hpp"
+ #include "aot/compiledIC_aot.hpp"
+ #include "code/codeCache.hpp"
+ #include "memory/resourceArea.hpp"
+ #include "memory/universe.hpp"
+ 

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\c1_FrameMap_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="c1_FpuStackSim_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_LIRAssembler_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\c1_FrameMap_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+164 void FrameMap::initialize() {
+165   assert(!_init_done, &quot;once&quot;);
+166 
+167   int i=0;
+168   map_register(i, r0); r0_opr = LIR_OprFact::single_cpu(i); i++;
+169   map_register(i, r1); r1_opr = LIR_OprFact::single_cpu(i); i++;
+170   map_register(i, r2); r2_opr = LIR_OprFact::single_cpu(i); i++;
+171   map_register(i, r3); r3_opr = LIR_OprFact::single_cpu(i); i++;
+172   map_register(i, r4); r4_opr = LIR_OprFact::single_cpu(i); i++;
+173   map_register(i, r5); r5_opr = LIR_OprFact::single_cpu(i); i++;
+174   map_register(i, r6); r6_opr = LIR_OprFact::single_cpu(i); i++;
+175   map_register(i, r7); r7_opr = LIR_OprFact::single_cpu(i); i++;
+176   map_register(i, r10); r10_opr = LIR_OprFact::single_cpu(i); i++;
+177   map_register(i, r11); r11_opr = LIR_OprFact::single_cpu(i); i++;
+178   map_register(i, r12); r12_opr = LIR_OprFact::single_cpu(i); i++;
+179   map_register(i, r13); r13_opr = LIR_OprFact::single_cpu(i); i++;
+180   map_register(i, r14); r14_opr = LIR_OprFact::single_cpu(i); i++;
+181   map_register(i, r15); r15_opr = LIR_OprFact::single_cpu(i); i++;
+182   map_register(i, r16); r16_opr = LIR_OprFact::single_cpu(i); i++;
+183   map_register(i, r17); r17_opr = LIR_OprFact::single_cpu(i); i++;
+
+184   map_register(i, r18); r18_opr = LIR_OprFact::single_cpu(i); i++;
+
+185   map_register(i, r19); r19_opr = LIR_OprFact::single_cpu(i); i++;
+186   map_register(i, r20); r20_opr = LIR_OprFact::single_cpu(i); i++;
+187   map_register(i, r21); r21_opr = LIR_OprFact::single_cpu(i); i++;
+188   map_register(i, r22); r22_opr = LIR_OprFact::single_cpu(i); i++;
+189   map_register(i, r23); r23_opr = LIR_OprFact::single_cpu(i); i++;
+190   map_register(i, r24); r24_opr = LIR_OprFact::single_cpu(i); i++;
+191   map_register(i, r25); r25_opr = LIR_OprFact::single_cpu(i); i++;
+192   map_register(i, r26); r26_opr = LIR_OprFact::single_cpu(i); i++;
+193 
+
+
+
+194   map_register(i, r27); r27_opr = LIR_OprFact::single_cpu(i); i++; // rheapbase
+195   map_register(i, r28); r28_opr = LIR_OprFact::single_cpu(i); i++; // rthread
+196   map_register(i, r29); r29_opr = LIR_OprFact::single_cpu(i); i++; // rfp
+197   map_register(i, r30); r30_opr = LIR_OprFact::single_cpu(i); i++; // lr
+198   map_register(i, r31_sp); sp_opr = LIR_OprFact::single_cpu(i); i++; // sp
+199   map_register(i, r8); r8_opr = LIR_OprFact::single_cpu(i); i++;   // rscratch1
+200   map_register(i, r9); r9_opr = LIR_OprFact::single_cpu(i); i++;   // rscratch2
+201 
+202   rscratch1_opr = r8_opr;
+203   rscratch2_opr = r9_opr;
+204   rscratch1_long_opr = LIR_OprFact::double_cpu(r8_opr-&gt;cpu_regnr(), r8_opr-&gt;cpu_regnr());
+205   rscratch2_long_opr = LIR_OprFact::double_cpu(r9_opr-&gt;cpu_regnr(), r9_opr-&gt;cpu_regnr());
+206 
+207   long0_opr = LIR_OprFact::double_cpu(0, 0);
+208   long1_opr = LIR_OprFact::double_cpu(1, 1);
+209 
+210   fpu0_float_opr   = LIR_OprFact::single_fpu(0);
+211   fpu0_double_opr  = LIR_OprFact::double_fpu(0);
+212 
+213   _caller_save_cpu_regs[0] = r0_opr;
+214   _caller_save_cpu_regs[1] = r1_opr;
+215   _caller_save_cpu_regs[2] = r2_opr;
+216   _caller_save_cpu_regs[3] = r3_opr;
+217   _caller_save_cpu_regs[4] = r4_opr;
+218   _caller_save_cpu_regs[5] = r5_opr;
+219   _caller_save_cpu_regs[6]  = r6_opr;
+220   _caller_save_cpu_regs[7]  = r7_opr;
+221   // rscratch1, rscratch 2 not included
+222   _caller_save_cpu_regs[8] = r10_opr;
+223   _caller_save_cpu_regs[9] = r11_opr;
+224   _caller_save_cpu_regs[10] = r12_opr;
+225   _caller_save_cpu_regs[11] = r13_opr;
+226   _caller_save_cpu_regs[12] = r14_opr;
+227   _caller_save_cpu_regs[13] = r15_opr;
+228   _caller_save_cpu_regs[14] = r16_opr;
+229   _caller_save_cpu_regs[15] = r17_opr;
+
+
+230   _caller_save_cpu_regs[16] = r18_opr;
+
+231 
+232   for (int i = 0; i &lt; 8; i++) {
+233     _caller_save_fpu_regs[i] = LIR_OprFact::single_fpu(i);
+234   }
+235 
+236   _init_done = true;
+237 
+238   r0_oop_opr = as_oop_opr(r0);
+239   r1_oop_opr = as_oop_opr(r1);
+240   r2_oop_opr = as_oop_opr(r2);
+241   r3_oop_opr = as_oop_opr(r3);
+242   r4_oop_opr = as_oop_opr(r4);
+243   r5_oop_opr = as_oop_opr(r5);
+244   r6_oop_opr = as_oop_opr(r6);
+245   r7_oop_opr = as_oop_opr(r7);
+246   r8_oop_opr = as_oop_opr(r8);
+247   r9_oop_opr = as_oop_opr(r9);
+248   r10_oop_opr = as_oop_opr(r10);
+249   r11_oop_opr = as_oop_opr(r11);
+250   r12_oop_opr = as_oop_opr(r12);
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+164 void FrameMap::initialize() {
+165   assert(!_init_done, &quot;once&quot;);
+166 
+167   int i=0;
+168   map_register(i, r0); r0_opr = LIR_OprFact::single_cpu(i); i++;
+169   map_register(i, r1); r1_opr = LIR_OprFact::single_cpu(i); i++;
+170   map_register(i, r2); r2_opr = LIR_OprFact::single_cpu(i); i++;
+171   map_register(i, r3); r3_opr = LIR_OprFact::single_cpu(i); i++;
+172   map_register(i, r4); r4_opr = LIR_OprFact::single_cpu(i); i++;
+173   map_register(i, r5); r5_opr = LIR_OprFact::single_cpu(i); i++;
+174   map_register(i, r6); r6_opr = LIR_OprFact::single_cpu(i); i++;
+175   map_register(i, r7); r7_opr = LIR_OprFact::single_cpu(i); i++;
+176   map_register(i, r10); r10_opr = LIR_OprFact::single_cpu(i); i++;
+177   map_register(i, r11); r11_opr = LIR_OprFact::single_cpu(i); i++;
+178   map_register(i, r12); r12_opr = LIR_OprFact::single_cpu(i); i++;
+179   map_register(i, r13); r13_opr = LIR_OprFact::single_cpu(i); i++;
+180   map_register(i, r14); r14_opr = LIR_OprFact::single_cpu(i); i++;
+181   map_register(i, r15); r15_opr = LIR_OprFact::single_cpu(i); i++;
+182   map_register(i, r16); r16_opr = LIR_OprFact::single_cpu(i); i++;
+183   map_register(i, r17); r17_opr = LIR_OprFact::single_cpu(i); i++;
+<span class="line-added">184 #ifndef _WIN64</span>
+185   map_register(i, r18); r18_opr = LIR_OprFact::single_cpu(i); i++;
+<span class="line-added">186 #endif</span>
+187   map_register(i, r19); r19_opr = LIR_OprFact::single_cpu(i); i++;
+188   map_register(i, r20); r20_opr = LIR_OprFact::single_cpu(i); i++;
+189   map_register(i, r21); r21_opr = LIR_OprFact::single_cpu(i); i++;
+190   map_register(i, r22); r22_opr = LIR_OprFact::single_cpu(i); i++;
+191   map_register(i, r23); r23_opr = LIR_OprFact::single_cpu(i); i++;
+192   map_register(i, r24); r24_opr = LIR_OprFact::single_cpu(i); i++;
+193   map_register(i, r25); r25_opr = LIR_OprFact::single_cpu(i); i++;
+194   map_register(i, r26); r26_opr = LIR_OprFact::single_cpu(i); i++;
+195 
+<span class="line-added">196 #ifdef _WIN64</span>
+<span class="line-added">197   map_register(i, r18); r18_opr = LIR_OprFact::single_cpu(i); i++; // TLS for Win</span>
+<span class="line-added">198 #endif</span>
+199   map_register(i, r27); r27_opr = LIR_OprFact::single_cpu(i); i++; // rheapbase
+200   map_register(i, r28); r28_opr = LIR_OprFact::single_cpu(i); i++; // rthread
+201   map_register(i, r29); r29_opr = LIR_OprFact::single_cpu(i); i++; // rfp
+202   map_register(i, r30); r30_opr = LIR_OprFact::single_cpu(i); i++; // lr
+203   map_register(i, r31_sp); sp_opr = LIR_OprFact::single_cpu(i); i++; // sp
+204   map_register(i, r8); r8_opr = LIR_OprFact::single_cpu(i); i++;   // rscratch1
+205   map_register(i, r9); r9_opr = LIR_OprFact::single_cpu(i); i++;   // rscratch2
+206 
+207   rscratch1_opr = r8_opr;
+208   rscratch2_opr = r9_opr;
+209   rscratch1_long_opr = LIR_OprFact::double_cpu(r8_opr-&gt;cpu_regnr(), r8_opr-&gt;cpu_regnr());
+210   rscratch2_long_opr = LIR_OprFact::double_cpu(r9_opr-&gt;cpu_regnr(), r9_opr-&gt;cpu_regnr());
+211 
+212   long0_opr = LIR_OprFact::double_cpu(0, 0);
+213   long1_opr = LIR_OprFact::double_cpu(1, 1);
+214 
+215   fpu0_float_opr   = LIR_OprFact::single_fpu(0);
+216   fpu0_double_opr  = LIR_OprFact::double_fpu(0);
+217 
+218   _caller_save_cpu_regs[0] = r0_opr;
+219   _caller_save_cpu_regs[1] = r1_opr;
+220   _caller_save_cpu_regs[2] = r2_opr;
+221   _caller_save_cpu_regs[3] = r3_opr;
+222   _caller_save_cpu_regs[4] = r4_opr;
+223   _caller_save_cpu_regs[5] = r5_opr;
+224   _caller_save_cpu_regs[6]  = r6_opr;
+225   _caller_save_cpu_regs[7]  = r7_opr;
+226   // rscratch1, rscratch 2 not included
+227   _caller_save_cpu_regs[8] = r10_opr;
+228   _caller_save_cpu_regs[9] = r11_opr;
+229   _caller_save_cpu_regs[10] = r12_opr;
+230   _caller_save_cpu_regs[11] = r13_opr;
+231   _caller_save_cpu_regs[12] = r14_opr;
+232   _caller_save_cpu_regs[13] = r15_opr;
+233   _caller_save_cpu_regs[14] = r16_opr;
+234   _caller_save_cpu_regs[15] = r17_opr;
+<span class="line-added">235 #ifndef _WIN64</span>
+<span class="line-added">236   // r18 used for TLS on Windows</span>
+237   _caller_save_cpu_regs[16] = r18_opr;
+<span class="line-added">238 #endif</span>
+239 
+240   for (int i = 0; i &lt; 8; i++) {
+241     _caller_save_fpu_regs[i] = LIR_OprFact::single_fpu(i);
+242   }
+243 
+244   _init_done = true;
+245 
+246   r0_oop_opr = as_oop_opr(r0);
+247   r1_oop_opr = as_oop_opr(r1);
+248   r2_oop_opr = as_oop_opr(r2);
+249   r3_oop_opr = as_oop_opr(r3);
+250   r4_oop_opr = as_oop_opr(r4);
+251   r5_oop_opr = as_oop_opr(r5);
+252   r6_oop_opr = as_oop_opr(r6);
+253   r7_oop_opr = as_oop_opr(r7);
+254   r8_oop_opr = as_oop_opr(r8);
+255   r9_oop_opr = as_oop_opr(r9);
+256   r10_oop_opr = as_oop_opr(r10);
+257   r11_oop_opr = as_oop_opr(r11);
+258   r12_oop_opr = as_oop_opr(r12);
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="c1_FpuStackSim_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_LIRAssembler_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

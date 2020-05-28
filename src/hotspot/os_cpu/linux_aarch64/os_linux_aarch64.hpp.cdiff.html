@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\os_cpu\linux_aarch64\os_linux_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\bsd_zero\os_bsd_zero.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\linux_arm\os_linux_arm.hpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\os_cpu\linux_aarch64\os_linux_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 31,14 ***</span>
+  
+    static jlong rdtsc();
+  
+    static bool is_allocatable(size_t bytes);
+  
+<span class="line-removed">-   // Used to register dynamic code cache area with the OS</span>
+<span class="line-removed">-   // Note: Currently only used in 64 bit Windows implementations</span>
+<span class="line-removed">-   static bool register_code_area(char *low, char *high) { return true; }</span>
+<span class="line-removed">- </span>
+    // Atomically copy 64 bits of data
+    static void atomic_copy64(const volatile void *src, volatile void *dst) {
+      *(jlong *) dst = *(const jlong *) src;
+    }
+  
+<span class="line-new-header">--- 31,10 ---</span>
+</pre>
+<center><a href="..\bsd_zero\os_bsd_zero.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\linux_arm\os_linux_arm.hpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

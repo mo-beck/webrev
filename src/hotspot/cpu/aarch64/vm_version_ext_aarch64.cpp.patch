@@ -1,0 +1,15 @@
+diff a/src/hotspot/cpu/aarch64/vm_version_ext_aarch64.cpp b/src/hotspot/cpu/aarch64/vm_version_ext_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/vm_version_ext_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/vm_version_ext_aarch64.cpp
+@@ -20,10 +20,11 @@
+  * or visit www.oracle.com if you need additional information or have any
+  * questions.
+  *
+  */
+ 
++#include "precompiled.hpp"
+ #include "memory/allocation.hpp"
+ #include "memory/allocation.inline.hpp"
+ #include "runtime/os.inline.hpp"
+ #include "vm_version_ext_aarch64.hpp"
+ 

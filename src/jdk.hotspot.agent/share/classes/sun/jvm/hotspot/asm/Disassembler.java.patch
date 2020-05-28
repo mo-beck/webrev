@@ -1,0 +1,16 @@
+diff a/src/jdk.hotspot.agent/share/classes/sun/jvm/hotspot/asm/Disassembler.java b/src/jdk.hotspot.agent/share/classes/sun/jvm/hotspot/asm/Disassembler.java
+--- a/src/jdk.hotspot.agent/share/classes/sun/jvm/hotspot/asm/Disassembler.java
++++ b/src/jdk.hotspot.agent/share/classes/sun/jvm/hotspot/asm/Disassembler.java
+@@ -69,10 +69,12 @@
+          if (os.lastIndexOf("Windows", 0) != -1) {
+             if (arch.equals("x86")) {
+                libname +=  "-i386";
+             } else if (arch.equals("amd64")) {
+                libname +=  "-amd64";
++            } else if (arch.equals("aarch64")) {
++               libname +=  "-arm64";
+             } else {
+                libname +=  "-" + arch;
+             }
+             path.append(sep + "bin" + sep);
+             libname += ".dll";

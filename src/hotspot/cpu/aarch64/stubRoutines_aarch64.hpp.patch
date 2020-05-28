@@ -1,0 +1,19 @@
+diff a/src/hotspot/cpu/aarch64/stubRoutines_aarch64.hpp b/src/hotspot/cpu/aarch64/stubRoutines_aarch64.hpp
+--- a/src/hotspot/cpu/aarch64/stubRoutines_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/stubRoutines_aarch64.hpp
+@@ -183,12 +183,12 @@
+   static juint    _crc_table[];
+   static jubyte   _adler_table[];
+   // begin trigonometric tables block. See comments in .cpp file
+   static juint    _npio2_hw[];
+   static jdouble   _two_over_pi[];
+-  static jdouble   _pio2[];
+-  static jdouble   _dsin_coef[];
+-  static jdouble  _dcos_coef[];
++  static julong    _pio2[];
++  static julong    _dsin_coef[];
++  static julong    _dcos_coef[];
+   // end trigonometric tables block
+ };
+ 
+ #endif // CPU_AARCH64_STUBROUTINES_AARCH64_HPP

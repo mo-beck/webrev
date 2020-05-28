@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames src\hotspot\os_cpu\windows_x86\os_windows_x86.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+    <script type="text/javascript" src="..\..\..\..\navigation.js"></script>
+  </head>
+<body onkeypress="keypress(event);">
+<a name="0"></a>
+<hr />
+<pre>  1 /*
+  2  * Copyright (c) 1999, 2017, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 // no precompiled headers
+ 26 #include &quot;jvm.h&quot;
+ 27 #include &quot;asm/macroAssembler.hpp&quot;
+ 28 #include &quot;classfile/classLoader.hpp&quot;
+ 29 #include &quot;classfile/systemDictionary.hpp&quot;
+ 30 #include &quot;classfile/vmSymbols.hpp&quot;
+ 31 #include &quot;code/icBuffer.hpp&quot;
+ 32 #include &quot;code/vtableStubs.hpp&quot;
+ 33 #include &quot;interpreter/interpreter.hpp&quot;
+ 34 #include &quot;memory/allocation.inline.hpp&quot;
+ 35 #include &quot;memory/resourceArea.hpp&quot;
+ 36 #include &quot;nativeInst_x86.hpp&quot;
+ 37 #include &quot;os_share_windows.hpp&quot;
+ 38 #include &quot;prims/jniFastGetField.hpp&quot;
+ 39 #include &quot;prims/jvm_misc.hpp&quot;
+ 40 #include &quot;runtime/arguments.hpp&quot;
+ 41 #include &quot;runtime/extendedPC.hpp&quot;
+ 42 #include &quot;runtime/frame.inline.hpp&quot;
+ 43 #include &quot;runtime/interfaceSupport.inline.hpp&quot;
+ 44 #include &quot;runtime/java.hpp&quot;
+ 45 #include &quot;runtime/javaCalls.hpp&quot;
+ 46 #include &quot;runtime/mutexLocker.hpp&quot;
+ 47 #include &quot;runtime/osThread.hpp&quot;
+ 48 #include &quot;runtime/sharedRuntime.hpp&quot;
+ 49 #include &quot;runtime/stubRoutines.hpp&quot;
+ 50 #include &quot;runtime/thread.inline.hpp&quot;
+ 51 #include &quot;runtime/timer.hpp&quot;
+ 52 #include &quot;symbolengine.hpp&quot;
+ 53 #include &quot;unwind_windows_x86.hpp&quot;
+ 54 #include &quot;utilities/events.hpp&quot;
+ 55 #include &quot;utilities/vmError.hpp&quot;
+ 56 #include &quot;windbghelp.hpp&quot;
+ 57 
+ 58 
+ 59 #undef REG_SP
+ 60 #undef REG_FP
+ 61 #undef REG_PC
+ 62 #ifdef AMD64
+ 63 #define REG_SP Rsp
+ 64 #define REG_FP Rbp
+ 65 #define REG_PC Rip
+ 66 #else
+ 67 #define REG_SP Esp
+ 68 #define REG_FP Ebp
+ 69 #define REG_PC Eip
+ 70 #endif // AMD64
+ 71 
+<a name="1" id="anc1"></a>
+
+ 72 // Install a win32 structured exception handler around thread.
+ 73 void os::os_exception_wrapper(java_call_t f, JavaValue* value, const methodHandle&amp; method, JavaCallArguments* args, Thread* thread) {
+<a name="2" id="anc2"></a>
+
+ 74 #ifndef AMD64
+<a name="3" id="anc3"></a><span class="line-added"> 75   __try {</span>
+ 76     // We store the current thread in this wrapperthread location
+ 77     // and determine how far away this address is from the structured
+ 78     // execption pointer that FS:[0] points to.  This get_thread
+ 79     // code can then get the thread pointer via FS.
+ 80     //
+ 81     // Warning:  This routine must NEVER be inlined since we&#39;d end up with
+ 82     //           multiple offsets.
+ 83     //
+ 84     volatile Thread* wrapperthread = thread;
+ 85 
+ 86     if (os::win32::get_thread_ptr_offset() == 0) {
+ 87       int thread_ptr_offset;
+ 88       __asm {
+ 89         lea eax, dword ptr wrapperthread;
+ 90         sub eax, dword ptr FS:[0H];
+ 91         mov thread_ptr_offset, eax
+ 92       };
+ 93       os::win32::set_thread_ptr_offset(thread_ptr_offset);
+ 94     }
+ 95 #ifdef ASSERT
+ 96     // Verify that the offset hasn&#39;t changed since we initally captured
+ 97     // it. This might happen if we accidentally ended up with an
+ 98     // inlined version of this routine.
+ 99     else {
+100       int test_thread_ptr_offset;
+101       __asm {
+102         lea eax, dword ptr wrapperthread;
+103         sub eax, dword ptr FS:[0H];
+104         mov test_thread_ptr_offset, eax
+105       };
+106       assert(test_thread_ptr_offset == os::win32::get_thread_ptr_offset(),
+107              &quot;thread pointer offset from SEH changed&quot;);
+108     }
+109 #endif // ASSERT
+110 #endif // !AMD64
+111 
+112     f(value, method, args, thread);
+<a name="4" id="anc4"></a><span class="line-modified">113 #ifndef AMD64</span>
+<span class="line-added">114   } __except(EXCEPTION_CONTINUE_EXECUTION) {</span>
+115       // Nothing to do.
+116   }
+<a name="5" id="anc5"></a><span class="line-added">117 #endif</span>
+118 }
+119 
+<a name="6" id="anc6"></a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+120 #ifdef AMD64
+121 /*
+122  * Windows/x64 does not use stack frames the way expected by Java:
+123  * [1] in most cases, there is no frame pointer. All locals are addressed via RSP
+124  * [2] in rare cases, when alloca() is used, a frame pointer is used, but this may
+125  *     not be RBP.
+126  * See http://msdn.microsoft.com/en-us/library/ew5tede7.aspx
+127  *
+128  * So it&#39;s not possible to print the native stack using the
+129  *     while (...) {...  fr = os::get_sender_for_C_frame(&amp;fr); }
+130  * loop in vmError.cpp. We need to roll our own loop.
+131  */
+132 bool os::platform_print_native_stack(outputStream* st, const void* context,
+133                                      char *buf, int buf_size)
+134 {
+135   CONTEXT ctx;
+136   if (context != NULL) {
+137     memcpy(&amp;ctx, context, sizeof(ctx));
+138   } else {
+139     RtlCaptureContext(&amp;ctx);
+140   }
+141 
+142   st-&gt;print_cr(&quot;Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)&quot;);
+143 
+144   STACKFRAME stk;
+145   memset(&amp;stk, 0, sizeof(stk));
+146   stk.AddrStack.Offset    = ctx.Rsp;
+147   stk.AddrStack.Mode      = AddrModeFlat;
+148   stk.AddrFrame.Offset    = ctx.Rbp;
+149   stk.AddrFrame.Mode      = AddrModeFlat;
+150   stk.AddrPC.Offset       = ctx.Rip;
+151   stk.AddrPC.Mode         = AddrModeFlat;
+152 
+153   int count = 0;
+154   address lastpc = 0;
+155   while (count++ &lt; StackPrintLimit) {
+156     intptr_t* sp = (intptr_t*)stk.AddrStack.Offset;
+157     intptr_t* fp = (intptr_t*)stk.AddrFrame.Offset; // NOT necessarily the same as ctx.Rbp!
+158     address pc = (address)stk.AddrPC.Offset;
+159 
+160     if (pc != NULL) {
+161       if (count == 2 &amp;&amp; lastpc == pc) {
+162         // Skip it -- StackWalk64() may return the same PC
+163         // (but different SP) on the first try.
+164       } else {
+165         // Don&#39;t try to create a frame(sp, fp, pc) -- on WinX64, stk.AddrFrame
+166         // may not contain what Java expects, and may cause the frame() constructor
+167         // to crash. Let&#39;s just print out the symbolic address.
+168         frame::print_C_frame(st, buf, buf_size, pc);
+169         // print source file and line, if available
+170         char buf[128];
+171         int line_no;
+172         if (SymbolEngine::get_source_info(pc, buf, sizeof(buf), &amp;line_no)) {
+173           st-&gt;print(&quot;  (%s:%d)&quot;, buf, line_no);
+174         }
+175         st-&gt;cr();
+176       }
+177       lastpc = pc;
+178     }
+179 
+180     PVOID p = WindowsDbgHelp::symFunctionTableAccess64(GetCurrentProcess(), stk.AddrPC.Offset);
+181     if (!p) {
+182       // StackWalk64() can&#39;t handle this PC. Calling StackWalk64 again may cause crash.
+183       break;
+184     }
+185 
+186     BOOL result = WindowsDbgHelp::stackWalk64(
+187         IMAGE_FILE_MACHINE_AMD64,  // __in      DWORD MachineType,
+188         GetCurrentProcess(),       // __in      HANDLE hProcess,
+189         GetCurrentThread(),        // __in      HANDLE hThread,
+190         &amp;stk,                      // __inout   LP STACKFRAME64 StackFrame,
+191         &amp;ctx);                     // __inout   PVOID ContextRecord,
+192 
+193     if (!result) {
+194       break;
+195     }
+196   }
+197   if (count &gt; StackPrintLimit) {
+198     st-&gt;print_cr(&quot;...&lt;more frames&gt;...&quot;);
+199   }
+200   st-&gt;cr();
+201 
+202   return true;
+203 }
+204 #endif // AMD64
+205 
+206 ExtendedPC os::fetch_frame_from_context(const void* ucVoid,
+207                     intptr_t** ret_sp, intptr_t** ret_fp) {
+208 
+209   ExtendedPC  epc;
+210   CONTEXT* uc = (CONTEXT*)ucVoid;
+211 
+212   if (uc != NULL) {
+213     epc = ExtendedPC((address)uc-&gt;REG_PC);
+214     if (ret_sp) *ret_sp = (intptr_t*)uc-&gt;REG_SP;
+215     if (ret_fp) *ret_fp = (intptr_t*)uc-&gt;REG_FP;
+216   } else {
+217     // construct empty ExtendedPC for return value checking
+218     epc = ExtendedPC(NULL);
+219     if (ret_sp) *ret_sp = (intptr_t *)NULL;
+220     if (ret_fp) *ret_fp = (intptr_t *)NULL;
+221   }
+222 
+223   return epc;
+224 }
+225 
+226 frame os::fetch_frame_from_context(const void* ucVoid) {
+227   intptr_t* sp;
+228   intptr_t* fp;
+229   ExtendedPC epc = fetch_frame_from_context(ucVoid, &amp;sp, &amp;fp);
+230   return frame(sp, fp, epc.pc());
+231 }
+232 
+233 // VC++ does not save frame pointer on stack in optimized build. It
+234 // can be turned off by /Oy-. If we really want to walk C frames,
+235 // we can use the StackWalk() API.
+236 frame os::get_sender_for_C_frame(frame* fr) {
+237   return frame(fr-&gt;sender_sp(), fr-&gt;link(), fr-&gt;sender_pc());
+238 }
+239 
+240 #ifndef AMD64
+241 // Ignore &quot;C4172: returning address of local variable or temporary&quot; on 32bit
+242 PRAGMA_DIAG_PUSH
+243 PRAGMA_DISABLE_MSVC_WARNING(4172)
+244 // Returns an estimate of the current stack pointer. Result must be guaranteed
+245 // to point into the calling threads stack, and be no lower than the current
+246 // stack pointer.
+247 address os::current_stack_pointer() {
+248   int dummy;
+249   address sp = (address)&amp;dummy;
+250   return sp;
+251 }
+252 PRAGMA_DIAG_POP
+253 #else
+254 // Returns the current stack pointer. Accurate value needed for
+255 // os::verify_stack_alignment().
+256 address os::current_stack_pointer() {
+257   typedef address get_sp_func();
+258   get_sp_func* func = CAST_TO_FN_PTR(get_sp_func*,
+259                                      StubRoutines::x86::get_previous_sp_entry());
+260   return (*func)();
+261 }
+262 #endif
+263 
+<a name="7" id="anc7"></a><span class="line-added">264 bool os::win32::get_frame_at_stack_banging_point(JavaThread* thread,</span>
+<span class="line-added">265         struct _EXCEPTION_POINTERS* exceptionInfo, address pc, frame* fr) {</span>
+<span class="line-added">266   PEXCEPTION_RECORD exceptionRecord = exceptionInfo-&gt;ExceptionRecord;</span>
+<span class="line-added">267   address addr = (address) exceptionRecord-&gt;ExceptionInformation[1];</span>
+<span class="line-added">268   if (Interpreter::contains(pc)) {</span>
+<span class="line-added">269     *fr = os::fetch_frame_from_context((void*)exceptionInfo-&gt;ContextRecord);</span>
+<span class="line-added">270     if (!fr-&gt;is_first_java_frame()) {</span>
+<span class="line-added">271       // get_frame_at_stack_banging_point() is only called when we</span>
+<span class="line-added">272       // have well defined stacks so java_sender() calls do not need</span>
+<span class="line-added">273       // to assert safe_for_sender() first.</span>
+<span class="line-added">274       *fr = fr-&gt;java_sender();</span>
+<span class="line-added">275     }</span>
+<span class="line-added">276   } else {</span>
+<span class="line-added">277     // more complex code with compiled code</span>
+<span class="line-added">278     assert(!Interpreter::contains(pc), &quot;Interpreted methods should have been handled above&quot;);</span>
+<span class="line-added">279     CodeBlob* cb = CodeCache::find_blob(pc);</span>
+<span class="line-added">280     if (cb == NULL || !cb-&gt;is_nmethod() || cb-&gt;is_frame_complete_at(pc)) {</span>
+<span class="line-added">281       // Not sure where the pc points to, fallback to default</span>
+<span class="line-added">282       // stack overflow handling</span>
+<span class="line-added">283       return false;</span>
+<span class="line-added">284     } else {</span>
+<span class="line-added">285       // in compiled code, the stack banging is performed just after the return pc</span>
+<span class="line-added">286       // has been pushed on the stack</span>
+<span class="line-added">287       intptr_t* fp = (intptr_t*)exceptionInfo-&gt;ContextRecord-&gt;REG_FP;</span>
+<span class="line-added">288       intptr_t* sp = (intptr_t*)exceptionInfo-&gt;ContextRecord-&gt;REG_SP;</span>
+<span class="line-added">289       *fr = frame(sp + 1, fp, (address)*sp);</span>
+<span class="line-added">290       if (!fr-&gt;is_java_frame()) {</span>
+<span class="line-added">291         // See java_sender() comment above.</span>
+<span class="line-added">292         *fr = fr-&gt;java_sender();</span>
+<span class="line-added">293       }</span>
+<span class="line-added">294     }</span>
+<span class="line-added">295   }</span>
+<span class="line-added">296   assert(fr-&gt;is_java_frame(), &quot;Safety check&quot;);</span>
+<span class="line-added">297   return true;</span>
+<span class="line-added">298 }</span>
+299 
+300 #ifndef AMD64
+301 intptr_t* _get_previous_fp() {
+302   intptr_t **frameptr;
+303   __asm {
+304     mov frameptr, ebp
+305   };
+306   // ebp (frameptr) is for this frame (_get_previous_fp). We want the ebp for the
+307   // caller of os::current_frame*(), so go up two frames. However, for
+308   // optimized builds, _get_previous_fp() will be inlined, so only go
+309   // up 1 frame in that case.
+310 #ifdef _NMT_NOINLINE_
+311   return **(intptr_t***)frameptr;
+312 #else
+313   return *frameptr;
+314 #endif
+315 }
+316 #endif // !AMD64
+317 
+318 frame os::current_frame() {
+319 
+320 #ifdef AMD64
+321   // apparently _asm not supported on windows amd64
+322   typedef intptr_t*      get_fp_func           ();
+323   get_fp_func* func = CAST_TO_FN_PTR(get_fp_func*,
+324                                      StubRoutines::x86::get_previous_fp_entry());
+325   if (func == NULL) return frame();
+326   intptr_t* fp = (*func)();
+327   if (fp == NULL) {
+328     return frame();
+329   }
+330 #else
+331   intptr_t* fp = _get_previous_fp();
+332 #endif // AMD64
+333 
+334   frame myframe((intptr_t*)os::current_stack_pointer(),
+335                 (intptr_t*)fp,
+336                 CAST_FROM_FN_PTR(address, os::current_frame));
+337   if (os::is_first_C_frame(&amp;myframe)) {
+338     // stack is not walkable
+339     return frame();
+340   } else {
+341     return os::get_sender_for_C_frame(&amp;myframe);
+342   }
+343 }
+344 
+345 void os::print_context(outputStream *st, const void *context) {
+346   if (context == NULL) return;
+347 
+348   const CONTEXT* uc = (const CONTEXT*)context;
+349 
+350   st-&gt;print_cr(&quot;Registers:&quot;);
+351 #ifdef AMD64
+352   st-&gt;print(  &quot;RAX=&quot; INTPTR_FORMAT, uc-&gt;Rax);
+353   st-&gt;print(&quot;, RBX=&quot; INTPTR_FORMAT, uc-&gt;Rbx);
+354   st-&gt;print(&quot;, RCX=&quot; INTPTR_FORMAT, uc-&gt;Rcx);
+355   st-&gt;print(&quot;, RDX=&quot; INTPTR_FORMAT, uc-&gt;Rdx);
+356   st-&gt;cr();
+357   st-&gt;print(  &quot;RSP=&quot; INTPTR_FORMAT, uc-&gt;Rsp);
+358   st-&gt;print(&quot;, RBP=&quot; INTPTR_FORMAT, uc-&gt;Rbp);
+359   st-&gt;print(&quot;, RSI=&quot; INTPTR_FORMAT, uc-&gt;Rsi);
+360   st-&gt;print(&quot;, RDI=&quot; INTPTR_FORMAT, uc-&gt;Rdi);
+361   st-&gt;cr();
+362   st-&gt;print(  &quot;R8 =&quot; INTPTR_FORMAT, uc-&gt;R8);
+363   st-&gt;print(&quot;, R9 =&quot; INTPTR_FORMAT, uc-&gt;R9);
+364   st-&gt;print(&quot;, R10=&quot; INTPTR_FORMAT, uc-&gt;R10);
+365   st-&gt;print(&quot;, R11=&quot; INTPTR_FORMAT, uc-&gt;R11);
+366   st-&gt;cr();
+367   st-&gt;print(  &quot;R12=&quot; INTPTR_FORMAT, uc-&gt;R12);
+368   st-&gt;print(&quot;, R13=&quot; INTPTR_FORMAT, uc-&gt;R13);
+369   st-&gt;print(&quot;, R14=&quot; INTPTR_FORMAT, uc-&gt;R14);
+370   st-&gt;print(&quot;, R15=&quot; INTPTR_FORMAT, uc-&gt;R15);
+371   st-&gt;cr();
+372   st-&gt;print(  &quot;RIP=&quot; INTPTR_FORMAT, uc-&gt;Rip);
+373   st-&gt;print(&quot;, EFLAGS=&quot; INTPTR_FORMAT, uc-&gt;EFlags);
+374 #else
+375   st-&gt;print(  &quot;EAX=&quot; INTPTR_FORMAT, uc-&gt;Eax);
+376   st-&gt;print(&quot;, EBX=&quot; INTPTR_FORMAT, uc-&gt;Ebx);
+377   st-&gt;print(&quot;, ECX=&quot; INTPTR_FORMAT, uc-&gt;Ecx);
+378   st-&gt;print(&quot;, EDX=&quot; INTPTR_FORMAT, uc-&gt;Edx);
+379   st-&gt;cr();
+380   st-&gt;print(  &quot;ESP=&quot; INTPTR_FORMAT, uc-&gt;Esp);
+381   st-&gt;print(&quot;, EBP=&quot; INTPTR_FORMAT, uc-&gt;Ebp);
+382   st-&gt;print(&quot;, ESI=&quot; INTPTR_FORMAT, uc-&gt;Esi);
+383   st-&gt;print(&quot;, EDI=&quot; INTPTR_FORMAT, uc-&gt;Edi);
+384   st-&gt;cr();
+385   st-&gt;print(  &quot;EIP=&quot; INTPTR_FORMAT, uc-&gt;Eip);
+386   st-&gt;print(&quot;, EFLAGS=&quot; INTPTR_FORMAT, uc-&gt;EFlags);
+387 #endif // AMD64
+388   st-&gt;cr();
+389   st-&gt;cr();
+390 
+391   intptr_t *sp = (intptr_t *)uc-&gt;REG_SP;
+392   st-&gt;print_cr(&quot;Top of Stack: (sp=&quot; PTR_FORMAT &quot;)&quot;, sp);
+393   print_hex_dump(st, (address)sp, (address)(sp + 32), sizeof(intptr_t));
+394   st-&gt;cr();
+395 
+396   // Note: it may be unsafe to inspect memory near pc. For example, pc may
+397   // point to garbage if entry point in an nmethod is corrupted. Leave
+398   // this at the end, and hope for the best.
+399   address pc = (address)uc-&gt;REG_PC;
+400   print_instructions(st, pc, sizeof(char));
+401   st-&gt;cr();
+402 }
+403 
+404 
+405 void os::print_register_info(outputStream *st, const void *context) {
+406   if (context == NULL) return;
+407 
+408   const CONTEXT* uc = (const CONTEXT*)context;
+409 
+410   st-&gt;print_cr(&quot;Register to memory mapping:&quot;);
+411   st-&gt;cr();
+412 
+413   // this is only for the &quot;general purpose&quot; registers
+414 
+415 #ifdef AMD64
+416   st-&gt;print(&quot;RIP=&quot;); print_location(st, uc-&gt;Rip);
+417   st-&gt;print(&quot;RAX=&quot;); print_location(st, uc-&gt;Rax);
+418   st-&gt;print(&quot;RBX=&quot;); print_location(st, uc-&gt;Rbx);
+419   st-&gt;print(&quot;RCX=&quot;); print_location(st, uc-&gt;Rcx);
+420   st-&gt;print(&quot;RDX=&quot;); print_location(st, uc-&gt;Rdx);
+421   st-&gt;print(&quot;RSP=&quot;); print_location(st, uc-&gt;Rsp);
+422   st-&gt;print(&quot;RBP=&quot;); print_location(st, uc-&gt;Rbp);
+423   st-&gt;print(&quot;RSI=&quot;); print_location(st, uc-&gt;Rsi);
+424   st-&gt;print(&quot;RDI=&quot;); print_location(st, uc-&gt;Rdi);
+425   st-&gt;print(&quot;R8 =&quot;); print_location(st, uc-&gt;R8);
+426   st-&gt;print(&quot;R9 =&quot;); print_location(st, uc-&gt;R9);
+427   st-&gt;print(&quot;R10=&quot;); print_location(st, uc-&gt;R10);
+428   st-&gt;print(&quot;R11=&quot;); print_location(st, uc-&gt;R11);
+429   st-&gt;print(&quot;R12=&quot;); print_location(st, uc-&gt;R12);
+430   st-&gt;print(&quot;R13=&quot;); print_location(st, uc-&gt;R13);
+431   st-&gt;print(&quot;R14=&quot;); print_location(st, uc-&gt;R14);
+432   st-&gt;print(&quot;R15=&quot;); print_location(st, uc-&gt;R15);
+433 #else
+434   st-&gt;print(&quot;EIP=&quot;); print_location(st, uc-&gt;Eip);
+435   st-&gt;print(&quot;EAX=&quot;); print_location(st, uc-&gt;Eax);
+436   st-&gt;print(&quot;EBX=&quot;); print_location(st, uc-&gt;Ebx);
+437   st-&gt;print(&quot;ECX=&quot;); print_location(st, uc-&gt;Ecx);
+438   st-&gt;print(&quot;EDX=&quot;); print_location(st, uc-&gt;Edx);
+439   st-&gt;print(&quot;ESP=&quot;); print_location(st, uc-&gt;Esp);
+440   st-&gt;print(&quot;EBP=&quot;); print_location(st, uc-&gt;Ebp);
+441   st-&gt;print(&quot;ESI=&quot;); print_location(st, uc-&gt;Esi);
+442   st-&gt;print(&quot;EDI=&quot;); print_location(st, uc-&gt;Edi);
+443 #endif
+444 
+445   st-&gt;cr();
+446 }
+447 
+448 extern &quot;C&quot; int SpinPause () {
+449 #ifdef AMD64
+450    return 0 ;
+451 #else
+452    // pause == rep:nop
+453    // On systems that don&#39;t support pause a rep:nop
+454    // is executed as a nop.  The rep: prefix is ignored.
+455    _asm {
+456       pause ;
+457    };
+458    return 1 ;
+459 #endif // AMD64
+460 }
+461 
+462 
+463 void os::setup_fpu() {
+464 #ifndef AMD64
+465   int fpu_cntrl_word = StubRoutines::fpu_cntrl_wrd_std();
+466   __asm fldcw fpu_cntrl_word;
+467 #endif // !AMD64
+468 }
+469 
+470 #ifndef PRODUCT
+471 void os::verify_stack_alignment() {
+472 #ifdef AMD64
+473   // The current_stack_pointer() calls generated get_previous_sp stub routine.
+474   // Only enable the assert after the routine becomes available.
+475   if (StubRoutines::code1() != NULL) {
+476     assert(((intptr_t)os::current_stack_pointer() &amp; (StackAlignmentInBytes-1)) == 0, &quot;incorrect stack alignment&quot;);
+477   }
+478 #endif
+479 }
+480 #endif
+481 
+482 int os::extra_bang_size_in_bytes() {
+483   // JDK-8050147 requires the full cache line bang for x86.
+484   return VM_Version::L1_line_size();
+485 }
+<a name="8" id="anc8"></a><b style="font-size: large; color: red">--- EOF ---</b>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<input id="eof" value="8" type="hidden" />
+</body>
+</html>

@@ -1,0 +1,16 @@
+diff a/src/hotspot/cpu/aarch64/templateInterpreterGenerator_aarch64.cpp b/src/hotspot/cpu/aarch64/templateInterpreterGenerator_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/templateInterpreterGenerator_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/templateInterpreterGenerator_aarch64.cpp
+@@ -992,11 +992,11 @@
+ 
+     // Arguments are reversed on java expression stack
+     __ ldrw(val, Address(esp, 0));              // byte value
+     __ ldrw(crc, Address(esp, wordSize));       // Initial CRC
+ 
+-    unsigned long offset;
++    uint64_t offset;
+     __ adrp(tbl, ExternalAddress(StubRoutines::crc_table_addr()), offset);
+     __ add(tbl, tbl, offset);
+ 
+     __ mvnw(crc, crc); // ~crc
+     __ update_byte_crc32(crc, val, tbl);

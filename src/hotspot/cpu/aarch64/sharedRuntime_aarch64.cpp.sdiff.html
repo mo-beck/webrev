@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\sharedRuntime_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="register_aarch64.hpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="stubGenerator_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\sharedRuntime_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+1689 
+1690     // Now handlize the static class mirror it&#39;s known not-null.
+1691     __ str(c_rarg1, Address(sp, klass_offset));
+1692     map-&gt;set_oop(VMRegImpl::stack2reg(klass_slot_offset));
+1693 
+1694     // Now get the handle
+1695     __ lea(c_rarg1, Address(sp, klass_offset));
+1696     // and protect the arg if we must spill
+1697     c_arg--;
+1698   }
+1699 
+1700   // Change state to native (we save the return address in the thread, since it might not
+1701   // be pushed on the stack when we do a stack traversal).
+1702   // We use the same pc/oopMap repeatedly when we call out
+1703 
+1704   Label native_return;
+1705   __ set_last_Java_frame(sp, noreg, native_return, rscratch1);
+1706 
+1707   Label dtrace_method_entry, dtrace_method_entry_done;
+1708   {
+<span class="line-modified">1709     unsigned long offset;</span>
+1710     __ adrp(rscratch1, ExternalAddress((address)&amp;DTraceMethodProbes), offset);
+1711     __ ldrb(rscratch1, Address(rscratch1, offset));
+1712     __ cbnzw(rscratch1, dtrace_method_entry);
+1713     __ bind(dtrace_method_entry_done);
+1714   }
+1715 
+1716   // RedefineClasses() tracing support for obsolete method entry
+1717   if (log_is_enabled(Trace, redefine, class, obsolete)) {
+1718     // protect the args we&#39;ve loaded
+1719     save_args(masm, total_c_args, c_arg, out_regs);
+1720     __ mov_metadata(c_rarg1, method());
+1721     __ call_VM_leaf(
+1722       CAST_FROM_FN_PTR(address, SharedRuntime::rc_trace_method_entry),
+1723       rthread, c_rarg1);
+1724     restore_args(masm, total_c_args, c_arg, out_regs);
+1725   }
+1726 
+1727   // Lock a synchronized method
+1728 
+1729   // Register definitions used by locking and unlocking
+</pre>
+<hr />
+<pre>
+1929     __ lea(r0, Address(sp, lock_slot_offset * VMRegImpl::stack_slot_size));
+1930     //  get old displaced header
+1931     __ ldr(old_hdr, Address(r0, 0));
+1932 
+1933     // Atomic swap old header if oop still contains the stack lock
+1934     Label succeed;
+1935     __ cmpxchg_obj_header(r0, old_hdr, obj_reg, rscratch1, succeed, &amp;slow_path_unlock);
+1936     __ bind(succeed);
+1937 
+1938     // slow path re-enters here
+1939     __ bind(unlock_done);
+1940     if (ret_type != T_FLOAT &amp;&amp; ret_type != T_DOUBLE &amp;&amp; ret_type != T_VOID) {
+1941       restore_native_result(masm, ret_type, stack_slots);
+1942     }
+1943 
+1944     __ bind(done);
+1945   }
+1946 
+1947   Label dtrace_method_exit, dtrace_method_exit_done;
+1948   {
+<span class="line-modified">1949     unsigned long offset;</span>
+1950     __ adrp(rscratch1, ExternalAddress((address)&amp;DTraceMethodProbes), offset);
+1951     __ ldrb(rscratch1, Address(rscratch1, offset));
+1952     __ cbnzw(rscratch1, dtrace_method_exit);
+1953     __ bind(dtrace_method_exit_done);
+1954   }
+1955 
+1956   __ reset_last_Java_frame(false);
+1957 
+1958   // Unbox oop result, e.g. JNIHandles::resolve result.
+1959   if (is_reference_type(ret_type)) {
+1960     __ resolve_jobject(r0, rthread, rscratch2);
+1961   }
+1962 
+1963   if (CheckJNICalls) {
+1964     // clear_pending_jni_exception_check
+1965     __ str(zr, Address(rthread, JavaThread::pending_jni_exception_check_fn_offset()));
+1966   }
+1967 
+1968   if (!is_critical_native) {
+1969     // reset handle block
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+1689 
+1690     // Now handlize the static class mirror it&#39;s known not-null.
+1691     __ str(c_rarg1, Address(sp, klass_offset));
+1692     map-&gt;set_oop(VMRegImpl::stack2reg(klass_slot_offset));
+1693 
+1694     // Now get the handle
+1695     __ lea(c_rarg1, Address(sp, klass_offset));
+1696     // and protect the arg if we must spill
+1697     c_arg--;
+1698   }
+1699 
+1700   // Change state to native (we save the return address in the thread, since it might not
+1701   // be pushed on the stack when we do a stack traversal).
+1702   // We use the same pc/oopMap repeatedly when we call out
+1703 
+1704   Label native_return;
+1705   __ set_last_Java_frame(sp, noreg, native_return, rscratch1);
+1706 
+1707   Label dtrace_method_entry, dtrace_method_entry_done;
+1708   {
+<span class="line-modified">1709     uint64_t offset;</span>
+1710     __ adrp(rscratch1, ExternalAddress((address)&amp;DTraceMethodProbes), offset);
+1711     __ ldrb(rscratch1, Address(rscratch1, offset));
+1712     __ cbnzw(rscratch1, dtrace_method_entry);
+1713     __ bind(dtrace_method_entry_done);
+1714   }
+1715 
+1716   // RedefineClasses() tracing support for obsolete method entry
+1717   if (log_is_enabled(Trace, redefine, class, obsolete)) {
+1718     // protect the args we&#39;ve loaded
+1719     save_args(masm, total_c_args, c_arg, out_regs);
+1720     __ mov_metadata(c_rarg1, method());
+1721     __ call_VM_leaf(
+1722       CAST_FROM_FN_PTR(address, SharedRuntime::rc_trace_method_entry),
+1723       rthread, c_rarg1);
+1724     restore_args(masm, total_c_args, c_arg, out_regs);
+1725   }
+1726 
+1727   // Lock a synchronized method
+1728 
+1729   // Register definitions used by locking and unlocking
+</pre>
+<hr />
+<pre>
+1929     __ lea(r0, Address(sp, lock_slot_offset * VMRegImpl::stack_slot_size));
+1930     //  get old displaced header
+1931     __ ldr(old_hdr, Address(r0, 0));
+1932 
+1933     // Atomic swap old header if oop still contains the stack lock
+1934     Label succeed;
+1935     __ cmpxchg_obj_header(r0, old_hdr, obj_reg, rscratch1, succeed, &amp;slow_path_unlock);
+1936     __ bind(succeed);
+1937 
+1938     // slow path re-enters here
+1939     __ bind(unlock_done);
+1940     if (ret_type != T_FLOAT &amp;&amp; ret_type != T_DOUBLE &amp;&amp; ret_type != T_VOID) {
+1941       restore_native_result(masm, ret_type, stack_slots);
+1942     }
+1943 
+1944     __ bind(done);
+1945   }
+1946 
+1947   Label dtrace_method_exit, dtrace_method_exit_done;
+1948   {
+<span class="line-modified">1949     uint64_t offset;</span>
+1950     __ adrp(rscratch1, ExternalAddress((address)&amp;DTraceMethodProbes), offset);
+1951     __ ldrb(rscratch1, Address(rscratch1, offset));
+1952     __ cbnzw(rscratch1, dtrace_method_exit);
+1953     __ bind(dtrace_method_exit_done);
+1954   }
+1955 
+1956   __ reset_last_Java_frame(false);
+1957 
+1958   // Unbox oop result, e.g. JNIHandles::resolve result.
+1959   if (is_reference_type(ret_type)) {
+1960     __ resolve_jobject(r0, rthread, rscratch2);
+1961   }
+1962 
+1963   if (CheckJNICalls) {
+1964     // clear_pending_jni_exception_check
+1965     __ str(zr, Address(rthread, JavaThread::pending_jni_exception_check_fn_offset()));
+1966   }
+1967 
+1968   if (!is_critical_native) {
+1969     // reset handle block
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="register_aarch64.hpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="stubGenerator_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

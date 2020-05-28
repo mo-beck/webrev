@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\java.base\windows\native\libjava\java_props_md.c</title>
+    <link rel="stylesheet" href="..\..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\..\..\..\hotspot\share\runtime\vm_version.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\..\..\java.desktop\windows\native\libawt\windows\awt_DCHolder.cpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\java.base\windows\native\libjava\java_props_md.c</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 566,10 ***</span>
+<span class="line-new-header">--- 566,12 ---</span>
+          sprops.os_version = _strdup(buf);
+  #if defined(_M_AMD64)
+          sprops.os_arch = &quot;amd64&quot;;
+  #elif defined(_X86_)
+          sprops.os_arch = &quot;x86&quot;;
+<span class="line-added">+ #elif defined(_M_ARM64)</span>
+<span class="line-added">+         sprops.os_arch = &quot;aarch64&quot;;</span>
+  #else
+          sprops.os_arch = &quot;unknown&quot;;
+  #endif
+      }
+  
+</pre>
+<center><a href="..\..\..\..\hotspot\share\runtime\vm_version.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\..\..\java.desktop\windows\native\libawt\windows\awt_DCHolder.cpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

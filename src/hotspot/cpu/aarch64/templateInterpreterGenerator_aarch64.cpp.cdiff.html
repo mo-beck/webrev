@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\cpu\aarch64\templateInterpreterGenerator_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="stubRoutines_aarch64.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="templateTable_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\templateInterpreterGenerator_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 992,11 ***</span>
+  
+      // Arguments are reversed on java expression stack
+      __ ldrw(val, Address(esp, 0));              // byte value
+      __ ldrw(crc, Address(esp, wordSize));       // Initial CRC
+  
+<span class="line-modified">!     unsigned long offset;</span>
+      __ adrp(tbl, ExternalAddress(StubRoutines::crc_table_addr()), offset);
+      __ add(tbl, tbl, offset);
+  
+      __ mvnw(crc, crc); // ~crc
+      __ update_byte_crc32(crc, val, tbl);
+<span class="line-new-header">--- 992,11 ---</span>
+  
+      // Arguments are reversed on java expression stack
+      __ ldrw(val, Address(esp, 0));              // byte value
+      __ ldrw(crc, Address(esp, wordSize));       // Initial CRC
+  
+<span class="line-modified">!     uint64_t offset;</span>
+      __ adrp(tbl, ExternalAddress(StubRoutines::crc_table_addr()), offset);
+      __ add(tbl, tbl, offset);
+  
+      __ mvnw(crc, crc); // ~crc
+      __ update_byte_crc32(crc, val, tbl);
+</pre>
+<center><a href="stubRoutines_aarch64.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="templateTable_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

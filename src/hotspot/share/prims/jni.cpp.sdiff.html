@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\share\prims\jni.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\code\codeCache.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\runtime\biasedLocking.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\share\prims\jni.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+  75 #include &quot;runtime/reflection.hpp&quot;
+  76 #include &quot;runtime/safepointVerifiers.hpp&quot;
+  77 #include &quot;runtime/sharedRuntime.hpp&quot;
+  78 #include &quot;runtime/signature.hpp&quot;
+  79 #include &quot;runtime/thread.inline.hpp&quot;
+  80 #include &quot;runtime/vmOperations.hpp&quot;
+  81 #include &quot;services/memTracker.hpp&quot;
+  82 #include &quot;services/runtimeService.hpp&quot;
+  83 #include &quot;utilities/defaultStream.hpp&quot;
+  84 #include &quot;utilities/dtrace.hpp&quot;
+  85 #include &quot;utilities/events.hpp&quot;
+  86 #include &quot;utilities/histogram.hpp&quot;
+  87 #include &quot;utilities/macros.hpp&quot;
+  88 #include &quot;utilities/vmError.hpp&quot;
+  89 #if INCLUDE_JVMCI
+  90 #include &quot;jvmci/jvmciCompiler.hpp&quot;
+  91 #endif
+  92 
+  93 static jint CurrentVersion = JNI_VERSION_10;
+  94 
+<span class="line-removed">  95 #ifdef _WIN32</span>
+<span class="line-removed">  96 extern LONG WINAPI topLevelExceptionFilter(_EXCEPTION_POINTERS* );</span>
+<span class="line-removed">  97 #endif</span>
+<span class="line-removed">  98 </span>
+  99 // The DT_RETURN_MARK macros create a scoped object to fire the dtrace
+ 100 // &#39;-return&#39; probe regardless of the return path is taken out of the function.
+ 101 // Methods that have multiple return paths use this to avoid having to
+ 102 // instrument each return path.  Methods that use CHECK or THROW must use this
+ 103 // since those macros can cause an immedate uninstrumented return.
+ 104 //
+ 105 // In order to get the return value, a reference to the variable containing
+ 106 // the return value must be passed to the contructor of the object, and
+ 107 // the return value must be set before return (since the mark object has
+ 108 // a reference to it).
+ 109 //
+ 110 // Example:
+ 111 // DT_RETURN_MARK_DECL(SomeFunc, int);
+ 112 // JNI_ENTRY(int, SomeFunc, ...)
+ 113 //   int return_value = 0;
+ 114 //   DT_RETURN_MARK(SomeFunc, int, (const int&amp;)return_value);
+ 115 //   foo(CHECK_0)
+ 116 //   return_value = 5;
+ 117 //   return return_value;
+ 118 // JNI_END
+</pre>
+<hr />
+<pre>
+3780 
+3781   if (Threads::is_supported_jni_version(args-&gt;version)) {
+3782     ret = JNI_OK;
+3783   }
+3784   // 1.1 style no longer supported in hotspot.
+3785   // According the JNI spec, we should update args-&gt;version on return.
+3786   // We also use the structure to communicate with launcher about default
+3787   // stack size.
+3788   if (args-&gt;version == JNI_VERSION_1_1) {
+3789     args-&gt;version = JNI_VERSION_1_2;
+3790     // javaStackSize is int in arguments structure
+3791     assert(jlong(ThreadStackSize) * K &lt; INT_MAX, &quot;integer overflow&quot;);
+3792     args-&gt;javaStackSize = (jint)(ThreadStackSize * K);
+3793   }
+3794   return ret;
+3795 }
+3796 
+3797 DT_RETURN_MARK_DECL(CreateJavaVM, jint
+3798                     , HOTSPOT_JNI_CREATEJAVAVM_RETURN(_ret_ref));
+3799 
+<span class="line-modified">3800 static jint JNI_CreateJavaVM_inner(JavaVM **vm, void **penv, void *args) {</span>
+3801   HOTSPOT_JNI_CREATEJAVAVM_ENTRY((void **) vm, penv, args);
+3802 
+3803   jint result = JNI_ERR;
+3804   DT_RETURN_MARK(CreateJavaVM, jint, (const jint&amp;)result);
+3805 
+3806   // We&#39;re about to use Atomic::xchg for synchronization.  Some Zero
+3807   // platforms use the GCC builtin __sync_lock_test_and_set for this,
+3808   // but __sync_lock_test_and_set is not guaranteed to do what we want
+3809   // on all architectures.  So we check it works before relying on it.
+3810 #if defined(ZERO) &amp;&amp; defined(ASSERT)
+3811   {
+3812     jint a = 0xcafebabe;
+3813     jint b = Atomic::xchg(&amp;a, (jint) 0xdeadbeef);
+3814     void *c = &amp;a;
+3815     void *d = Atomic::xchg(&amp;c, &amp;b);
+3816     assert(a == (jint) 0xdeadbeef &amp;&amp; b == (jint) 0xcafebabe, &quot;Atomic::xchg() works&quot;);
+3817     assert(c == &amp;b &amp;&amp; d == &amp;a, &quot;Atomic::xchg() works&quot;);
+3818   }
+3819 #endif // ZERO &amp;&amp; ASSERT
+3820 
+</pre>
+<hr />
+<pre>
+3909       // reset safe_to_recreate_vm to 1 so that retrial would be possible
+3910       safe_to_recreate_vm = 1;
+3911     }
+3912 
+3913     // Creation failed. We must reset vm_created
+3914     *vm = 0;
+3915     *(JNIEnv**)penv = 0;
+3916     // reset vm_created last to avoid race condition. Use OrderAccess to
+3917     // control both compiler and architectural-based reordering.
+3918     Atomic::release_store(&amp;vm_created, 0);
+3919   }
+3920 
+3921   // Flush stdout and stderr before exit.
+3922   fflush(stdout);
+3923   fflush(stderr);
+3924 
+3925   return result;
+3926 
+3927 }
+3928 
+<span class="line-removed">3929 _JNI_IMPORT_OR_EXPORT_ jint JNICALL JNI_CreateJavaVM(JavaVM **vm, void **penv, void *args) {</span>
+<span class="line-removed">3930   jint result = JNI_ERR;</span>
+<span class="line-removed">3931   // On Windows, let CreateJavaVM run with SEH protection</span>
+<span class="line-removed">3932 #ifdef _WIN32</span>
+<span class="line-removed">3933   __try {</span>
+<span class="line-removed">3934 #endif</span>
+<span class="line-removed">3935     result = JNI_CreateJavaVM_inner(vm, penv, args);</span>
+<span class="line-removed">3936 #ifdef _WIN32</span>
+<span class="line-removed">3937   } __except(topLevelExceptionFilter((_EXCEPTION_POINTERS*)_exception_info())) {</span>
+<span class="line-removed">3938     // Nothing to do.</span>
+<span class="line-removed">3939   }</span>
+<span class="line-removed">3940 #endif</span>
+<span class="line-removed">3941   return result;</span>
+<span class="line-removed">3942 }</span>
+<span class="line-removed">3943 </span>
+3944 _JNI_IMPORT_OR_EXPORT_ jint JNICALL JNI_GetCreatedJavaVMs(JavaVM **vm_buf, jsize bufLen, jsize *numVMs) {
+3945   // See bug 4367188, the wrapper can sometimes cause VM crashes
+3946   // JNIWrapper(&quot;GetCreatedJavaVMs&quot;);
+3947 
+3948   HOTSPOT_JNI_GETCREATEDJAVAVMS_ENTRY((void **) vm_buf, bufLen, (uintptr_t *) numVMs);
+3949 
+3950   if (vm_created == 1) {
+3951     if (numVMs != NULL) *numVMs = 1;
+3952     if (bufLen &gt; 0)     *vm_buf = (JavaVM *)(&amp;main_vm);
+3953   } else {
+3954     if (numVMs != NULL) *numVMs = 0;
+3955   }
+3956   HOTSPOT_JNI_GETCREATEDJAVAVMS_RETURN(JNI_OK);
+3957   return JNI_OK;
+3958 }
+3959 
+3960 extern &quot;C&quot; {
+3961 
+3962 DT_RETURN_MARK_DECL(DestroyJavaVM, jint
+3963                     , HOTSPOT_JNI_DESTROYJAVAVM_RETURN(_ret_ref));
+3964 
+<span class="line-modified">3965 static jint JNICALL jni_DestroyJavaVM_inner(JavaVM *vm) {</span>
+3966   HOTSPOT_JNI_DESTROYJAVAVM_ENTRY(vm);
+3967   jint res = JNI_ERR;
+3968   DT_RETURN_MARK(DestroyJavaVM, jint, (const jint&amp;)res);
+3969 
+3970   if (vm_created == 0) {
+3971     res = JNI_ERR;
+3972     return res;
+3973   }
+3974 
+3975   JNIWrapper(&quot;DestroyJavaVM&quot;);
+3976   JNIEnv *env;
+3977   JavaVMAttachArgs destroyargs;
+3978   destroyargs.version = CurrentVersion;
+3979   destroyargs.name = (char *)&quot;DestroyJavaVM&quot;;
+3980   destroyargs.group = NULL;
+3981   res = vm-&gt;AttachCurrentThread((void **)&amp;env, (void *)&amp;destroyargs);
+3982   if (res != JNI_OK) {
+3983     return res;
+3984   }
+3985 
+3986   // Since this is not a JVM_ENTRY we have to set the thread state manually before entering.
+3987   JavaThread* thread = JavaThread::current();
+3988   ThreadStateTransition::transition_from_native(thread, _thread_in_vm);
+3989   if (Threads::destroy_vm()) {
+3990     // Should not change thread state, VM is gone
+3991     vm_created = 0;
+3992     res = JNI_OK;
+3993     return res;
+3994   } else {
+3995     ThreadStateTransition::transition(thread, _thread_in_vm, _thread_in_native);
+3996     res = JNI_ERR;
+3997     return res;
+3998   }
+3999 }
+4000 
+<span class="line-removed">4001 jint JNICALL jni_DestroyJavaVM(JavaVM *vm) {</span>
+<span class="line-removed">4002   jint result = JNI_ERR;</span>
+<span class="line-removed">4003   // On Windows, we need SEH protection</span>
+<span class="line-removed">4004 #ifdef _WIN32</span>
+<span class="line-removed">4005   __try {</span>
+<span class="line-removed">4006 #endif</span>
+<span class="line-removed">4007     result = jni_DestroyJavaVM_inner(vm);</span>
+<span class="line-removed">4008 #ifdef _WIN32</span>
+<span class="line-removed">4009   } __except(topLevelExceptionFilter((_EXCEPTION_POINTERS*)_exception_info())) {</span>
+<span class="line-removed">4010     // Nothing to do.</span>
+<span class="line-removed">4011   }</span>
+<span class="line-removed">4012 #endif</span>
+<span class="line-removed">4013   return result;</span>
+<span class="line-removed">4014 }</span>
+<span class="line-removed">4015 </span>
+4016 static jint attach_current_thread(JavaVM *vm, void **penv, void *_args, bool daemon) {
+4017   JavaVMAttachArgs *args = (JavaVMAttachArgs *) _args;
+4018 
+4019   // Check below commented out from JDK1.2fcs as well
+4020   /*
+4021   if (args &amp;&amp; (args-&gt;version != JNI_VERSION_1_1 || args-&gt;version != JNI_VERSION_1_2)) {
+4022     return JNI_EVERSION;
+4023   }
+4024   */
+4025 
+4026   Thread* t = Thread::current_or_null();
+4027   if (t != NULL) {
+4028     // If the thread has been attached this operation is a no-op
+4029     *(JNIEnv**)penv = ((JavaThread*) t)-&gt;jni_environment();
+4030     return JNI_OK;
+4031   }
+4032 
+4033   // Create a thread and mark it as attaching so it will be skipped by the
+4034   // ThreadsListEnumerator - see CR 6404306
+4035   JavaThread* thread = new JavaThread(true);
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+  75 #include &quot;runtime/reflection.hpp&quot;
+  76 #include &quot;runtime/safepointVerifiers.hpp&quot;
+  77 #include &quot;runtime/sharedRuntime.hpp&quot;
+  78 #include &quot;runtime/signature.hpp&quot;
+  79 #include &quot;runtime/thread.inline.hpp&quot;
+  80 #include &quot;runtime/vmOperations.hpp&quot;
+  81 #include &quot;services/memTracker.hpp&quot;
+  82 #include &quot;services/runtimeService.hpp&quot;
+  83 #include &quot;utilities/defaultStream.hpp&quot;
+  84 #include &quot;utilities/dtrace.hpp&quot;
+  85 #include &quot;utilities/events.hpp&quot;
+  86 #include &quot;utilities/histogram.hpp&quot;
+  87 #include &quot;utilities/macros.hpp&quot;
+  88 #include &quot;utilities/vmError.hpp&quot;
+  89 #if INCLUDE_JVMCI
+  90 #include &quot;jvmci/jvmciCompiler.hpp&quot;
+  91 #endif
+  92 
+  93 static jint CurrentVersion = JNI_VERSION_10;
+  94 
+
+
+
+
+  95 // The DT_RETURN_MARK macros create a scoped object to fire the dtrace
+  96 // &#39;-return&#39; probe regardless of the return path is taken out of the function.
+  97 // Methods that have multiple return paths use this to avoid having to
+  98 // instrument each return path.  Methods that use CHECK or THROW must use this
+  99 // since those macros can cause an immedate uninstrumented return.
+ 100 //
+ 101 // In order to get the return value, a reference to the variable containing
+ 102 // the return value must be passed to the contructor of the object, and
+ 103 // the return value must be set before return (since the mark object has
+ 104 // a reference to it).
+ 105 //
+ 106 // Example:
+ 107 // DT_RETURN_MARK_DECL(SomeFunc, int);
+ 108 // JNI_ENTRY(int, SomeFunc, ...)
+ 109 //   int return_value = 0;
+ 110 //   DT_RETURN_MARK(SomeFunc, int, (const int&amp;)return_value);
+ 111 //   foo(CHECK_0)
+ 112 //   return_value = 5;
+ 113 //   return return_value;
+ 114 // JNI_END
+</pre>
+<hr />
+<pre>
+3776 
+3777   if (Threads::is_supported_jni_version(args-&gt;version)) {
+3778     ret = JNI_OK;
+3779   }
+3780   // 1.1 style no longer supported in hotspot.
+3781   // According the JNI spec, we should update args-&gt;version on return.
+3782   // We also use the structure to communicate with launcher about default
+3783   // stack size.
+3784   if (args-&gt;version == JNI_VERSION_1_1) {
+3785     args-&gt;version = JNI_VERSION_1_2;
+3786     // javaStackSize is int in arguments structure
+3787     assert(jlong(ThreadStackSize) * K &lt; INT_MAX, &quot;integer overflow&quot;);
+3788     args-&gt;javaStackSize = (jint)(ThreadStackSize * K);
+3789   }
+3790   return ret;
+3791 }
+3792 
+3793 DT_RETURN_MARK_DECL(CreateJavaVM, jint
+3794                     , HOTSPOT_JNI_CREATEJAVAVM_RETURN(_ret_ref));
+3795 
+<span class="line-modified">3796 _JNI_IMPORT_OR_EXPORT_ jint JNICALL JNI_CreateJavaVM(JavaVM **vm, void **penv, void *args) {</span>
+3797   HOTSPOT_JNI_CREATEJAVAVM_ENTRY((void **) vm, penv, args);
+3798 
+3799   jint result = JNI_ERR;
+3800   DT_RETURN_MARK(CreateJavaVM, jint, (const jint&amp;)result);
+3801 
+3802   // We&#39;re about to use Atomic::xchg for synchronization.  Some Zero
+3803   // platforms use the GCC builtin __sync_lock_test_and_set for this,
+3804   // but __sync_lock_test_and_set is not guaranteed to do what we want
+3805   // on all architectures.  So we check it works before relying on it.
+3806 #if defined(ZERO) &amp;&amp; defined(ASSERT)
+3807   {
+3808     jint a = 0xcafebabe;
+3809     jint b = Atomic::xchg(&amp;a, (jint) 0xdeadbeef);
+3810     void *c = &amp;a;
+3811     void *d = Atomic::xchg(&amp;c, &amp;b);
+3812     assert(a == (jint) 0xdeadbeef &amp;&amp; b == (jint) 0xcafebabe, &quot;Atomic::xchg() works&quot;);
+3813     assert(c == &amp;b &amp;&amp; d == &amp;a, &quot;Atomic::xchg() works&quot;);
+3814   }
+3815 #endif // ZERO &amp;&amp; ASSERT
+3816 
+</pre>
+<hr />
+<pre>
+3905       // reset safe_to_recreate_vm to 1 so that retrial would be possible
+3906       safe_to_recreate_vm = 1;
+3907     }
+3908 
+3909     // Creation failed. We must reset vm_created
+3910     *vm = 0;
+3911     *(JNIEnv**)penv = 0;
+3912     // reset vm_created last to avoid race condition. Use OrderAccess to
+3913     // control both compiler and architectural-based reordering.
+3914     Atomic::release_store(&amp;vm_created, 0);
+3915   }
+3916 
+3917   // Flush stdout and stderr before exit.
+3918   fflush(stdout);
+3919   fflush(stderr);
+3920 
+3921   return result;
+3922 
+3923 }
+3924 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+3925 _JNI_IMPORT_OR_EXPORT_ jint JNICALL JNI_GetCreatedJavaVMs(JavaVM **vm_buf, jsize bufLen, jsize *numVMs) {
+3926   // See bug 4367188, the wrapper can sometimes cause VM crashes
+3927   // JNIWrapper(&quot;GetCreatedJavaVMs&quot;);
+3928 
+3929   HOTSPOT_JNI_GETCREATEDJAVAVMS_ENTRY((void **) vm_buf, bufLen, (uintptr_t *) numVMs);
+3930 
+3931   if (vm_created == 1) {
+3932     if (numVMs != NULL) *numVMs = 1;
+3933     if (bufLen &gt; 0)     *vm_buf = (JavaVM *)(&amp;main_vm);
+3934   } else {
+3935     if (numVMs != NULL) *numVMs = 0;
+3936   }
+3937   HOTSPOT_JNI_GETCREATEDJAVAVMS_RETURN(JNI_OK);
+3938   return JNI_OK;
+3939 }
+3940 
+3941 extern &quot;C&quot; {
+3942 
+3943 DT_RETURN_MARK_DECL(DestroyJavaVM, jint
+3944                     , HOTSPOT_JNI_DESTROYJAVAVM_RETURN(_ret_ref));
+3945 
+<span class="line-modified">3946 jint JNICALL jni_DestroyJavaVM(JavaVM *vm) {</span>
+3947   HOTSPOT_JNI_DESTROYJAVAVM_ENTRY(vm);
+3948   jint res = JNI_ERR;
+3949   DT_RETURN_MARK(DestroyJavaVM, jint, (const jint&amp;)res);
+3950 
+3951   if (vm_created == 0) {
+3952     res = JNI_ERR;
+3953     return res;
+3954   }
+3955 
+3956   JNIWrapper(&quot;DestroyJavaVM&quot;);
+3957   JNIEnv *env;
+3958   JavaVMAttachArgs destroyargs;
+3959   destroyargs.version = CurrentVersion;
+3960   destroyargs.name = (char *)&quot;DestroyJavaVM&quot;;
+3961   destroyargs.group = NULL;
+3962   res = vm-&gt;AttachCurrentThread((void **)&amp;env, (void *)&amp;destroyargs);
+3963   if (res != JNI_OK) {
+3964     return res;
+3965   }
+3966 
+3967   // Since this is not a JVM_ENTRY we have to set the thread state manually before entering.
+3968   JavaThread* thread = JavaThread::current();
+3969   ThreadStateTransition::transition_from_native(thread, _thread_in_vm);
+3970   if (Threads::destroy_vm()) {
+3971     // Should not change thread state, VM is gone
+3972     vm_created = 0;
+3973     res = JNI_OK;
+3974     return res;
+3975   } else {
+3976     ThreadStateTransition::transition(thread, _thread_in_vm, _thread_in_native);
+3977     res = JNI_ERR;
+3978     return res;
+3979   }
+3980 }
+3981 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+3982 static jint attach_current_thread(JavaVM *vm, void **penv, void *_args, bool daemon) {
+3983   JavaVMAttachArgs *args = (JavaVMAttachArgs *) _args;
+3984 
+3985   // Check below commented out from JDK1.2fcs as well
+3986   /*
+3987   if (args &amp;&amp; (args-&gt;version != JNI_VERSION_1_1 || args-&gt;version != JNI_VERSION_1_2)) {
+3988     return JNI_EVERSION;
+3989   }
+3990   */
+3991 
+3992   Thread* t = Thread::current_or_null();
+3993   if (t != NULL) {
+3994     // If the thread has been attached this operation is a no-op
+3995     *(JNIEnv**)penv = ((JavaThread*) t)-&gt;jni_environment();
+3996     return JNI_OK;
+3997   }
+3998 
+3999   // Create a thread and mark it as attaching so it will be skipped by the
+4000   // ThreadsListEnumerator - see CR 6404306
+4001   JavaThread* thread = new JavaThread(true);
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="..\code\codeCache.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\runtime\biasedLocking.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\hotspot\os_cpu\windows_aarch64\globals_windows_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+ 1 /*
+ 2  * Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+ 3  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
+ 4  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ 5  *
+ 6  * This code is free software; you can redistribute it and/or modify it
+ 7  * under the terms of the GNU General Public License version 2 only, as
+ 8  * published by the Free Software Foundation.
+ 9  *
+10  * This code is distributed in the hope that it will be useful, but WITHOUT
+11  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+12  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+13  * version 2 for more details (a copy is included in the LICENSE file that
+14  * accompanied this code).
+15  *
+16  * You should have received a copy of the GNU General Public License version
+17  * 2 along with this work; if not, write to the Free Software Foundation,
+18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+19  *
+20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+21  * or visit www.oracle.com if you need additional information or have any
+22  * questions.
+23  *
+24  */
+25 
+26 #ifndef OS_CPU_WINDOWS_AARCH64_GLOBALS_WINDOWS_AARCH64_HPP
+27 #define OS_CPU_WINDOWS_AARCH64_GLOBALS_WINDOWS_AARCH64_HPP
+28 
+29 // Sets the default values for platform dependent flags used by the runtime system.
+30 // (see globals.hpp)
+31 
+32 define_pd_global(bool, DontYieldALot,            false);
+33 
+34 // Default stack size on Windows is determined by the executable (java.exe
+35 // has a default value of 320K/1MB [32bit/64bit]). Depending on Windows version, changing
+36 // ThreadStackSize to non-zero may have significant impact on memory usage.
+37 // See comments in os_windows.cpp.
+38 define_pd_global(intx, ThreadStackSize,          0); // 0 =&gt; use system default
+39 define_pd_global(intx, VMThreadStackSize,        0);
+40 
+41 #ifdef ASSERT
+42 define_pd_global(intx, CompilerThreadStackSize,  1024);
+43 #else
+44 define_pd_global(intx, CompilerThreadStackSize,  0);
+45 #endif
+46 
+47 define_pd_global(uintx,JVMInvokeMethodSlack,     8192);
+48 
+49 // Used on 64 bit platforms for UseCompressedOops base address
+50 define_pd_global(uintx,HeapBaseMinAddress,       2*G);
+51 /*
+52 class Thread;
+53 extern __thread Thread *aarch64_currentThread;
+54 */
+55 #endif // OS_CPU_WINDOWS_AARCH64_GLOBALS_WINDOWS_AARCH64_HPP
+    </pre>
+  </body>
+</html>

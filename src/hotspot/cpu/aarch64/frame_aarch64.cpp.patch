@@ -1,0 +1,110 @@
+diff a/src/hotspot/cpu/aarch64/frame_aarch64.cpp b/src/hotspot/cpu/aarch64/frame_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/frame_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/frame_aarch64.cpp
+@@ -671,19 +671,18 @@
+ 
+ #undef DESCRIBE_FP_OFFSET
+ 
+ #define DESCRIBE_FP_OFFSET(name)                                        \
+   {                                                                     \
+-    unsigned long *p = (unsigned long *)fp;                             \
+-    printf("0x%016lx 0x%016lx %s\n", (unsigned long)(p + frame::name##_offset), \
++    uint64_t *p = (uint64_t *)fp;                             \
++    printf("0x%016lx 0x%016lx %s\n", (uint64_t)(p + frame::name##_offset), \
+            p[frame::name##_offset], #name);                             \
+   }
+-
+-static __thread unsigned long nextfp;
+-static __thread unsigned long nextpc;
+-static __thread unsigned long nextsp;
+-static __thread RegisterMap *reg_map;
++static THREAD_LOCAL uint64_t nextfp;
++static THREAD_LOCAL uint64_t nextpc;
++static THREAD_LOCAL uint64_t nextsp;
++static THREAD_LOCAL RegisterMap *reg_map;
+ 
+ static void printbc(Method *m, intptr_t bcx) {
+   const char *name;
+   char buf[16];
+   if (m->validate_bci_from_bcp((address)bcx) < 0
+@@ -697,11 +696,11 @@
+   }
+   ResourceMark rm;
+   printf("%s : %s ==> %s\n", m->name_and_sig_as_C_string(), buf, name);
+ }
+ 
+-void internal_pf(unsigned long sp, unsigned long fp, unsigned long pc, unsigned long bcx) {
++void internal_pf(uint64_t sp, uint64_t fp, uint64_t pc, uint64_t bcx) {
+   if (! fp)
+     return;
+ 
+   DESCRIBE_FP_OFFSET(return_addr);
+   DESCRIBE_FP_OFFSET(link);
+@@ -711,30 +710,30 @@
+   DESCRIBE_FP_OFFSET(interpreter_frame_mdp);
+   DESCRIBE_FP_OFFSET(interpreter_frame_cache);
+   DESCRIBE_FP_OFFSET(interpreter_frame_locals);
+   DESCRIBE_FP_OFFSET(interpreter_frame_bcp);
+   DESCRIBE_FP_OFFSET(interpreter_frame_initial_sp);
+-  unsigned long *p = (unsigned long *)fp;
++  uint64_t *p = (uint64_t *)fp;
+ 
+   // We want to see all frames, native and Java.  For compiled and
+   // interpreted frames we have special information that allows us to
+   // unwind them; for everything else we assume that the native frame
+   // pointer chain is intact.
+   frame this_frame((intptr_t*)sp, (intptr_t*)fp, (address)pc);
+   if (this_frame.is_compiled_frame() ||
+       this_frame.is_interpreted_frame()) {
+     frame sender = this_frame.sender(reg_map);
+-    nextfp = (unsigned long)sender.fp();
+-    nextpc = (unsigned long)sender.pc();
+-    nextsp = (unsigned long)sender.unextended_sp();
++    nextfp = (uint64_t)sender.fp();
++    nextpc = (uint64_t)sender.pc();
++    nextsp = (uint64_t)sender.unextended_sp();
+   } else {
+     nextfp = p[frame::link_offset];
+     nextpc = p[frame::return_addr_offset];
+-    nextsp = (unsigned long)&p[frame::sender_sp_offset];
++    nextsp = (uint64_t)&p[frame::sender_sp_offset];
+   }
+ 
+-  if (bcx == -1ul)
++  if (bcx == -1ull)
+     bcx = p[frame::interpreter_frame_bcp_offset];
+ 
+   if (Interpreter::contains((address)pc)) {
+     Method* m = (Method*)p[frame::interpreter_frame_method_offset];
+     if(m && m->is_method()) {
+@@ -764,12 +763,12 @@
+   if (cb && cb->frame_size())
+     nextfp = nextsp + wordSize * (cb->frame_size() - 2);
+   internal_pf (nextsp, nextfp, nextpc, -1);
+ }
+ 
+-extern "C" void pf(unsigned long sp, unsigned long fp, unsigned long pc,
+-                   unsigned long bcx, unsigned long thread) {
++extern "C" void pf(uint64_t sp, uint64_t fp, uint64_t pc,
++                   uint64_t bcx, uint64_t thread) {
+   if (!reg_map) {
+     reg_map = NEW_C_HEAP_OBJ(RegisterMap, mtNone);
+     ::new (reg_map) RegisterMap((JavaThread*)thread, false);
+   } else {
+     *reg_map = RegisterMap((JavaThread*)thread, false);
+@@ -784,13 +783,13 @@
+ }
+ 
+ // support for printing out where we are in a Java method
+ // needs to be passed current fp and bcp register values
+ // prints method name, bc index and bytecode name
+-extern "C" void pm(unsigned long fp, unsigned long bcx) {
++extern "C" void pm(uint64_t fp, uint64_t bcx) {
+   DESCRIBE_FP_OFFSET(interpreter_frame_method);
+-  unsigned long *p = (unsigned long *)fp;
++  uint64_t *p = (uint64_t *)fp;
+   Method* m = (Method*)p[frame::interpreter_frame_method_offset];
+   printbc(m, bcx);
+ }
+ 
+ #ifndef PRODUCT

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\share\runtime\stubRoutines.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="safepointMechanism.inline.hpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="thread.cpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\share\runtime\stubRoutines.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -390,11 +390,11 @@</span>
+    test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::aligned_conjoint_words), sizeof(jlong));
+    test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::aligned_disjoint_words), sizeof(jlong));
+  
+    // test safefetch routines
+    // Not on Windows 32bit until 8074860 is fixed
+<span class="udiff-line-modified-removed">- #if ! (defined(_WIN32) &amp;&amp; defined(_M_IX86))</span>
+<span class="udiff-line-modified-added">+ #if ! (defined(_WIN32) &amp;&amp; defined(_M_IX86)) &amp;&amp; !defined(_M_ARM64)</span>
+    test_safefetch32();
+    test_safefetchN();
+  #endif
+  
+  #endif
+</pre>
+<center><a href="safepointMechanism.inline.hpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="thread.cpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\interpreterRT_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="interp_masm_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="jniFastGetField_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\interpreterRT_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+329   {
+330     jint from_obj = *(jint*)(_from+Interpreter::local_offset_in_bytes(0));
+331     _from -= Interpreter::stackElementSize;
+332 
+333     if (_num_fp_args &lt; Argument::n_float_register_parameters_c) {
+334       *_fp_args++ = from_obj;
+335       _num_fp_args++;
+336     } else {
+337       *_to++ = from_obj;
+338       _num_fp_args++;
+339     }
+340   }
+341 
+342   virtual void pass_double()
+343   {
+344     intptr_t from_obj = *(intptr_t*)(_from+Interpreter::local_offset_in_bytes(1));
+345     _from -= 2*Interpreter::stackElementSize;
+346 
+347     if (_num_fp_args &lt; Argument::n_float_register_parameters_c) {
+348       *_fp_args++ = from_obj;
+<span class="line-modified">349       *_fp_identifiers |= (1 &lt;&lt; _num_fp_args); // mark as double</span>
+350       _num_fp_args++;
+351     } else {
+352       *_to++ = from_obj;
+353       _num_fp_args++;
+354     }
+355   }
+356 
+357  public:
+358   SlowSignatureHandler(const methodHandle&amp; method, address from, intptr_t* to)
+359     : NativeSignatureIterator(method)
+360   {
+361     _from = from;
+362     _to   = to;
+363 
+364     _int_args = to - (method-&gt;is_static() ? 16 : 17);
+365     _fp_args =  to - 8;
+366     _fp_identifiers = to - 9;
+367     *(int*) _fp_identifiers = 0;
+368     _num_int_args = (method-&gt;is_static() ? 1 : 0);
+369     _num_fp_args = 0;
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+329   {
+330     jint from_obj = *(jint*)(_from+Interpreter::local_offset_in_bytes(0));
+331     _from -= Interpreter::stackElementSize;
+332 
+333     if (_num_fp_args &lt; Argument::n_float_register_parameters_c) {
+334       *_fp_args++ = from_obj;
+335       _num_fp_args++;
+336     } else {
+337       *_to++ = from_obj;
+338       _num_fp_args++;
+339     }
+340   }
+341 
+342   virtual void pass_double()
+343   {
+344     intptr_t from_obj = *(intptr_t*)(_from+Interpreter::local_offset_in_bytes(1));
+345     _from -= 2*Interpreter::stackElementSize;
+346 
+347     if (_num_fp_args &lt; Argument::n_float_register_parameters_c) {
+348       *_fp_args++ = from_obj;
+<span class="line-modified">349       *_fp_identifiers |= (1ULL &lt;&lt; _num_fp_args); // mark as double</span>
+350       _num_fp_args++;
+351     } else {
+352       *_to++ = from_obj;
+353       _num_fp_args++;
+354     }
+355   }
+356 
+357  public:
+358   SlowSignatureHandler(const methodHandle&amp; method, address from, intptr_t* to)
+359     : NativeSignatureIterator(method)
+360   {
+361     _from = from;
+362     _to   = to;
+363 
+364     _int_args = to - (method-&gt;is_static() ? 16 : 17);
+365     _fp_args =  to - 8;
+366     _fp_identifiers = to - 9;
+367     *(int*) _fp_identifiers = 0;
+368     _num_int_args = (method-&gt;is_static() ? 1 : 0);
+369     _num_fp_args = 0;
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="interp_masm_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="jniFastGetField_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

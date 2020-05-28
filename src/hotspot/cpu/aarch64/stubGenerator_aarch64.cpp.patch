@@ -1,0 +1,413 @@
+diff a/src/hotspot/cpu/aarch64/stubGenerator_aarch64.cpp b/src/hotspot/cpu/aarch64/stubGenerator_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/stubGenerator_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/stubGenerator_aarch64.cpp
+@@ -562,13 +562,13 @@
+       __ cbnz(c_rarg2, error);
+     }
+ #endif
+ 
+     // Check if the oop is in the right area of memory
+-    __ mov(c_rarg3, (intptr_t) Universe::verify_oop_mask());
++    __ mov(c_rarg3, (address) Universe::verify_oop_mask());
+     __ andr(c_rarg2, r0, c_rarg3);
+-    __ mov(c_rarg3, (intptr_t) Universe::verify_oop_bits());
++    __ mov(c_rarg3, (address) Universe::verify_oop_bits());
+ 
+     // Compare c_rarg2 and c_rarg3.  We don't use a compare
+     // instruction here because the flags register is live.
+     __ eor(c_rarg2, c_rarg2, c_rarg3);
+     __ cbnz(c_rarg2, error);
+@@ -694,11 +694,10 @@
+   void generate_copy_longs(Label &start, Register s, Register d, Register count,
+                            copy_direction direction) {
+     int unit = wordSize * direction;
+     int bias = (UseSIMDForMemoryOps ? 4:2) * wordSize;
+ 
+-    int offset;
+     const Register t0 = r3, t1 = r4, t2 = r5, t3 = r6,
+       t4 = r7, t5 = r10, t6 = r11, t7 = r12;
+     const Register stride = r13;
+ 
+     assert_different_registers(rscratch1, t0, t1, t2, t3, t4, t5, t6, t7);
+@@ -1085,11 +1084,11 @@
+     // <= 96 bytes do inline. Direction doesn't matter because we always
+     // load all the data before writing anything
+     Label copy4, copy8, copy16, copy32, copy80, copy_big, finish;
+     const Register t2 = r5, t3 = r6, t4 = r7, t5 = r8;
+     const Register t6 = r9, t7 = r10, t8 = r11, t9 = r12;
+-    const Register send = r17, dend = r18;
++    const Register send = r17, dend = r16;
+ 
+     if (PrefetchCopyIntervalInBytes > 0)
+       __ prfm(Address(s, 0), PLDL1KEEP);
+     __ cmp(count, u1((UseSIMDForMemoryOps ? 96:80)/granularity));
+     __ br(Assembler::HI, copy_big);
+@@ -1277,18 +1276,19 @@
+ 
+   void clobber_registers() {
+ #ifdef ASSERT
+     __ mov(rscratch1, (uint64_t)0xdeadbeef);
+     __ orr(rscratch1, rscratch1, rscratch1, Assembler::LSL, 32);
+-    for (Register r = r3; r <= r18; r++)
++    for (Register r = r3; r <= NOT_WIN64(r18) WIN64_ONLY(r17); r++)
+       if (r != rscratch1) __ mov(r, rscratch1);
+ #endif
++
+   }
+ 
+   // Scan over array at a for count oops, verifying each one.
+   // Preserves a and count, clobbers rscratch1 and rscratch2.
+-  void verify_oop_array (size_t size, Register a, Register count, Register temp) {
++  void verify_oop_array (unsigned int size, Register a, Register count, Register temp) {
+     Label loop, end;
+     __ mov(rscratch1, a);
+     __ mov(rscratch2, zr);
+     __ bind(loop);
+     __ cmp(rscratch2, count);
+@@ -1322,11 +1322,11 @@
+   //
+   // Side Effects:
+   //   disjoint_int_copy_entry is set to the no-overlap entry point
+   //   used by generate_conjoint_int_oop_copy().
+   //
+-  address generate_disjoint_copy(size_t size, bool aligned, bool is_oop, address *entry,
++  address generate_disjoint_copy(int size, bool aligned, bool is_oop, address *entry,
+                                   const char *name, bool dest_uninitialized = false) {
+     Register s = c_rarg0, d = c_rarg1, count = c_rarg2;
+     RegSet saved_reg = RegSet::of(s, d, count);
+     __ align(CodeEntryAlignment);
+     StubCodeMark mark(this, "StubRoutines", name);
+@@ -1388,11 +1388,11 @@
+   //
+   // If 'from' and/or 'to' are aligned on 4-byte boundaries, we let
+   // the hardware handle it.  The two dwords within qwords that span
+   // cache line boundaries will still be loaded and stored atomicly.
+   //
+-  address generate_conjoint_copy(size_t size, bool aligned, bool is_oop, address nooverlap_target,
++  address generate_conjoint_copy(int size, bool aligned, bool is_oop, address nooverlap_target,
+                                  address *entry, const char *name,
+                                  bool dest_uninitialized = false) {
+     Register s = c_rarg0, d = c_rarg1, count = c_rarg2;
+     RegSet saved_regs = RegSet::of(s, d, count);
+     StubCodeMark mark(this, "StubRoutines", name);
+@@ -1639,11 +1639,11 @@
+   //   no-overlap entry point used by generate_conjoint_long_oop_copy().
+   //
+   address generate_disjoint_oop_copy(bool aligned, address *entry,
+                                      const char *name, bool dest_uninitialized) {
+     const bool is_oop = true;
+-    const size_t size = UseCompressedOops ? sizeof (jint) : sizeof (jlong);
++    const int size = UseCompressedOops ? sizeof (jint) : sizeof (jlong);
+     return generate_disjoint_copy(size, aligned, is_oop, entry, name, dest_uninitialized);
+   }
+ 
+   // Arguments:
+   //   aligned - true => Input and output aligned on a HeapWord boundary == 8 bytes
+@@ -1657,11 +1657,11 @@
+   //
+   address generate_conjoint_oop_copy(bool aligned,
+                                      address nooverlap_target, address *entry,
+                                      const char *name, bool dest_uninitialized) {
+     const bool is_oop = true;
+-    const size_t size = UseCompressedOops ? sizeof (jint) : sizeof (jlong);
++    const int size = UseCompressedOops ? sizeof (jint) : sizeof (jlong);
+     return generate_conjoint_copy(size, aligned, is_oop, nooverlap_target, entry,
+                                   name, dest_uninitialized);
+   }
+ 
+ 
+@@ -1712,14 +1712,14 @@
+     const Register ckval       = c_rarg4;   // super_klass
+ 
+     RegSet wb_pre_saved_regs = RegSet::range(c_rarg0, c_rarg4);
+     RegSet wb_post_saved_regs = RegSet::of(count);
+ 
+-    // Registers used as temps (r18, r19, r20 are save-on-entry)
++    // Registers used as temps (r19, r20, r21, r22 are save-on-entry)
++    const Register copied_oop  = r22;       // actual oop copied
+     const Register count_save  = r21;       // orig elementscount
+     const Register start_to    = r20;       // destination array start address
+-    const Register copied_oop  = r18;       // actual oop copied
+     const Register r19_klass   = r19;       // oop._klass
+ 
+     //---------------------------------------------------------------
+     // Assembler stub will be used for this call to arraycopy
+     // if the two arrays are subtypes of Object[] but the
+@@ -1752,12 +1752,11 @@
+       BLOCK_COMMENT("Entry:");
+     }
+ 
+      // Empty array:  Nothing to do.
+     __ cbz(count, L_done);
+-
+-    __ push(RegSet::of(r18, r19, r20, r21), sp);
++    __ push(RegSet::of(r19, r20, r21, r22), sp);
+ 
+ #ifdef ASSERT
+     BLOCK_COMMENT("assert consistent ckoff/ckval");
+     // The ckoff and ckval must be mutually consistent,
+     // even though caller generates both.
+@@ -1822,11 +1821,11 @@
+ 
+     __ BIND(L_do_card_marks);
+     bs->arraycopy_epilogue(_masm, decorators, is_oop, start_to, count_save, rscratch1, wb_post_saved_regs);
+ 
+     __ bind(L_done_pop);
+-    __ pop(RegSet::of(r18, r19, r20, r21), sp);
++    __ pop(RegSet::of(r19, r20, r21, r22), sp);
+     inc_counter_np(SharedRuntime::_checkcast_array_copy_ctr);
+ 
+     __ bind(L_done);
+     __ mov(r0, count);
+     __ leave();
+@@ -1999,11 +1998,11 @@
+     __ tbnz(dst_pos, 31, L_failed);  // i.e. sign bit set
+ 
+     // registers used as temp
+     const Register scratch_length    = r16; // elements count to copy
+     const Register scratch_src_klass = r17; // array klass
+-    const Register lh                = r18; // layout helper
++    const Register lh                = r15; // layout helper
+ 
+     //  if (length < 0) return -1;
+     __ movw(scratch_length, length);        // length (elements count, 32-bits value)
+     __ tbnz(scratch_length, 31, L_failed);  // i.e. sign bit set
+ 
+@@ -2070,11 +2069,11 @@
+     // src_addr = (src + array_header_in_bytes()) + (src_pos << log2elemsize);
+     // dst_addr = (dst + array_header_in_bytes()) + (dst_pos << log2elemsize);
+     //
+ 
+     const Register rscratch1_offset = rscratch1;    // array offset
+-    const Register r18_elsize = lh; // element size
++    const Register r15_elsize = lh; // element size
+ 
+     __ ubfx(rscratch1_offset, lh, Klass::_lh_header_size_shift,
+            exact_log2(Klass::_lh_header_size_mask+1));   // array_offset
+     __ add(src, src, rscratch1_offset);           // src array offset
+     __ add(dst, dst, rscratch1_offset);           // dst array offset
+@@ -2091,12 +2090,12 @@
+     assert(Klass::_lh_log2_element_size_shift == 0, "fix this code");
+ 
+     // The possible values of elsize are 0-3, i.e. exact_log2(element
+     // size in bytes).  We do a simple bitwise binary search.
+   __ BIND(L_copy_bytes);
+-    __ tbnz(r18_elsize, 1, L_copy_ints);
+-    __ tbnz(r18_elsize, 0, L_copy_shorts);
++    __ tbnz(r15_elsize, 1, L_copy_ints);
++    __ tbnz(r15_elsize, 0, L_copy_shorts);
+     __ lea(from, Address(src, src_pos));// src_addr
+     __ lea(to,   Address(dst, dst_pos));// dst_addr
+     __ movw(count, scratch_length); // length
+     __ b(RuntimeAddress(byte_copy_entry));
+ 
+@@ -2105,23 +2104,23 @@
+     __ lea(to,   Address(dst, dst_pos, Address::lsl(1)));// dst_addr
+     __ movw(count, scratch_length); // length
+     __ b(RuntimeAddress(short_copy_entry));
+ 
+   __ BIND(L_copy_ints);
+-    __ tbnz(r18_elsize, 0, L_copy_longs);
++    __ tbnz(r15_elsize, 0, L_copy_longs);
+     __ lea(from, Address(src, src_pos, Address::lsl(2)));// src_addr
+     __ lea(to,   Address(dst, dst_pos, Address::lsl(2)));// dst_addr
+     __ movw(count, scratch_length); // length
+     __ b(RuntimeAddress(int_copy_entry));
+ 
+   __ BIND(L_copy_longs);
+ #ifdef ASSERT
+     {
+       BLOCK_COMMENT("assert long copy {");
+       Label L;
+-      __ andw(lh, lh, Klass::_lh_log2_element_size_mask); // lh -> r18_elsize
+-      __ cmpw(r18_elsize, LogBytesPerLong);
++      __ andw(lh, lh, Klass::_lh_log2_element_size_mask); // lh -> r15_elsize
++      __ cmpw(r15_elsize, LogBytesPerLong);
+       __ br(Assembler::EQ, L);
+       __ stop("must be long copy, but elsize is wrong");
+       __ bind(L);
+       BLOCK_COMMENT("} assert long copy done");
+     }
+@@ -2135,12 +2134,12 @@
+   __ BIND(L_objArray);
+     // live at this point:  scratch_src_klass, scratch_length, src[_pos], dst[_pos]
+ 
+     Label L_plain_copy, L_checkcast_copy;
+     //  test array classes for subtyping
+-    __ load_klass(r18, dst);
+-    __ cmp(scratch_src_klass, r18); // usual case is exact equality
++    __ load_klass(r15, dst);
++    __ cmp(scratch_src_klass, r15); // usual case is exact equality
+     __ br(Assembler::NE, L_checkcast_copy);
+ 
+     // Identically typed arrays can be copied without element-wise checks.
+     arraycopy_range_checks(src, src_pos, dst, dst_pos, scratch_length,
+                            rscratch2, L_failed);
+@@ -2152,21 +2151,21 @@
+     __ movw(count, scratch_length); // length
+   __ BIND(L_plain_copy);
+     __ b(RuntimeAddress(oop_copy_entry));
+ 
+   __ BIND(L_checkcast_copy);
+-    // live at this point:  scratch_src_klass, scratch_length, r18 (dst_klass)
++    // live at this point:  scratch_src_klass, scratch_length, r15 (dst_klass)
+     {
+       // Before looking at dst.length, make sure dst is also an objArray.
+-      __ ldrw(rscratch1, Address(r18, lh_offset));
++      __ ldrw(rscratch1, Address(r15, lh_offset));
+       __ movw(rscratch2, objArray_lh);
+       __ eorw(rscratch1, rscratch1, rscratch2);
+       __ cbnzw(rscratch1, L_failed);
+ 
+       // It is safe to examine both src.length and dst.length.
+       arraycopy_range_checks(src, src_pos, dst, dst_pos, scratch_length,
+-                             r18, L_failed);
++                             r15, L_failed);
+ 
+       __ load_klass(dst_klass, dst); // reload
+ 
+       // Marshal the base address arguments now, freeing registers.
+       __ lea(from, Address(src, src_pos, Address::lsl(LogBytesPerHeapOop)));
+@@ -3280,12 +3279,12 @@
+     FloatRegister vs2acc = v2;
+     FloatRegister vtable = v3;
+ 
+     // Max number of bytes we can process before having to take the mod
+     // 0x15B0 is 5552 in decimal, the largest n such that 255n(n+1)/2 + (n+1)(BASE-1) <= 2^32-1
+-    unsigned long BASE = 0xfff1;
+-    unsigned long NMAX = 0x15B0;
++    uint64_t BASE = 0xfff1;
++    uint64_t NMAX = 0x15B0;
+ 
+     __ mov(base, BASE);
+     __ mov(nmax, NMAX);
+ 
+     // Load accumulation coefficients for the upper 16 bits
+@@ -4058,11 +4057,11 @@
+     Register result = r0, str1 = r1, cnt1 = r2, str2 = r3, cnt2 = r4,
+         tmp1 = r10, tmp2 = r11, tmp3 = r12, tmp4 = r14;
+     FloatRegister vtmpZ = v0, vtmp = v1, vtmp3 = v2;
+     RegSet spilled_regs = RegSet::of(tmp3, tmp4);
+ 
+-    int prefetchLoopExitCondition = MAX(64, SoftwarePrefetchHintDistance/2);
++    int prefetchLoopExitCondition = MAX2(64, SoftwarePrefetchHintDistance/2);
+ 
+     __ eor(vtmpZ, __ T16B, vtmpZ, vtmpZ);
+     // cnt2 == amount of characters left to compare
+     // Check already loaded first 4 symbols(vtmp and tmp2(LU)/tmp1(UL))
+     __ zip1(vtmp, __ T8B, vtmp, vtmpZ);
+@@ -4172,11 +4171,11 @@
+     Label SMALL_LOOP, LARGE_LOOP_PREFETCH, CHECK_LAST, DIFF2, TAIL,
+         LENGTH_DIFF, DIFF, LAST_CHECK_AND_LENGTH_DIFF,
+         DIFF_LAST_POSITION, DIFF_LAST_POSITION2;
+     // exit from large loop when less than 64 bytes left to read or we're about
+     // to prefetch memory behind array border
+-    int largeLoopExitCondition = MAX(64, SoftwarePrefetchHintDistance)/(isLL ? 1 : 2);
++    int largeLoopExitCondition = MAX2(64, SoftwarePrefetchHintDistance)/(isLL ? 1 : 2);
+     // cnt1/cnt2 contains amount of characters to compare. cnt1 can be re-used
+     // update cnt2 counter with already loaded 8 bytes
+     __ sub(cnt2, cnt2, wordSize/(isLL ? 1 : 2));
+     // update pointers, because of previous read
+     __ add(str1, str1, wordSize);
+@@ -4329,11 +4328,11 @@
+     __ sub(cnt2, cnt2, cnt1);
+     __ andr(first, ch1, str1_isL ? 0xFF : 0xFFFF);
+     if (str1_isL != str2_isL) {
+       __ eor(v0, __ T16B, v0, v0);
+     }
+-    __ mov(tmp1, str2_isL ? 0x0101010101010101 : 0x0001000100010001);
++    __ mov(tmp1, (uint64_t)(str2_isL ? 0x0101010101010101 : 0x0001000100010001));
+     __ mul(first, first, tmp1);
+     // check if we have less than 1 register to check
+     __ subs(cnt2, cnt2, wordSize/str2_chr_size - 1);
+     if (str1_isL != str2_isL) {
+       __ fmovd(v1, ch1);
+@@ -4598,11 +4597,11 @@
+     __ align(CodeEntryAlignment);
+     StubCodeMark mark(this, "StubRoutines", "large_byte_array_inflate");
+     address entry = __ pc();
+     Label LOOP, LOOP_START, LOOP_PRFM, LOOP_PRFM_START, DONE;
+     Register src = r0, dst = r1, len = r2, octetCounter = r3;
+-    const int large_loop_threshold = MAX(64, SoftwarePrefetchHintDistance)/8 + 4;
++    const int large_loop_threshold = MAX2(64, SoftwarePrefetchHintDistance)/8 + 4;
+ 
+     // do one more 8-byte read to have address 16-byte aligned in most cases
+     // also use single store instruction
+     __ ldrd(v2, __ post(src, 8));
+     __ sub(octetCounter, octetCounter, 2);
+@@ -4848,44 +4847,53 @@
+       Register reg = c_rarg0;
+       Pa_base = reg;       // Argument registers
+       if (squaring)
+         Pb_base = Pa_base;
+       else
+-        Pb_base = ++reg;
+-      Pn_base = ++reg;
+-      Rlen= ++reg;
+-      inv = ++reg;
+-      Pm_base = ++reg;
++        Pb_base = next_reg(reg);
++      Pn_base = next_reg(reg);
++      Rlen= next_reg(reg);
++      inv = next_reg(reg);
++      Pm_base = next_reg(reg);
+ 
+                           // Working registers:
+-      Ra =  ++reg;        // The current digit of a, b, n, and m.
+-      Rb =  ++reg;
+-      Rm =  ++reg;
+-      Rn =  ++reg;
++      Ra =  next_reg(reg); // The current digit of a, b, n, and m.
++      Rb =  next_reg(reg);
++      Rm =  next_reg(reg);
++      Rn =  next_reg(reg);
+ 
+-      Pa =  ++reg;        // Pointers to the current/next digit of a, b, n, and m.
+-      Pb =  ++reg;
+-      Pm =  ++reg;
+-      Pn =  ++reg;
++      Pa =  next_reg(reg); // Pointers to the current/next digit of a, b, n, and m.
++      Pb =  next_reg(reg);
++      Pm =  next_reg(reg);
++      Pn =  next_reg(reg);
+ 
+-      t0 =  ++reg;        // Three registers which form a
+-      t1 =  ++reg;        // triple-precision accumuator.
+-      t2 =  ++reg;
++      t0 =  next_reg(reg); // Three registers which form a
++      t1 =  next_reg(reg); // triple-precision accumuator.
++      t2 =  next_reg(reg);
+ 
+-      Ri =  ++reg;        // Inner and outer loop indexes.
+-      Rj =  ++reg;
++      Ri =  next_reg(reg); // Inner and outer loop indexes.
++      Rj =  next_reg(reg);
+ 
+-      Rhi_ab = ++reg;     // Product registers: low and high parts
+-      Rlo_ab = ++reg;     // of a*b and m*n.
+-      Rhi_mn = ++reg;
+-      Rlo_mn = ++reg;
++      Rhi_ab = next_reg(reg); // Product registers: low and high parts
++      Rlo_ab = next_reg(reg); // of a*b and m*n.
++      Rhi_mn = next_reg(reg);
++      Rlo_mn = next_reg(reg);
+ 
+       // r19 and up are callee-saved.
+       _toSave = RegSet::range(r19, reg) + Pm_base;
+     }
+ 
+   private:
++    Register next_reg(Register &reg) {
++#ifdef _WIN64
++      // skip r18 on Windows, it's used by native TLS
++      return ++reg == r18 ? ++reg : reg;
++#else
++      return ++reg;
++#endif
++    }
++
+     void save_regs() {
+       push(_toSave, sp);
+     }
+ 
+     void restore_regs() {

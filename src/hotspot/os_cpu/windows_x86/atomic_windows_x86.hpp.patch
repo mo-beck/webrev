@@ -1,0 +1,216 @@
+diff a/src/hotspot/os_cpu/windows_x86/atomic_windows_x86.hpp b/src/hotspot/os_cpu/windows_x86/atomic_windows_x86.hpp
+--- a/src/hotspot/os_cpu/windows_x86/atomic_windows_x86.hpp
++++ b/src/hotspot/os_cpu/windows_x86/atomic_windows_x86.hpp
+@@ -23,10 +23,11 @@
+  */
+ 
+ #ifndef OS_CPU_WINDOWS_X86_ATOMIC_WINDOWS_X86_HPP
+ #define OS_CPU_WINDOWS_X86_ATOMIC_WINDOWS_X86_HPP
+ 
++#include <intrin.h>
+ #include "runtime/os.hpp"
+ 
+ // Note that in MSVC, volatile memory accesses are explicitly
+ // guaranteed to have acquire release semantics (w.r.t. compiler
+ // reordering) and therefore does not even need a compiler barrier
+@@ -49,47 +50,51 @@
+ //
+ // Performance note: On uniprocessors, the 'lock' prefixes are not
+ // necessary (and expensive). We should generate separate cases if
+ // this becomes a performance problem.
+ 
+-#pragma warning(disable: 4035) // Disables warnings reporting missing return statement
+ 
+ template<size_t byte_size>
+ struct Atomic::PlatformAdd
+   : Atomic::AddAndFetch<Atomic::PlatformAdd<byte_size> >
+ {
+   template<typename D, typename I>
+   D add_and_fetch(D volatile* dest, I add_value, atomic_memory_order order) const;
+ };
+ 
+-#ifdef AMD64
+-template<>
+-template<typename D, typename I>
+-inline D Atomic::PlatformAdd<4>::add_and_fetch(D volatile* dest, I add_value,
+-                                               atomic_memory_order order) const {
+-  return add_using_helper<int32_t>(os::atomic_add_func, dest, add_value);
+-}
+ 
+-template<>
+-template<typename D, typename I>
+-inline D Atomic::PlatformAdd<8>::add_and_fetch(D volatile* dest, I add_value,
+-                                               atomic_memory_order order) const {
+-  return add_using_helper<int64_t>(os::atomic_add_long_func, dest, add_value);
+-}
++#define DEFINE_STUB_ADD(ByteSize, StubType, StubName)                     \
++  template<>                                                              \
++  template<typename D, typename I>                                        \
++  inline D Atomic::PlatformAdd<ByteSize>::add_and_fetch(D volatile* dest, \
++                                                        I add_value,      \
++                                                        atomic_memory_order order) const { \
++    STATIC_ASSERT(ByteSize == sizeof(D));                                 \
++    return PrimitiveConversions::cast<D>(                                 \
++      StubName(reinterpret_cast<StubType volatile *>(dest),               \
++               PrimitiveConversions::cast<StubType>(add_value)));         \
++  }
++
++DEFINE_STUB_ADD(4, long,    InterlockedAdd)
++DEFINE_STUB_ADD(8, __int64, InterlockedAdd64)
++
++#undef DEFINE_STUB_ADD
+ 
+ #define DEFINE_STUB_XCHG(ByteSize, StubType, StubName)                  \
+   template<>                                                            \
+   template<typename T>                                                  \
+   inline T Atomic::PlatformXchg<ByteSize>::operator()(T volatile* dest, \
+                                                       T exchange_value, \
+                                                       atomic_memory_order order) const { \
+     STATIC_ASSERT(ByteSize == sizeof(T));                               \
+-    return xchg_using_helper<StubType>(StubName, dest, exchange_value); \
++    return PrimitiveConversions::cast<T>(                               \
++      StubName(reinterpret_cast<StubType volatile *>(dest),             \
++               PrimitiveConversions::cast<StubType>(exchange_value)));  \
+   }
+ 
+-DEFINE_STUB_XCHG(4, int32_t, os::atomic_xchg_func)
+-DEFINE_STUB_XCHG(8, int64_t, os::atomic_xchg_long_func)
++DEFINE_STUB_XCHG(4, long,    InterlockedExchange)
++DEFINE_STUB_XCHG(8, __int64, InterlockedExchange64)
+ 
+ #undef DEFINE_STUB_XCHG
+ 
+ #define DEFINE_STUB_CMPXCHG(ByteSize, StubType, StubName)                  \
+   template<>                                                               \
+@@ -97,106 +102,26 @@
+   inline T Atomic::PlatformCmpxchg<ByteSize>::operator()(T volatile* dest, \
+                                                          T compare_value,  \
+                                                          T exchange_value, \
+                                                          atomic_memory_order order) const { \
+     STATIC_ASSERT(ByteSize == sizeof(T));                                  \
+-    return cmpxchg_using_helper<StubType>(StubName, dest, compare_value, exchange_value); \
++    return PrimitiveConversions::cast<T>(                                  \
++      StubName(reinterpret_cast<StubType volatile *>(dest),                \
++               PrimitiveConversions::cast<StubType>(exchange_value),       \
++               PrimitiveConversions::cast<StubType>(compare_value)));      \
+   }
+ 
+-DEFINE_STUB_CMPXCHG(1, int8_t,  os::atomic_cmpxchg_byte_func)
+-DEFINE_STUB_CMPXCHG(4, int32_t, os::atomic_cmpxchg_func)
+-DEFINE_STUB_CMPXCHG(8, int64_t, os::atomic_cmpxchg_long_func)
++DEFINE_STUB_CMPXCHG(1, char,    _InterlockedCompareExchange8) // Use the intrinsic as InterlockedCompareExchange8 does not exist
++DEFINE_STUB_CMPXCHG(4, long,    InterlockedCompareExchange)
++DEFINE_STUB_CMPXCHG(8, __int64, InterlockedCompareExchange64)
+ 
+ #undef DEFINE_STUB_CMPXCHG
+ 
+-#else // !AMD64
+ 
+-template<>
+-template<typename D, typename I>
+-inline D Atomic::PlatformAdd<4>::add_and_fetch(D volatile* dest, I add_value,
+-                                               atomic_memory_order order) const {
+-  STATIC_ASSERT(4 == sizeof(I));
+-  STATIC_ASSERT(4 == sizeof(D));
+-  __asm {
+-    mov edx, dest;
+-    mov eax, add_value;
+-    mov ecx, eax;
+-    lock xadd dword ptr [edx], eax;
+-    add eax, ecx;
+-  }
+-}
+-
+-template<>
+-template<typename T>
+-inline T Atomic::PlatformXchg<4>::operator()(T volatile* dest,
+-                                             T exchange_value,
+-                                             atomic_memory_order order) const {
+-  STATIC_ASSERT(4 == sizeof(T));
+-  // alternative for InterlockedExchange
+-  __asm {
+-    mov eax, exchange_value;
+-    mov ecx, dest;
+-    xchg eax, dword ptr [ecx];
+-  }
+-}
+-
+-template<>
+-template<typename T>
+-inline T Atomic::PlatformCmpxchg<1>::operator()(T volatile* dest,
+-                                                T compare_value,
+-                                                T exchange_value,
+-                                                atomic_memory_order order) const {
+-  STATIC_ASSERT(1 == sizeof(T));
+-  // alternative for InterlockedCompareExchange
+-  __asm {
+-    mov edx, dest
+-    mov cl, exchange_value
+-    mov al, compare_value
+-    lock cmpxchg byte ptr [edx], cl
+-  }
+-}
+-
+-template<>
+-template<typename T>
+-inline T Atomic::PlatformCmpxchg<4>::operator()(T volatile* dest,
+-                                                T compare_value,
+-                                                T exchange_value,
+-                                                atomic_memory_order order) const {
+-  STATIC_ASSERT(4 == sizeof(T));
+-  // alternative for InterlockedCompareExchange
+-  __asm {
+-    mov edx, dest
+-    mov ecx, exchange_value
+-    mov eax, compare_value
+-    lock cmpxchg dword ptr [edx], ecx
+-  }
+-}
++#ifndef AMD64
+ 
+-template<>
+-template<typename T>
+-inline T Atomic::PlatformCmpxchg<8>::operator()(T volatile* dest,
+-                                                T compare_value,
+-                                                T exchange_value,
+-                                                atomic_memory_order order) const {
+-  STATIC_ASSERT(8 == sizeof(T));
+-  int32_t ex_lo  = (int32_t)exchange_value;
+-  int32_t ex_hi  = *( ((int32_t*)&exchange_value) + 1 );
+-  int32_t cmp_lo = (int32_t)compare_value;
+-  int32_t cmp_hi = *( ((int32_t*)&compare_value) + 1 );
+-  __asm {
+-    push ebx
+-    push edi
+-    mov eax, cmp_lo
+-    mov edx, cmp_hi
+-    mov edi, dest
+-    mov ebx, ex_lo
+-    mov ecx, ex_hi
+-    lock cmpxchg8b qword ptr [edi]
+-    pop edi
+-    pop ebx
+-  }
+-}
++#pragma warning(disable: 4035) // Disables warnings reporting missing return statement
+ 
+ template<>
+ template<typename T>
+ inline T Atomic::PlatformLoad<8>::operator()(T const volatile* src) const {
+   STATIC_ASSERT(8 == sizeof(T));
+@@ -223,15 +148,12 @@
+     mov eax, dest
+     fistp    qword ptr [eax]
+   }
+ }
+ 
+-#endif // AMD64
+-
+ #pragma warning(default: 4035) // Enables warnings reporting missing return statement
+ 
+-#ifndef AMD64
+ template<>
+ struct Atomic::PlatformOrderedStore<1, RELEASE_X_FENCE>
+ {
+   template <typename T>
+   void operator()(volatile T* p, T v) const {

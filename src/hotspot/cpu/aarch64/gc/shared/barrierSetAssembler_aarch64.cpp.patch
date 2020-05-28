@@ -1,0 +1,26 @@
+diff a/src/hotspot/cpu/aarch64/gc/shared/barrierSetAssembler_aarch64.cpp b/src/hotspot/cpu/aarch64/gc/shared/barrierSetAssembler_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/gc/shared/barrierSetAssembler_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/gc/shared/barrierSetAssembler_aarch64.cpp
+@@ -171,20 +171,20 @@
+     Register end = t1;
+     Register heap_end = rscratch2;
+     Label retry;
+     __ bind(retry);
+     {
+-      unsigned long offset;
++      uint64_t offset;
+       __ adrp(rscratch1, ExternalAddress((address) Universe::heap()->end_addr()), offset);
+       __ ldr(heap_end, Address(rscratch1, offset));
+     }
+ 
+     ExternalAddress heap_top((address) Universe::heap()->top_addr());
+ 
+     // Get the current top of the heap
+     {
+-      unsigned long offset;
++      uint64_t offset;
+       __ adrp(rscratch1, heap_top, offset);
+       // Use add() here after ARDP, rather than lea().
+       // lea() does not generate anything if its offset is zero.
+       // However, relocs expect to find either an ADD or a load/store
+       // insn after an ADRP.  add() always generates an ADD insn, even

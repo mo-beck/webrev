@@ -1,0 +1,1914 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\stubGenerator_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="sharedRuntime_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="stubRoutines_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\stubGenerator_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 547     __ lea(c_rarg2, ExternalAddress((address) StubRoutines::verify_oop_count_addr()));
+ 548     __ ldr(c_rarg3, Address(c_rarg2));
+ 549     __ add(c_rarg3, c_rarg3, 1);
+ 550     __ str(c_rarg3, Address(c_rarg2));
+ 551 
+ 552     // object is in r0
+ 553     // make sure object is &#39;reasonable&#39;
+ 554     __ cbz(r0, exit); // if obj is NULL it is OK
+ 555 
+ 556 #if INCLUDE_ZGC
+ 557     if (UseZGC) {
+ 558       // Check if mask is good.
+ 559       // verifies that ZAddressBadMask &amp; r0 == 0
+ 560       __ ldr(c_rarg3, Address(rthread, ZThreadLocalData::address_bad_mask_offset()));
+ 561       __ andr(c_rarg2, r0, c_rarg3);
+ 562       __ cbnz(c_rarg2, error);
+ 563     }
+ 564 #endif
+ 565 
+ 566     // Check if the oop is in the right area of memory
+<span class="line-modified"> 567     __ mov(c_rarg3, (intptr_t) Universe::verify_oop_mask());</span>
+ 568     __ andr(c_rarg2, r0, c_rarg3);
+<span class="line-modified"> 569     __ mov(c_rarg3, (intptr_t) Universe::verify_oop_bits());</span>
+ 570 
+ 571     // Compare c_rarg2 and c_rarg3.  We don&#39;t use a compare
+ 572     // instruction here because the flags register is live.
+ 573     __ eor(c_rarg2, c_rarg2, c_rarg3);
+ 574     __ cbnz(c_rarg2, error);
+ 575 
+ 576     // make sure klass is &#39;reasonable&#39;, which is not zero.
+ 577     __ load_klass(r0, r0);  // get klass
+ 578     __ cbz(r0, error);      // if klass is NULL it is broken
+ 579 
+ 580     // return if everything seems ok
+ 581     __ bind(exit);
+ 582 
+ 583     __ ldp(c_rarg3, c_rarg2, Address(__ post(sp, 16)));
+ 584     __ ret(lr);
+ 585 
+ 586     // handle errors
+ 587     __ bind(error);
+ 588     __ ldp(c_rarg3, c_rarg2, Address(__ post(sp, 16)));
+ 589 
+</pre>
+<hr />
+<pre>
+ 679   } copy_direction;
+ 680 
+ 681   // Bulk copy of blocks of 8 words.
+ 682   //
+ 683   // count is a count of words.
+ 684   //
+ 685   // Precondition: count &gt;= 8
+ 686   //
+ 687   // Postconditions:
+ 688   //
+ 689   // The least significant bit of count contains the remaining count
+ 690   // of words to copy.  The rest of count is trash.
+ 691   //
+ 692   // s and d are adjusted to point to the remaining words to copy
+ 693   //
+ 694   void generate_copy_longs(Label &amp;start, Register s, Register d, Register count,
+ 695                            copy_direction direction) {
+ 696     int unit = wordSize * direction;
+ 697     int bias = (UseSIMDForMemoryOps ? 4:2) * wordSize;
+ 698 
+<span class="line-removed"> 699     int offset;</span>
+ 700     const Register t0 = r3, t1 = r4, t2 = r5, t3 = r6,
+ 701       t4 = r7, t5 = r10, t6 = r11, t7 = r12;
+ 702     const Register stride = r13;
+ 703 
+ 704     assert_different_registers(rscratch1, t0, t1, t2, t3, t4, t5, t6, t7);
+ 705     assert_different_registers(s, d, count, rscratch1);
+ 706 
+ 707     Label again, drain;
+ 708     const char *stub_name;
+ 709     if (direction == copy_forwards)
+ 710       stub_name = &quot;forward_copy_longs&quot;;
+ 711     else
+ 712       stub_name = &quot;backward_copy_longs&quot;;
+ 713 
+ 714     __ align(CodeEntryAlignment);
+ 715 
+ 716     StubCodeMark mark(this, &quot;StubRoutines&quot;, stub_name);
+ 717 
+ 718     __ bind(start);
+ 719 
+</pre>
+<hr />
+<pre>
+1070 
+1071   // All-singing all-dancing memory copy.
+1072   //
+1073   // Copy count units of memory from s to d.  The size of a unit is
+1074   // step, which can be positive or negative depending on the direction
+1075   // of copy.  If is_aligned is false, we align the source address.
+1076   //
+1077 
+1078   void copy_memory(bool is_aligned, Register s, Register d,
+1079                    Register count, Register tmp, int step) {
+1080     copy_direction direction = step &lt; 0 ? copy_backwards : copy_forwards;
+1081     bool is_backwards = step &lt; 0;
+1082     int granularity = uabs(step);
+1083     const Register t0 = r3, t1 = r4;
+1084 
+1085     // &lt;= 96 bytes do inline. Direction doesn&#39;t matter because we always
+1086     // load all the data before writing anything
+1087     Label copy4, copy8, copy16, copy32, copy80, copy_big, finish;
+1088     const Register t2 = r5, t3 = r6, t4 = r7, t5 = r8;
+1089     const Register t6 = r9, t7 = r10, t8 = r11, t9 = r12;
+<span class="line-modified">1090     const Register send = r17, dend = r18;</span>
+1091 
+1092     if (PrefetchCopyIntervalInBytes &gt; 0)
+1093       __ prfm(Address(s, 0), PLDL1KEEP);
+1094     __ cmp(count, u1((UseSIMDForMemoryOps ? 96:80)/granularity));
+1095     __ br(Assembler::HI, copy_big);
+1096 
+1097     __ lea(send, Address(s, count, Address::lsl(exact_log2(granularity))));
+1098     __ lea(dend, Address(d, count, Address::lsl(exact_log2(granularity))));
+1099 
+1100     __ cmp(count, u1(16/granularity));
+1101     __ br(Assembler::LS, copy16);
+1102 
+1103     __ cmp(count, u1(64/granularity));
+1104     __ br(Assembler::HI, copy80);
+1105 
+1106     __ cmp(count, u1(32/granularity));
+1107     __ br(Assembler::LS, copy32);
+1108 
+1109     // 33..64 bytes
+1110     if (UseSIMDForMemoryOps) {
+</pre>
+<hr />
+<pre>
+1262     // count and do a bulk copy of words.
+1263     __ lsr(rscratch2, count, exact_log2(wordSize/granularity));
+1264     if (direction == copy_forwards)
+1265       __ bl(copy_f);
+1266     else
+1267       __ bl(copy_b);
+1268 
+1269     // And the tail.
+1270     copy_memory_small(s, d, count, tmp, step);
+1271 
+1272     if (granularity &gt;= 8) __ bind(copy8);
+1273     if (granularity &gt;= 4) __ bind(copy4);
+1274     __ bind(finish);
+1275   }
+1276 
+1277 
+1278   void clobber_registers() {
+1279 #ifdef ASSERT
+1280     __ mov(rscratch1, (uint64_t)0xdeadbeef);
+1281     __ orr(rscratch1, rscratch1, rscratch1, Assembler::LSL, 32);
+<span class="line-modified">1282     for (Register r = r3; r &lt;= r18; r++)</span>
+1283       if (r != rscratch1) __ mov(r, rscratch1);
+1284 #endif
+
+1285   }
+1286 
+1287   // Scan over array at a for count oops, verifying each one.
+1288   // Preserves a and count, clobbers rscratch1 and rscratch2.
+<span class="line-modified">1289   void verify_oop_array (size_t size, Register a, Register count, Register temp) {</span>
+1290     Label loop, end;
+1291     __ mov(rscratch1, a);
+1292     __ mov(rscratch2, zr);
+1293     __ bind(loop);
+1294     __ cmp(rscratch2, count);
+1295     __ br(Assembler::HS, end);
+1296     if (size == (size_t)wordSize) {
+1297       __ ldr(temp, Address(a, rscratch2, Address::lsl(exact_log2(size))));
+1298       __ verify_oop(temp);
+1299     } else {
+1300       __ ldrw(r16, Address(a, rscratch2, Address::lsl(exact_log2(size))));
+1301       __ decode_heap_oop(temp); // calls verify_oop
+1302     }
+1303     __ add(rscratch2, rscratch2, size);
+1304     __ b(loop);
+1305     __ bind(end);
+1306   }
+1307 
+1308   // Arguments:
+1309   //   aligned - true =&gt; Input and output aligned on a HeapWord == 8-byte boundary
+1310   //             ignored
+1311   //   is_oop  - true =&gt; oop array, so generate store check code
+1312   //   name    - stub name string
+1313   //
+1314   // Inputs:
+1315   //   c_rarg0   - source array address
+1316   //   c_rarg1   - destination array address
+1317   //   c_rarg2   - element count, treated as ssize_t, can be zero
+1318   //
+1319   // If &#39;from&#39; and/or &#39;to&#39; are aligned on 4-byte boundaries, we let
+1320   // the hardware handle it.  The two dwords within qwords that span
+1321   // cache line boundaries will still be loaded and stored atomicly.
+1322   //
+1323   // Side Effects:
+1324   //   disjoint_int_copy_entry is set to the no-overlap entry point
+1325   //   used by generate_conjoint_int_oop_copy().
+1326   //
+<span class="line-modified">1327   address generate_disjoint_copy(size_t size, bool aligned, bool is_oop, address *entry,</span>
+1328                                   const char *name, bool dest_uninitialized = false) {
+1329     Register s = c_rarg0, d = c_rarg1, count = c_rarg2;
+1330     RegSet saved_reg = RegSet::of(s, d, count);
+1331     __ align(CodeEntryAlignment);
+1332     StubCodeMark mark(this, &quot;StubRoutines&quot;, name);
+1333     address start = __ pc();
+1334     __ enter();
+1335 
+1336     if (entry != NULL) {
+1337       *entry = __ pc();
+1338       // caller can pass a 64-bit byte count here (from Unsafe.copyMemory)
+1339       BLOCK_COMMENT(&quot;Entry:&quot;);
+1340     }
+1341 
+1342     DecoratorSet decorators = IN_HEAP | IS_ARRAY | ARRAYCOPY_DISJOINT;
+1343     if (dest_uninitialized) {
+1344       decorators |= IS_DEST_UNINITIALIZED;
+1345     }
+1346     if (aligned) {
+1347       decorators |= ARRAYCOPY_ALIGNED;
+</pre>
+<hr />
+<pre>
+1373     __ mov(r0, zr); // return 0
+1374     __ ret(lr);
+1375     return start;
+1376   }
+1377 
+1378   // Arguments:
+1379   //   aligned - true =&gt; Input and output aligned on a HeapWord == 8-byte boundary
+1380   //             ignored
+1381   //   is_oop  - true =&gt; oop array, so generate store check code
+1382   //   name    - stub name string
+1383   //
+1384   // Inputs:
+1385   //   c_rarg0   - source array address
+1386   //   c_rarg1   - destination array address
+1387   //   c_rarg2   - element count, treated as ssize_t, can be zero
+1388   //
+1389   // If &#39;from&#39; and/or &#39;to&#39; are aligned on 4-byte boundaries, we let
+1390   // the hardware handle it.  The two dwords within qwords that span
+1391   // cache line boundaries will still be loaded and stored atomicly.
+1392   //
+<span class="line-modified">1393   address generate_conjoint_copy(size_t size, bool aligned, bool is_oop, address nooverlap_target,</span>
+1394                                  address *entry, const char *name,
+1395                                  bool dest_uninitialized = false) {
+1396     Register s = c_rarg0, d = c_rarg1, count = c_rarg2;
+1397     RegSet saved_regs = RegSet::of(s, d, count);
+1398     StubCodeMark mark(this, &quot;StubRoutines&quot;, name);
+1399     address start = __ pc();
+1400     __ enter();
+1401 
+1402     if (entry != NULL) {
+1403       *entry = __ pc();
+1404       // caller can pass a 64-bit byte count here (from Unsafe.copyMemory)
+1405       BLOCK_COMMENT(&quot;Entry:&quot;);
+1406     }
+1407 
+1408     // use fwd copy when (d-s) above_equal (count*size)
+1409     __ sub(rscratch1, d, s);
+1410     __ cmp(rscratch1, count, Assembler::LSL, exact_log2(size));
+1411     __ br(Assembler::HS, nooverlap_target);
+1412 
+1413     DecoratorSet decorators = IN_HEAP | IS_ARRAY;
+</pre>
+<hr />
+<pre>
+1624     return generate_conjoint_copy(sizeof (jlong), aligned, not_oop, nooverlap_target, entry, name);
+1625   }
+1626 
+1627   // Arguments:
+1628   //   aligned - true =&gt; Input and output aligned on a HeapWord boundary == 8 bytes
+1629   //             ignored
+1630   //   name    - stub name string
+1631   //
+1632   // Inputs:
+1633   //   c_rarg0   - source array address
+1634   //   c_rarg1   - destination array address
+1635   //   c_rarg2   - element count, treated as size_t, can be zero
+1636   //
+1637   // Side Effects:
+1638   //   disjoint_oop_copy_entry or disjoint_long_copy_entry is set to the
+1639   //   no-overlap entry point used by generate_conjoint_long_oop_copy().
+1640   //
+1641   address generate_disjoint_oop_copy(bool aligned, address *entry,
+1642                                      const char *name, bool dest_uninitialized) {
+1643     const bool is_oop = true;
+<span class="line-modified">1644     const size_t size = UseCompressedOops ? sizeof (jint) : sizeof (jlong);</span>
+1645     return generate_disjoint_copy(size, aligned, is_oop, entry, name, dest_uninitialized);
+1646   }
+1647 
+1648   // Arguments:
+1649   //   aligned - true =&gt; Input and output aligned on a HeapWord boundary == 8 bytes
+1650   //             ignored
+1651   //   name    - stub name string
+1652   //
+1653   // Inputs:
+1654   //   c_rarg0   - source array address
+1655   //   c_rarg1   - destination array address
+1656   //   c_rarg2   - element count, treated as size_t, can be zero
+1657   //
+1658   address generate_conjoint_oop_copy(bool aligned,
+1659                                      address nooverlap_target, address *entry,
+1660                                      const char *name, bool dest_uninitialized) {
+1661     const bool is_oop = true;
+<span class="line-modified">1662     const size_t size = UseCompressedOops ? sizeof (jint) : sizeof (jlong);</span>
+1663     return generate_conjoint_copy(size, aligned, is_oop, nooverlap_target, entry,
+1664                                   name, dest_uninitialized);
+1665   }
+1666 
+1667 
+1668   // Helper for generating a dynamic type check.
+1669   // Smashes rscratch1, rscratch2.
+1670   void generate_type_check(Register sub_klass,
+1671                            Register super_check_offset,
+1672                            Register super_klass,
+1673                            Label&amp; L_success) {
+1674     assert_different_registers(sub_klass, super_check_offset, super_klass);
+1675 
+1676     BLOCK_COMMENT(&quot;type_check:&quot;);
+1677 
+1678     Label L_miss;
+1679 
+1680     __ check_klass_subtype_fast_path(sub_klass, super_klass, noreg,        &amp;L_success, &amp;L_miss, NULL,
+1681                                      super_check_offset);
+1682     __ check_klass_subtype_slow_path(sub_klass, super_klass, noreg, noreg, &amp;L_success, NULL);
+</pre>
+<hr />
+<pre>
+1697   //
+1698   //  Output:
+1699   //    r0 ==  0  -  success
+1700   //    r0 == -1^K - failure, where K is partial transfer count
+1701   //
+1702   address generate_checkcast_copy(const char *name, address *entry,
+1703                                   bool dest_uninitialized = false) {
+1704 
+1705     Label L_load_element, L_store_element, L_do_card_marks, L_done, L_done_pop;
+1706 
+1707     // Input registers (after setup_arg_regs)
+1708     const Register from        = c_rarg0;   // source array address
+1709     const Register to          = c_rarg1;   // destination array address
+1710     const Register count       = c_rarg2;   // elementscount
+1711     const Register ckoff       = c_rarg3;   // super_check_offset
+1712     const Register ckval       = c_rarg4;   // super_klass
+1713 
+1714     RegSet wb_pre_saved_regs = RegSet::range(c_rarg0, c_rarg4);
+1715     RegSet wb_post_saved_regs = RegSet::of(count);
+1716 
+<span class="line-modified">1717     // Registers used as temps (r18, r19, r20 are save-on-entry)</span>
+
+1718     const Register count_save  = r21;       // orig elementscount
+1719     const Register start_to    = r20;       // destination array start address
+<span class="line-removed">1720     const Register copied_oop  = r18;       // actual oop copied</span>
+1721     const Register r19_klass   = r19;       // oop._klass
+1722 
+1723     //---------------------------------------------------------------
+1724     // Assembler stub will be used for this call to arraycopy
+1725     // if the two arrays are subtypes of Object[] but the
+1726     // destination array type is not equal to or a supertype
+1727     // of the source type.  Each element must be separately
+1728     // checked.
+1729 
+1730     assert_different_registers(from, to, count, ckoff, ckval, start_to,
+1731                                copied_oop, r19_klass, count_save);
+1732 
+1733     __ align(CodeEntryAlignment);
+1734     StubCodeMark mark(this, &quot;StubRoutines&quot;, name);
+1735     address start = __ pc();
+1736 
+1737     __ enter(); // required for proper stackwalking of RuntimeStub frame
+1738 
+1739 #ifdef ASSERT
+1740     // caller guarantees that the arrays really are different
+1741     // otherwise, we would have to make conjoint checks
+1742     { Label L;
+1743       array_overlap_test(L, TIMES_OOP);
+1744       __ stop(&quot;checkcast_copy within a single array&quot;);
+1745       __ bind(L);
+1746     }
+1747 #endif //ASSERT
+1748 
+1749     // Caller of this entry point must set up the argument registers.
+1750     if (entry != NULL) {
+1751       *entry = __ pc();
+1752       BLOCK_COMMENT(&quot;Entry:&quot;);
+1753     }
+1754 
+1755      // Empty array:  Nothing to do.
+1756     __ cbz(count, L_done);
+<span class="line-modified">1757 </span>
+<span class="line-removed">1758     __ push(RegSet::of(r18, r19, r20, r21), sp);</span>
+1759 
+1760 #ifdef ASSERT
+1761     BLOCK_COMMENT(&quot;assert consistent ckoff/ckval&quot;);
+1762     // The ckoff and ckval must be mutually consistent,
+1763     // even though caller generates both.
+1764     { Label L;
+1765       int sco_offset = in_bytes(Klass::super_check_offset_offset());
+1766       __ ldrw(start_to, Address(ckval, sco_offset));
+1767       __ cmpw(ckoff, start_to);
+1768       __ br(Assembler::EQ, L);
+1769       __ stop(&quot;super_check_offset inconsistent&quot;);
+1770       __ bind(L);
+1771     }
+1772 #endif //ASSERT
+1773 
+1774     DecoratorSet decorators = IN_HEAP | IS_ARRAY | ARRAYCOPY_CHECKCAST | ARRAYCOPY_DISJOINT;
+1775     bool is_oop = true;
+1776     if (dest_uninitialized) {
+1777       decorators |= IS_DEST_UNINITIALIZED;
+1778     }
+</pre>
+<hr />
+<pre>
+1807     __ load_heap_oop(copied_oop, __ post(from, UseCompressedOops ? 4 : 8), noreg, noreg, AS_RAW); // load the oop
+1808     __ cbz(copied_oop, L_store_element);
+1809 
+1810     __ load_klass(r19_klass, copied_oop);// query the object klass
+1811     generate_type_check(r19_klass, ckoff, ckval, L_store_element);
+1812     // ======== end loop ========
+1813 
+1814     // It was a real error; we must depend on the caller to finish the job.
+1815     // Register count = remaining oops, count_orig = total oops.
+1816     // Emit GC store barriers for the oops we have copied and report
+1817     // their number to the caller.
+1818 
+1819     __ subs(count, count_save, count);     // K = partially copied oop count
+1820     __ eon(count, count, zr);                   // report (-1^K) to caller
+1821     __ br(Assembler::EQ, L_done_pop);
+1822 
+1823     __ BIND(L_do_card_marks);
+1824     bs-&gt;arraycopy_epilogue(_masm, decorators, is_oop, start_to, count_save, rscratch1, wb_post_saved_regs);
+1825 
+1826     __ bind(L_done_pop);
+<span class="line-modified">1827     __ pop(RegSet::of(r18, r19, r20, r21), sp);</span>
+1828     inc_counter_np(SharedRuntime::_checkcast_array_copy_ctr);
+1829 
+1830     __ bind(L_done);
+1831     __ mov(r0, count);
+1832     __ leave();
+1833     __ ret(lr);
+1834 
+1835     return start;
+1836   }
+1837 
+1838   // Perform range checks on the proposed arraycopy.
+1839   // Kills temp, but nothing else.
+1840   // Also, clean the sign bits of src_pos and dst_pos.
+1841   void arraycopy_range_checks(Register src,     // source array oop (c_rarg0)
+1842                               Register src_pos, // source position (c_rarg1)
+1843                               Register dst,     // destination array oo (c_rarg2)
+1844                               Register dst_pos, // destination position (c_rarg3)
+1845                               Register length,
+1846                               Register temp,
+1847                               Label&amp; L_failed) {
+</pre>
+<hr />
+<pre>
+1984     // (6) src and dst should be arrays.
+1985     // (7) src_pos + length must not exceed length of src.
+1986     // (8) dst_pos + length must not exceed length of dst.
+1987     //
+1988 
+1989     //  if (src == NULL) return -1;
+1990     __ cbz(src, L_failed);
+1991 
+1992     //  if (src_pos &lt; 0) return -1;
+1993     __ tbnz(src_pos, 31, L_failed);  // i.e. sign bit set
+1994 
+1995     //  if (dst == NULL) return -1;
+1996     __ cbz(dst, L_failed);
+1997 
+1998     //  if (dst_pos &lt; 0) return -1;
+1999     __ tbnz(dst_pos, 31, L_failed);  // i.e. sign bit set
+2000 
+2001     // registers used as temp
+2002     const Register scratch_length    = r16; // elements count to copy
+2003     const Register scratch_src_klass = r17; // array klass
+<span class="line-modified">2004     const Register lh                = r18; // layout helper</span>
+2005 
+2006     //  if (length &lt; 0) return -1;
+2007     __ movw(scratch_length, length);        // length (elements count, 32-bits value)
+2008     __ tbnz(scratch_length, 31, L_failed);  // i.e. sign bit set
+2009 
+2010     __ load_klass(scratch_src_klass, src);
+2011 #ifdef ASSERT
+2012     //  assert(src-&gt;klass() != NULL);
+2013     {
+2014       BLOCK_COMMENT(&quot;assert klasses not null {&quot;);
+2015       Label L1, L2;
+2016       __ cbnz(scratch_src_klass, L2);   // it is broken if klass is NULL
+2017       __ bind(L1);
+2018       __ stop(&quot;broken null klass&quot;);
+2019       __ bind(L2);
+2020       __ load_klass(rscratch1, dst);
+2021       __ cbz(rscratch1, L1);     // this would be broken also
+2022       BLOCK_COMMENT(&quot;} assert klasses not null done&quot;);
+2023     }
+2024 #endif
+</pre>
+<hr />
+<pre>
+2055       Label L;
+2056       __ movw(rscratch2, Klass::_lh_array_tag_type_value &lt;&lt; Klass::_lh_array_tag_shift);
+2057       __ cmpw(lh, rscratch2);
+2058       __ br(Assembler::GE, L);
+2059       __ stop(&quot;must be a primitive array&quot;);
+2060       __ bind(L);
+2061       BLOCK_COMMENT(&quot;} assert primitive array done&quot;);
+2062     }
+2063 #endif
+2064 
+2065     arraycopy_range_checks(src, src_pos, dst, dst_pos, scratch_length,
+2066                            rscratch2, L_failed);
+2067 
+2068     // TypeArrayKlass
+2069     //
+2070     // src_addr = (src + array_header_in_bytes()) + (src_pos &lt;&lt; log2elemsize);
+2071     // dst_addr = (dst + array_header_in_bytes()) + (dst_pos &lt;&lt; log2elemsize);
+2072     //
+2073 
+2074     const Register rscratch1_offset = rscratch1;    // array offset
+<span class="line-modified">2075     const Register r18_elsize = lh; // element size</span>
+2076 
+2077     __ ubfx(rscratch1_offset, lh, Klass::_lh_header_size_shift,
+2078            exact_log2(Klass::_lh_header_size_mask+1));   // array_offset
+2079     __ add(src, src, rscratch1_offset);           // src array offset
+2080     __ add(dst, dst, rscratch1_offset);           // dst array offset
+2081     BLOCK_COMMENT(&quot;choose copy loop based on element size&quot;);
+2082 
+2083     // next registers should be set before the jump to corresponding stub
+2084     const Register from     = c_rarg0;  // source array address
+2085     const Register to       = c_rarg1;  // destination array address
+2086     const Register count    = c_rarg2;  // elements count
+2087 
+2088     // &#39;from&#39;, &#39;to&#39;, &#39;count&#39; registers should be set in such order
+2089     // since they are the same as &#39;src&#39;, &#39;src_pos&#39;, &#39;dst&#39;.
+2090 
+2091     assert(Klass::_lh_log2_element_size_shift == 0, &quot;fix this code&quot;);
+2092 
+2093     // The possible values of elsize are 0-3, i.e. exact_log2(element
+2094     // size in bytes).  We do a simple bitwise binary search.
+2095   __ BIND(L_copy_bytes);
+<span class="line-modified">2096     __ tbnz(r18_elsize, 1, L_copy_ints);</span>
+<span class="line-modified">2097     __ tbnz(r18_elsize, 0, L_copy_shorts);</span>
+2098     __ lea(from, Address(src, src_pos));// src_addr
+2099     __ lea(to,   Address(dst, dst_pos));// dst_addr
+2100     __ movw(count, scratch_length); // length
+2101     __ b(RuntimeAddress(byte_copy_entry));
+2102 
+2103   __ BIND(L_copy_shorts);
+2104     __ lea(from, Address(src, src_pos, Address::lsl(1)));// src_addr
+2105     __ lea(to,   Address(dst, dst_pos, Address::lsl(1)));// dst_addr
+2106     __ movw(count, scratch_length); // length
+2107     __ b(RuntimeAddress(short_copy_entry));
+2108 
+2109   __ BIND(L_copy_ints);
+<span class="line-modified">2110     __ tbnz(r18_elsize, 0, L_copy_longs);</span>
+2111     __ lea(from, Address(src, src_pos, Address::lsl(2)));// src_addr
+2112     __ lea(to,   Address(dst, dst_pos, Address::lsl(2)));// dst_addr
+2113     __ movw(count, scratch_length); // length
+2114     __ b(RuntimeAddress(int_copy_entry));
+2115 
+2116   __ BIND(L_copy_longs);
+2117 #ifdef ASSERT
+2118     {
+2119       BLOCK_COMMENT(&quot;assert long copy {&quot;);
+2120       Label L;
+<span class="line-modified">2121       __ andw(lh, lh, Klass::_lh_log2_element_size_mask); // lh -&gt; r18_elsize</span>
+<span class="line-modified">2122       __ cmpw(r18_elsize, LogBytesPerLong);</span>
+2123       __ br(Assembler::EQ, L);
+2124       __ stop(&quot;must be long copy, but elsize is wrong&quot;);
+2125       __ bind(L);
+2126       BLOCK_COMMENT(&quot;} assert long copy done&quot;);
+2127     }
+2128 #endif
+2129     __ lea(from, Address(src, src_pos, Address::lsl(3)));// src_addr
+2130     __ lea(to,   Address(dst, dst_pos, Address::lsl(3)));// dst_addr
+2131     __ movw(count, scratch_length); // length
+2132     __ b(RuntimeAddress(long_copy_entry));
+2133 
+2134     // ObjArrayKlass
+2135   __ BIND(L_objArray);
+2136     // live at this point:  scratch_src_klass, scratch_length, src[_pos], dst[_pos]
+2137 
+2138     Label L_plain_copy, L_checkcast_copy;
+2139     //  test array classes for subtyping
+<span class="line-modified">2140     __ load_klass(r18, dst);</span>
+<span class="line-modified">2141     __ cmp(scratch_src_klass, r18); // usual case is exact equality</span>
+2142     __ br(Assembler::NE, L_checkcast_copy);
+2143 
+2144     // Identically typed arrays can be copied without element-wise checks.
+2145     arraycopy_range_checks(src, src_pos, dst, dst_pos, scratch_length,
+2146                            rscratch2, L_failed);
+2147 
+2148     __ lea(from, Address(src, src_pos, Address::lsl(LogBytesPerHeapOop)));
+2149     __ add(from, from, arrayOopDesc::base_offset_in_bytes(T_OBJECT));
+2150     __ lea(to, Address(dst, dst_pos, Address::lsl(LogBytesPerHeapOop)));
+2151     __ add(to, to, arrayOopDesc::base_offset_in_bytes(T_OBJECT));
+2152     __ movw(count, scratch_length); // length
+2153   __ BIND(L_plain_copy);
+2154     __ b(RuntimeAddress(oop_copy_entry));
+2155 
+2156   __ BIND(L_checkcast_copy);
+<span class="line-modified">2157     // live at this point:  scratch_src_klass, scratch_length, r18 (dst_klass)</span>
+2158     {
+2159       // Before looking at dst.length, make sure dst is also an objArray.
+<span class="line-modified">2160       __ ldrw(rscratch1, Address(r18, lh_offset));</span>
+2161       __ movw(rscratch2, objArray_lh);
+2162       __ eorw(rscratch1, rscratch1, rscratch2);
+2163       __ cbnzw(rscratch1, L_failed);
+2164 
+2165       // It is safe to examine both src.length and dst.length.
+2166       arraycopy_range_checks(src, src_pos, dst, dst_pos, scratch_length,
+<span class="line-modified">2167                              r18, L_failed);</span>
+2168 
+2169       __ load_klass(dst_klass, dst); // reload
+2170 
+2171       // Marshal the base address arguments now, freeing registers.
+2172       __ lea(from, Address(src, src_pos, Address::lsl(LogBytesPerHeapOop)));
+2173       __ add(from, from, arrayOopDesc::base_offset_in_bytes(T_OBJECT));
+2174       __ lea(to, Address(dst, dst_pos, Address::lsl(LogBytesPerHeapOop)));
+2175       __ add(to, to, arrayOopDesc::base_offset_in_bytes(T_OBJECT));
+2176       __ movw(count, length);           // length (reloaded)
+2177       Register sco_temp = c_rarg3;      // this register is free now
+2178       assert_different_registers(from, to, count, sco_temp,
+2179                                  dst_klass, scratch_src_klass);
+2180       // assert_clean_int(count, sco_temp);
+2181 
+2182       // Generate the type check.
+2183       const int sco_offset = in_bytes(Klass::super_check_offset_offset());
+2184       __ ldrw(sco_temp, Address(dst_klass, sco_offset));
+2185 
+2186       // Smashes rscratch1, rscratch2
+2187       generate_type_check(scratch_src_klass, sco_temp, dst_klass, L_plain_copy);
+</pre>
+<hr />
+<pre>
+3265     Label L_simple_by1_loop, L_nmax, L_nmax_loop, L_by16, L_by16_loop, L_by1_loop, L_do_mod, L_combine, L_by1;
+3266 
+3267     // Aliases
+3268     Register adler  = c_rarg0;
+3269     Register s1     = c_rarg0;
+3270     Register s2     = c_rarg3;
+3271     Register buff   = c_rarg1;
+3272     Register len    = c_rarg2;
+3273     Register nmax  = r4;
+3274     Register base  = r5;
+3275     Register count = r6;
+3276     Register temp0 = rscratch1;
+3277     Register temp1 = rscratch2;
+3278     FloatRegister vbytes = v0;
+3279     FloatRegister vs1acc = v1;
+3280     FloatRegister vs2acc = v2;
+3281     FloatRegister vtable = v3;
+3282 
+3283     // Max number of bytes we can process before having to take the mod
+3284     // 0x15B0 is 5552 in decimal, the largest n such that 255n(n+1)/2 + (n+1)(BASE-1) &lt;= 2^32-1
+<span class="line-modified">3285     unsigned long BASE = 0xfff1;</span>
+<span class="line-modified">3286     unsigned long NMAX = 0x15B0;</span>
+3287 
+3288     __ mov(base, BASE);
+3289     __ mov(nmax, NMAX);
+3290 
+3291     // Load accumulation coefficients for the upper 16 bits
+3292     __ lea(temp0, ExternalAddress((address) StubRoutines::aarch64::_adler_table));
+3293     __ ld1(vtable, __ T16B, Address(temp0));
+3294 
+3295     // s1 is initialized to the lower 16 bits of adler
+3296     // s2 is initialized to the upper 16 bits of adler
+3297     __ ubfx(s2, adler, 16, 16);  // s2 = ((adler &gt;&gt; 16) &amp; 0xffff)
+3298     __ uxth(s1, adler);          // s1 = (adler &amp; 0xffff)
+3299 
+3300     // The pipelined loop needs at least 16 elements for 1 iteration
+3301     // It does check this, but it is more effective to skip to the cleanup loop
+3302     __ cmp(len, (u1)16);
+3303     __ br(Assembler::HS, L_nmax);
+3304     __ cbz(len, L_combine);
+3305 
+3306     __ bind(L_simple_by1_loop);
+</pre>
+<hr />
+<pre>
+4043   // r1  = str1
+4044   // r2  = cnt1
+4045   // r3  = str2
+4046   // r4  = cnt2
+4047   // r10 = tmp1
+4048   // r11 = tmp2
+4049   address generate_compare_long_string_different_encoding(bool isLU) {
+4050     __ align(CodeEntryAlignment);
+4051     StubCodeMark mark(this, &quot;StubRoutines&quot;, isLU
+4052         ? &quot;compare_long_string_different_encoding LU&quot;
+4053         : &quot;compare_long_string_different_encoding UL&quot;);
+4054     address entry = __ pc();
+4055     Label SMALL_LOOP, TAIL, TAIL_LOAD_16, LOAD_LAST, DIFF1, DIFF2,
+4056         DONE, CALCULATE_DIFFERENCE, LARGE_LOOP_PREFETCH, NO_PREFETCH,
+4057         LARGE_LOOP_PREFETCH_REPEAT1, LARGE_LOOP_PREFETCH_REPEAT2;
+4058     Register result = r0, str1 = r1, cnt1 = r2, str2 = r3, cnt2 = r4,
+4059         tmp1 = r10, tmp2 = r11, tmp3 = r12, tmp4 = r14;
+4060     FloatRegister vtmpZ = v0, vtmp = v1, vtmp3 = v2;
+4061     RegSet spilled_regs = RegSet::of(tmp3, tmp4);
+4062 
+<span class="line-modified">4063     int prefetchLoopExitCondition = MAX(64, SoftwarePrefetchHintDistance/2);</span>
+4064 
+4065     __ eor(vtmpZ, __ T16B, vtmpZ, vtmpZ);
+4066     // cnt2 == amount of characters left to compare
+4067     // Check already loaded first 4 symbols(vtmp and tmp2(LU)/tmp1(UL))
+4068     __ zip1(vtmp, __ T8B, vtmp, vtmpZ);
+4069     __ add(str1, str1, isLU ? wordSize/2 : wordSize);
+4070     __ add(str2, str2, isLU ? wordSize : wordSize/2);
+4071     __ fmovd(isLU ? tmp1 : tmp2, vtmp);
+4072     __ subw(cnt2, cnt2, 8); // Already loaded 4 symbols. Last 4 is special case.
+4073     __ eor(rscratch2, tmp1, tmp2);
+4074     __ mov(rscratch1, tmp2);
+4075     __ cbnz(rscratch2, CALCULATE_DIFFERENCE);
+4076     Register tmpU = isLU ? rscratch1 : tmp1, // where to keep U for comparison
+4077              tmpL = isLU ? tmp1 : rscratch1; // where to keep L for comparison
+4078     __ push(spilled_regs, sp);
+4079     __ mov(tmp2, isLU ? str1 : str2); // init the pointer to L next load
+4080     __ mov(cnt1, isLU ? str2 : str1); // init the pointer to U next load
+4081 
+4082     __ ldr(tmp3, Address(__ post(cnt1, 8)));
+4083 
+</pre>
+<hr />
+<pre>
+4157   // r0  = result
+4158   // r1  = str1
+4159   // r2  = cnt1
+4160   // r3  = str2
+4161   // r4  = cnt2
+4162   // r10 = tmp1
+4163   // r11 = tmp2
+4164   address generate_compare_long_string_same_encoding(bool isLL) {
+4165     __ align(CodeEntryAlignment);
+4166     StubCodeMark mark(this, &quot;StubRoutines&quot;, isLL
+4167         ? &quot;compare_long_string_same_encoding LL&quot;
+4168         : &quot;compare_long_string_same_encoding UU&quot;);
+4169     address entry = __ pc();
+4170     Register result = r0, str1 = r1, cnt1 = r2, str2 = r3, cnt2 = r4,
+4171         tmp1 = r10, tmp2 = r11;
+4172     Label SMALL_LOOP, LARGE_LOOP_PREFETCH, CHECK_LAST, DIFF2, TAIL,
+4173         LENGTH_DIFF, DIFF, LAST_CHECK_AND_LENGTH_DIFF,
+4174         DIFF_LAST_POSITION, DIFF_LAST_POSITION2;
+4175     // exit from large loop when less than 64 bytes left to read or we&#39;re about
+4176     // to prefetch memory behind array border
+<span class="line-modified">4177     int largeLoopExitCondition = MAX(64, SoftwarePrefetchHintDistance)/(isLL ? 1 : 2);</span>
+4178     // cnt1/cnt2 contains amount of characters to compare. cnt1 can be re-used
+4179     // update cnt2 counter with already loaded 8 bytes
+4180     __ sub(cnt2, cnt2, wordSize/(isLL ? 1 : 2));
+4181     // update pointers, because of previous read
+4182     __ add(str1, str1, wordSize);
+4183     __ add(str2, str2, wordSize);
+4184     if (SoftwarePrefetchHintDistance &gt;= 0) {
+4185       __ bind(LARGE_LOOP_PREFETCH);
+4186         __ prfm(Address(str1, SoftwarePrefetchHintDistance));
+4187         __ prfm(Address(str2, SoftwarePrefetchHintDistance));
+4188         compare_string_16_bytes_same(DIFF, DIFF2);
+4189         compare_string_16_bytes_same(DIFF, DIFF2);
+4190         __ sub(cnt2, cnt2, isLL ? 64 : 32);
+4191         compare_string_16_bytes_same(DIFF, DIFF2);
+4192         __ subs(rscratch2, cnt2, largeLoopExitCondition);
+4193         compare_string_16_bytes_same(DIFF, DIFF2);
+4194         __ br(__ GT, LARGE_LOOP_PREFETCH);
+4195         __ cbz(cnt2, LAST_CHECK_AND_LENGTH_DIFF); // no more chars left?
+4196     }
+4197     // less than 16 bytes left?
+</pre>
+<hr />
+<pre>
+4314     RegSet spilled_regs = RegSet::range(tmp1, tmp4);
+4315     // redefinitions
+4316     Register ch1 = rscratch1, ch2 = rscratch2, first = tmp3;
+4317 
+4318     __ push(spilled_regs, sp);
+4319     Label L_LOOP, L_LOOP_PROCEED, L_SMALL, L_HAS_ZERO,
+4320         L_HAS_ZERO_LOOP, L_CMP_LOOP, L_CMP_LOOP_NOMATCH, L_SMALL_PROCEED,
+4321         L_SMALL_HAS_ZERO_LOOP, L_SMALL_CMP_LOOP_NOMATCH, L_SMALL_CMP_LOOP,
+4322         L_POST_LOOP, L_CMP_LOOP_LAST_CMP, L_HAS_ZERO_LOOP_NOMATCH,
+4323         L_SMALL_CMP_LOOP_LAST_CMP, L_SMALL_CMP_LOOP_LAST_CMP2,
+4324         L_CMP_LOOP_LAST_CMP2, DONE, NOMATCH;
+4325     // Read whole register from str1. It is safe, because length &gt;=8 here
+4326     __ ldr(ch1, Address(str1));
+4327     // Read whole register from str2. It is safe, because length &gt;=8 here
+4328     __ ldr(ch2, Address(str2));
+4329     __ sub(cnt2, cnt2, cnt1);
+4330     __ andr(first, ch1, str1_isL ? 0xFF : 0xFFFF);
+4331     if (str1_isL != str2_isL) {
+4332       __ eor(v0, __ T16B, v0, v0);
+4333     }
+<span class="line-modified">4334     __ mov(tmp1, str2_isL ? 0x0101010101010101 : 0x0001000100010001);</span>
+4335     __ mul(first, first, tmp1);
+4336     // check if we have less than 1 register to check
+4337     __ subs(cnt2, cnt2, wordSize/str2_chr_size - 1);
+4338     if (str1_isL != str2_isL) {
+4339       __ fmovd(v1, ch1);
+4340     }
+4341     __ br(__ LE, L_SMALL);
+4342     __ eor(ch2, first, ch2);
+4343     if (str1_isL != str2_isL) {
+4344       __ zip1(v1, __ T16B, v1, v0);
+4345     }
+4346     __ sub(tmp2, ch2, tmp1);
+4347     __ orr(ch2, ch2, str2_isL ? 0x7f7f7f7f7f7f7f7f : 0x7fff7fff7fff7fff);
+4348     __ bics(tmp2, tmp2, ch2);
+4349     if (str1_isL != str2_isL) {
+4350       __ fmovd(ch1, v1);
+4351     }
+4352     __ br(__ NE, L_HAS_ZERO);
+4353     __ subs(cnt2, cnt2, wordSize/str2_chr_size);
+4354     __ add(result, result, wordSize/str2_chr_size);
+</pre>
+<hr />
+<pre>
+4583     if (generatePrfm) {
+4584       __ prfm(Address(dst, SoftwarePrefetchHintDistance), PSTL1STRM);
+4585     }
+4586     __ zip1(v3, __ T16B, src2, v0);
+4587     __ zip2(v4, __ T16B, src2, v0);
+4588     __ st1(v1, v2, v3, v4, __ T16B, Address(__ post(dst, 64)));
+4589   }
+4590 
+4591   // R0 = src
+4592   // R1 = dst
+4593   // R2 = len
+4594   // R3 = len &gt;&gt; 3
+4595   // V0 = 0
+4596   // v1 = loaded 8 bytes
+4597   address generate_large_byte_array_inflate() {
+4598     __ align(CodeEntryAlignment);
+4599     StubCodeMark mark(this, &quot;StubRoutines&quot;, &quot;large_byte_array_inflate&quot;);
+4600     address entry = __ pc();
+4601     Label LOOP, LOOP_START, LOOP_PRFM, LOOP_PRFM_START, DONE;
+4602     Register src = r0, dst = r1, len = r2, octetCounter = r3;
+<span class="line-modified">4603     const int large_loop_threshold = MAX(64, SoftwarePrefetchHintDistance)/8 + 4;</span>
+4604 
+4605     // do one more 8-byte read to have address 16-byte aligned in most cases
+4606     // also use single store instruction
+4607     __ ldrd(v2, __ post(src, 8));
+4608     __ sub(octetCounter, octetCounter, 2);
+4609     __ zip1(v1, __ T16B, v1, v0);
+4610     __ zip1(v2, __ T16B, v2, v0);
+4611     __ st1(v1, v2, __ T16B, __ post(dst, 32));
+4612     __ ld1(v3, v4, v5, v6, __ T16B, Address(__ post(src, 64)));
+4613     __ subs(rscratch1, octetCounter, large_loop_threshold);
+4614     __ br(__ LE, LOOP_START);
+4615     __ b(LOOP_PRFM_START);
+4616     __ bind(LOOP_PRFM);
+4617       __ ld1(v3, v4, v5, v6, __ T16B, Address(__ post(src, 64)));
+4618     __ bind(LOOP_PRFM_START);
+4619       __ prfm(Address(src, SoftwarePrefetchHintDistance));
+4620       __ sub(octetCounter, octetCounter, 8);
+4621       __ subs(rscratch1, octetCounter, large_loop_threshold);
+4622       inflate_and_store_2_fp_registers(true, v3, v4);
+4623       inflate_and_store_2_fp_registers(true, v5, v6);
+</pre>
+<hr />
+<pre>
+4833 
+4834   class MontgomeryMultiplyGenerator : public MacroAssembler {
+4835 
+4836     Register Pa_base, Pb_base, Pn_base, Pm_base, inv, Rlen, Ra, Rb, Rm, Rn,
+4837       Pa, Pb, Pn, Pm, Rhi_ab, Rlo_ab, Rhi_mn, Rlo_mn, t0, t1, t2, Ri, Rj;
+4838 
+4839     RegSet _toSave;
+4840     bool _squaring;
+4841 
+4842   public:
+4843     MontgomeryMultiplyGenerator (Assembler *as, bool squaring)
+4844       : MacroAssembler(as-&gt;code()), _squaring(squaring) {
+4845 
+4846       // Register allocation
+4847 
+4848       Register reg = c_rarg0;
+4849       Pa_base = reg;       // Argument registers
+4850       if (squaring)
+4851         Pb_base = Pa_base;
+4852       else
+<span class="line-modified">4853         Pb_base = ++reg;</span>
+<span class="line-modified">4854       Pn_base = ++reg;</span>
+<span class="line-modified">4855       Rlen= ++reg;</span>
+<span class="line-modified">4856       inv = ++reg;</span>
+<span class="line-modified">4857       Pm_base = ++reg;</span>
+4858 
+4859                           // Working registers:
+<span class="line-modified">4860       Ra =  ++reg;        // The current digit of a, b, n, and m.</span>
+<span class="line-modified">4861       Rb =  ++reg;</span>
+<span class="line-modified">4862       Rm =  ++reg;</span>
+<span class="line-modified">4863       Rn =  ++reg;</span>
+4864 
+<span class="line-modified">4865       Pa =  ++reg;        // Pointers to the current/next digit of a, b, n, and m.</span>
+<span class="line-modified">4866       Pb =  ++reg;</span>
+<span class="line-modified">4867       Pm =  ++reg;</span>
+<span class="line-modified">4868       Pn =  ++reg;</span>
+4869 
+<span class="line-modified">4870       t0 =  ++reg;        // Three registers which form a</span>
+<span class="line-modified">4871       t1 =  ++reg;        // triple-precision accumuator.</span>
+<span class="line-modified">4872       t2 =  ++reg;</span>
+4873 
+<span class="line-modified">4874       Ri =  ++reg;        // Inner and outer loop indexes.</span>
+<span class="line-modified">4875       Rj =  ++reg;</span>
+4876 
+<span class="line-modified">4877       Rhi_ab = ++reg;     // Product registers: low and high parts</span>
+<span class="line-modified">4878       Rlo_ab = ++reg;     // of a*b and m*n.</span>
+<span class="line-modified">4879       Rhi_mn = ++reg;</span>
+<span class="line-modified">4880       Rlo_mn = ++reg;</span>
+4881 
+4882       // r19 and up are callee-saved.
+4883       _toSave = RegSet::range(r19, reg) + Pm_base;
+4884     }
+4885 
+4886   private:
+
+
+
+
+
+
+
+
+
+4887     void save_regs() {
+4888       push(_toSave, sp);
+4889     }
+4890 
+4891     void restore_regs() {
+4892       pop(_toSave, sp);
+4893     }
+4894 
+4895     template &lt;typename T&gt;
+4896     void unroll_2(Register count, T block) {
+4897       Label loop, end, odd;
+4898       tbnz(count, 0, odd);
+4899       cbz(count, end);
+4900       align(16);
+4901       bind(loop);
+4902       (this-&gt;*block)();
+4903       bind(odd);
+4904       (this-&gt;*block)();
+4905       subs(count, count, 2);
+4906       br(Assembler::GT, loop);
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 547     __ lea(c_rarg2, ExternalAddress((address) StubRoutines::verify_oop_count_addr()));
+ 548     __ ldr(c_rarg3, Address(c_rarg2));
+ 549     __ add(c_rarg3, c_rarg3, 1);
+ 550     __ str(c_rarg3, Address(c_rarg2));
+ 551 
+ 552     // object is in r0
+ 553     // make sure object is &#39;reasonable&#39;
+ 554     __ cbz(r0, exit); // if obj is NULL it is OK
+ 555 
+ 556 #if INCLUDE_ZGC
+ 557     if (UseZGC) {
+ 558       // Check if mask is good.
+ 559       // verifies that ZAddressBadMask &amp; r0 == 0
+ 560       __ ldr(c_rarg3, Address(rthread, ZThreadLocalData::address_bad_mask_offset()));
+ 561       __ andr(c_rarg2, r0, c_rarg3);
+ 562       __ cbnz(c_rarg2, error);
+ 563     }
+ 564 #endif
+ 565 
+ 566     // Check if the oop is in the right area of memory
+<span class="line-modified"> 567     __ mov(c_rarg3, (address) Universe::verify_oop_mask());</span>
+ 568     __ andr(c_rarg2, r0, c_rarg3);
+<span class="line-modified"> 569     __ mov(c_rarg3, (address) Universe::verify_oop_bits());</span>
+ 570 
+ 571     // Compare c_rarg2 and c_rarg3.  We don&#39;t use a compare
+ 572     // instruction here because the flags register is live.
+ 573     __ eor(c_rarg2, c_rarg2, c_rarg3);
+ 574     __ cbnz(c_rarg2, error);
+ 575 
+ 576     // make sure klass is &#39;reasonable&#39;, which is not zero.
+ 577     __ load_klass(r0, r0);  // get klass
+ 578     __ cbz(r0, error);      // if klass is NULL it is broken
+ 579 
+ 580     // return if everything seems ok
+ 581     __ bind(exit);
+ 582 
+ 583     __ ldp(c_rarg3, c_rarg2, Address(__ post(sp, 16)));
+ 584     __ ret(lr);
+ 585 
+ 586     // handle errors
+ 587     __ bind(error);
+ 588     __ ldp(c_rarg3, c_rarg2, Address(__ post(sp, 16)));
+ 589 
+</pre>
+<hr />
+<pre>
+ 679   } copy_direction;
+ 680 
+ 681   // Bulk copy of blocks of 8 words.
+ 682   //
+ 683   // count is a count of words.
+ 684   //
+ 685   // Precondition: count &gt;= 8
+ 686   //
+ 687   // Postconditions:
+ 688   //
+ 689   // The least significant bit of count contains the remaining count
+ 690   // of words to copy.  The rest of count is trash.
+ 691   //
+ 692   // s and d are adjusted to point to the remaining words to copy
+ 693   //
+ 694   void generate_copy_longs(Label &amp;start, Register s, Register d, Register count,
+ 695                            copy_direction direction) {
+ 696     int unit = wordSize * direction;
+ 697     int bias = (UseSIMDForMemoryOps ? 4:2) * wordSize;
+ 698 
+
+ 699     const Register t0 = r3, t1 = r4, t2 = r5, t3 = r6,
+ 700       t4 = r7, t5 = r10, t6 = r11, t7 = r12;
+ 701     const Register stride = r13;
+ 702 
+ 703     assert_different_registers(rscratch1, t0, t1, t2, t3, t4, t5, t6, t7);
+ 704     assert_different_registers(s, d, count, rscratch1);
+ 705 
+ 706     Label again, drain;
+ 707     const char *stub_name;
+ 708     if (direction == copy_forwards)
+ 709       stub_name = &quot;forward_copy_longs&quot;;
+ 710     else
+ 711       stub_name = &quot;backward_copy_longs&quot;;
+ 712 
+ 713     __ align(CodeEntryAlignment);
+ 714 
+ 715     StubCodeMark mark(this, &quot;StubRoutines&quot;, stub_name);
+ 716 
+ 717     __ bind(start);
+ 718 
+</pre>
+<hr />
+<pre>
+1069 
+1070   // All-singing all-dancing memory copy.
+1071   //
+1072   // Copy count units of memory from s to d.  The size of a unit is
+1073   // step, which can be positive or negative depending on the direction
+1074   // of copy.  If is_aligned is false, we align the source address.
+1075   //
+1076 
+1077   void copy_memory(bool is_aligned, Register s, Register d,
+1078                    Register count, Register tmp, int step) {
+1079     copy_direction direction = step &lt; 0 ? copy_backwards : copy_forwards;
+1080     bool is_backwards = step &lt; 0;
+1081     int granularity = uabs(step);
+1082     const Register t0 = r3, t1 = r4;
+1083 
+1084     // &lt;= 96 bytes do inline. Direction doesn&#39;t matter because we always
+1085     // load all the data before writing anything
+1086     Label copy4, copy8, copy16, copy32, copy80, copy_big, finish;
+1087     const Register t2 = r5, t3 = r6, t4 = r7, t5 = r8;
+1088     const Register t6 = r9, t7 = r10, t8 = r11, t9 = r12;
+<span class="line-modified">1089     const Register send = r17, dend = r16;</span>
+1090 
+1091     if (PrefetchCopyIntervalInBytes &gt; 0)
+1092       __ prfm(Address(s, 0), PLDL1KEEP);
+1093     __ cmp(count, u1((UseSIMDForMemoryOps ? 96:80)/granularity));
+1094     __ br(Assembler::HI, copy_big);
+1095 
+1096     __ lea(send, Address(s, count, Address::lsl(exact_log2(granularity))));
+1097     __ lea(dend, Address(d, count, Address::lsl(exact_log2(granularity))));
+1098 
+1099     __ cmp(count, u1(16/granularity));
+1100     __ br(Assembler::LS, copy16);
+1101 
+1102     __ cmp(count, u1(64/granularity));
+1103     __ br(Assembler::HI, copy80);
+1104 
+1105     __ cmp(count, u1(32/granularity));
+1106     __ br(Assembler::LS, copy32);
+1107 
+1108     // 33..64 bytes
+1109     if (UseSIMDForMemoryOps) {
+</pre>
+<hr />
+<pre>
+1261     // count and do a bulk copy of words.
+1262     __ lsr(rscratch2, count, exact_log2(wordSize/granularity));
+1263     if (direction == copy_forwards)
+1264       __ bl(copy_f);
+1265     else
+1266       __ bl(copy_b);
+1267 
+1268     // And the tail.
+1269     copy_memory_small(s, d, count, tmp, step);
+1270 
+1271     if (granularity &gt;= 8) __ bind(copy8);
+1272     if (granularity &gt;= 4) __ bind(copy4);
+1273     __ bind(finish);
+1274   }
+1275 
+1276 
+1277   void clobber_registers() {
+1278 #ifdef ASSERT
+1279     __ mov(rscratch1, (uint64_t)0xdeadbeef);
+1280     __ orr(rscratch1, rscratch1, rscratch1, Assembler::LSL, 32);
+<span class="line-modified">1281     for (Register r = r3; r &lt;= NOT_WIN64(r18) WIN64_ONLY(r17); r++)</span>
+1282       if (r != rscratch1) __ mov(r, rscratch1);
+1283 #endif
+<span class="line-added">1284 </span>
+1285   }
+1286 
+1287   // Scan over array at a for count oops, verifying each one.
+1288   // Preserves a and count, clobbers rscratch1 and rscratch2.
+<span class="line-modified">1289   void verify_oop_array (unsigned int size, Register a, Register count, Register temp) {</span>
+1290     Label loop, end;
+1291     __ mov(rscratch1, a);
+1292     __ mov(rscratch2, zr);
+1293     __ bind(loop);
+1294     __ cmp(rscratch2, count);
+1295     __ br(Assembler::HS, end);
+1296     if (size == (size_t)wordSize) {
+1297       __ ldr(temp, Address(a, rscratch2, Address::lsl(exact_log2(size))));
+1298       __ verify_oop(temp);
+1299     } else {
+1300       __ ldrw(r16, Address(a, rscratch2, Address::lsl(exact_log2(size))));
+1301       __ decode_heap_oop(temp); // calls verify_oop
+1302     }
+1303     __ add(rscratch2, rscratch2, size);
+1304     __ b(loop);
+1305     __ bind(end);
+1306   }
+1307 
+1308   // Arguments:
+1309   //   aligned - true =&gt; Input and output aligned on a HeapWord == 8-byte boundary
+1310   //             ignored
+1311   //   is_oop  - true =&gt; oop array, so generate store check code
+1312   //   name    - stub name string
+1313   //
+1314   // Inputs:
+1315   //   c_rarg0   - source array address
+1316   //   c_rarg1   - destination array address
+1317   //   c_rarg2   - element count, treated as ssize_t, can be zero
+1318   //
+1319   // If &#39;from&#39; and/or &#39;to&#39; are aligned on 4-byte boundaries, we let
+1320   // the hardware handle it.  The two dwords within qwords that span
+1321   // cache line boundaries will still be loaded and stored atomicly.
+1322   //
+1323   // Side Effects:
+1324   //   disjoint_int_copy_entry is set to the no-overlap entry point
+1325   //   used by generate_conjoint_int_oop_copy().
+1326   //
+<span class="line-modified">1327   address generate_disjoint_copy(int size, bool aligned, bool is_oop, address *entry,</span>
+1328                                   const char *name, bool dest_uninitialized = false) {
+1329     Register s = c_rarg0, d = c_rarg1, count = c_rarg2;
+1330     RegSet saved_reg = RegSet::of(s, d, count);
+1331     __ align(CodeEntryAlignment);
+1332     StubCodeMark mark(this, &quot;StubRoutines&quot;, name);
+1333     address start = __ pc();
+1334     __ enter();
+1335 
+1336     if (entry != NULL) {
+1337       *entry = __ pc();
+1338       // caller can pass a 64-bit byte count here (from Unsafe.copyMemory)
+1339       BLOCK_COMMENT(&quot;Entry:&quot;);
+1340     }
+1341 
+1342     DecoratorSet decorators = IN_HEAP | IS_ARRAY | ARRAYCOPY_DISJOINT;
+1343     if (dest_uninitialized) {
+1344       decorators |= IS_DEST_UNINITIALIZED;
+1345     }
+1346     if (aligned) {
+1347       decorators |= ARRAYCOPY_ALIGNED;
+</pre>
+<hr />
+<pre>
+1373     __ mov(r0, zr); // return 0
+1374     __ ret(lr);
+1375     return start;
+1376   }
+1377 
+1378   // Arguments:
+1379   //   aligned - true =&gt; Input and output aligned on a HeapWord == 8-byte boundary
+1380   //             ignored
+1381   //   is_oop  - true =&gt; oop array, so generate store check code
+1382   //   name    - stub name string
+1383   //
+1384   // Inputs:
+1385   //   c_rarg0   - source array address
+1386   //   c_rarg1   - destination array address
+1387   //   c_rarg2   - element count, treated as ssize_t, can be zero
+1388   //
+1389   // If &#39;from&#39; and/or &#39;to&#39; are aligned on 4-byte boundaries, we let
+1390   // the hardware handle it.  The two dwords within qwords that span
+1391   // cache line boundaries will still be loaded and stored atomicly.
+1392   //
+<span class="line-modified">1393   address generate_conjoint_copy(int size, bool aligned, bool is_oop, address nooverlap_target,</span>
+1394                                  address *entry, const char *name,
+1395                                  bool dest_uninitialized = false) {
+1396     Register s = c_rarg0, d = c_rarg1, count = c_rarg2;
+1397     RegSet saved_regs = RegSet::of(s, d, count);
+1398     StubCodeMark mark(this, &quot;StubRoutines&quot;, name);
+1399     address start = __ pc();
+1400     __ enter();
+1401 
+1402     if (entry != NULL) {
+1403       *entry = __ pc();
+1404       // caller can pass a 64-bit byte count here (from Unsafe.copyMemory)
+1405       BLOCK_COMMENT(&quot;Entry:&quot;);
+1406     }
+1407 
+1408     // use fwd copy when (d-s) above_equal (count*size)
+1409     __ sub(rscratch1, d, s);
+1410     __ cmp(rscratch1, count, Assembler::LSL, exact_log2(size));
+1411     __ br(Assembler::HS, nooverlap_target);
+1412 
+1413     DecoratorSet decorators = IN_HEAP | IS_ARRAY;
+</pre>
+<hr />
+<pre>
+1624     return generate_conjoint_copy(sizeof (jlong), aligned, not_oop, nooverlap_target, entry, name);
+1625   }
+1626 
+1627   // Arguments:
+1628   //   aligned - true =&gt; Input and output aligned on a HeapWord boundary == 8 bytes
+1629   //             ignored
+1630   //   name    - stub name string
+1631   //
+1632   // Inputs:
+1633   //   c_rarg0   - source array address
+1634   //   c_rarg1   - destination array address
+1635   //   c_rarg2   - element count, treated as size_t, can be zero
+1636   //
+1637   // Side Effects:
+1638   //   disjoint_oop_copy_entry or disjoint_long_copy_entry is set to the
+1639   //   no-overlap entry point used by generate_conjoint_long_oop_copy().
+1640   //
+1641   address generate_disjoint_oop_copy(bool aligned, address *entry,
+1642                                      const char *name, bool dest_uninitialized) {
+1643     const bool is_oop = true;
+<span class="line-modified">1644     const int size = UseCompressedOops ? sizeof (jint) : sizeof (jlong);</span>
+1645     return generate_disjoint_copy(size, aligned, is_oop, entry, name, dest_uninitialized);
+1646   }
+1647 
+1648   // Arguments:
+1649   //   aligned - true =&gt; Input and output aligned on a HeapWord boundary == 8 bytes
+1650   //             ignored
+1651   //   name    - stub name string
+1652   //
+1653   // Inputs:
+1654   //   c_rarg0   - source array address
+1655   //   c_rarg1   - destination array address
+1656   //   c_rarg2   - element count, treated as size_t, can be zero
+1657   //
+1658   address generate_conjoint_oop_copy(bool aligned,
+1659                                      address nooverlap_target, address *entry,
+1660                                      const char *name, bool dest_uninitialized) {
+1661     const bool is_oop = true;
+<span class="line-modified">1662     const int size = UseCompressedOops ? sizeof (jint) : sizeof (jlong);</span>
+1663     return generate_conjoint_copy(size, aligned, is_oop, nooverlap_target, entry,
+1664                                   name, dest_uninitialized);
+1665   }
+1666 
+1667 
+1668   // Helper for generating a dynamic type check.
+1669   // Smashes rscratch1, rscratch2.
+1670   void generate_type_check(Register sub_klass,
+1671                            Register super_check_offset,
+1672                            Register super_klass,
+1673                            Label&amp; L_success) {
+1674     assert_different_registers(sub_klass, super_check_offset, super_klass);
+1675 
+1676     BLOCK_COMMENT(&quot;type_check:&quot;);
+1677 
+1678     Label L_miss;
+1679 
+1680     __ check_klass_subtype_fast_path(sub_klass, super_klass, noreg,        &amp;L_success, &amp;L_miss, NULL,
+1681                                      super_check_offset);
+1682     __ check_klass_subtype_slow_path(sub_klass, super_klass, noreg, noreg, &amp;L_success, NULL);
+</pre>
+<hr />
+<pre>
+1697   //
+1698   //  Output:
+1699   //    r0 ==  0  -  success
+1700   //    r0 == -1^K - failure, where K is partial transfer count
+1701   //
+1702   address generate_checkcast_copy(const char *name, address *entry,
+1703                                   bool dest_uninitialized = false) {
+1704 
+1705     Label L_load_element, L_store_element, L_do_card_marks, L_done, L_done_pop;
+1706 
+1707     // Input registers (after setup_arg_regs)
+1708     const Register from        = c_rarg0;   // source array address
+1709     const Register to          = c_rarg1;   // destination array address
+1710     const Register count       = c_rarg2;   // elementscount
+1711     const Register ckoff       = c_rarg3;   // super_check_offset
+1712     const Register ckval       = c_rarg4;   // super_klass
+1713 
+1714     RegSet wb_pre_saved_regs = RegSet::range(c_rarg0, c_rarg4);
+1715     RegSet wb_post_saved_regs = RegSet::of(count);
+1716 
+<span class="line-modified">1717     // Registers used as temps (r19, r20, r21, r22 are save-on-entry)</span>
+<span class="line-added">1718     const Register copied_oop  = r22;       // actual oop copied</span>
+1719     const Register count_save  = r21;       // orig elementscount
+1720     const Register start_to    = r20;       // destination array start address
+
+1721     const Register r19_klass   = r19;       // oop._klass
+1722 
+1723     //---------------------------------------------------------------
+1724     // Assembler stub will be used for this call to arraycopy
+1725     // if the two arrays are subtypes of Object[] but the
+1726     // destination array type is not equal to or a supertype
+1727     // of the source type.  Each element must be separately
+1728     // checked.
+1729 
+1730     assert_different_registers(from, to, count, ckoff, ckval, start_to,
+1731                                copied_oop, r19_klass, count_save);
+1732 
+1733     __ align(CodeEntryAlignment);
+1734     StubCodeMark mark(this, &quot;StubRoutines&quot;, name);
+1735     address start = __ pc();
+1736 
+1737     __ enter(); // required for proper stackwalking of RuntimeStub frame
+1738 
+1739 #ifdef ASSERT
+1740     // caller guarantees that the arrays really are different
+1741     // otherwise, we would have to make conjoint checks
+1742     { Label L;
+1743       array_overlap_test(L, TIMES_OOP);
+1744       __ stop(&quot;checkcast_copy within a single array&quot;);
+1745       __ bind(L);
+1746     }
+1747 #endif //ASSERT
+1748 
+1749     // Caller of this entry point must set up the argument registers.
+1750     if (entry != NULL) {
+1751       *entry = __ pc();
+1752       BLOCK_COMMENT(&quot;Entry:&quot;);
+1753     }
+1754 
+1755      // Empty array:  Nothing to do.
+1756     __ cbz(count, L_done);
+<span class="line-modified">1757     __ push(RegSet::of(r19, r20, r21, r22), sp);</span>
+
+1758 
+1759 #ifdef ASSERT
+1760     BLOCK_COMMENT(&quot;assert consistent ckoff/ckval&quot;);
+1761     // The ckoff and ckval must be mutually consistent,
+1762     // even though caller generates both.
+1763     { Label L;
+1764       int sco_offset = in_bytes(Klass::super_check_offset_offset());
+1765       __ ldrw(start_to, Address(ckval, sco_offset));
+1766       __ cmpw(ckoff, start_to);
+1767       __ br(Assembler::EQ, L);
+1768       __ stop(&quot;super_check_offset inconsistent&quot;);
+1769       __ bind(L);
+1770     }
+1771 #endif //ASSERT
+1772 
+1773     DecoratorSet decorators = IN_HEAP | IS_ARRAY | ARRAYCOPY_CHECKCAST | ARRAYCOPY_DISJOINT;
+1774     bool is_oop = true;
+1775     if (dest_uninitialized) {
+1776       decorators |= IS_DEST_UNINITIALIZED;
+1777     }
+</pre>
+<hr />
+<pre>
+1806     __ load_heap_oop(copied_oop, __ post(from, UseCompressedOops ? 4 : 8), noreg, noreg, AS_RAW); // load the oop
+1807     __ cbz(copied_oop, L_store_element);
+1808 
+1809     __ load_klass(r19_klass, copied_oop);// query the object klass
+1810     generate_type_check(r19_klass, ckoff, ckval, L_store_element);
+1811     // ======== end loop ========
+1812 
+1813     // It was a real error; we must depend on the caller to finish the job.
+1814     // Register count = remaining oops, count_orig = total oops.
+1815     // Emit GC store barriers for the oops we have copied and report
+1816     // their number to the caller.
+1817 
+1818     __ subs(count, count_save, count);     // K = partially copied oop count
+1819     __ eon(count, count, zr);                   // report (-1^K) to caller
+1820     __ br(Assembler::EQ, L_done_pop);
+1821 
+1822     __ BIND(L_do_card_marks);
+1823     bs-&gt;arraycopy_epilogue(_masm, decorators, is_oop, start_to, count_save, rscratch1, wb_post_saved_regs);
+1824 
+1825     __ bind(L_done_pop);
+<span class="line-modified">1826     __ pop(RegSet::of(r19, r20, r21, r22), sp);</span>
+1827     inc_counter_np(SharedRuntime::_checkcast_array_copy_ctr);
+1828 
+1829     __ bind(L_done);
+1830     __ mov(r0, count);
+1831     __ leave();
+1832     __ ret(lr);
+1833 
+1834     return start;
+1835   }
+1836 
+1837   // Perform range checks on the proposed arraycopy.
+1838   // Kills temp, but nothing else.
+1839   // Also, clean the sign bits of src_pos and dst_pos.
+1840   void arraycopy_range_checks(Register src,     // source array oop (c_rarg0)
+1841                               Register src_pos, // source position (c_rarg1)
+1842                               Register dst,     // destination array oo (c_rarg2)
+1843                               Register dst_pos, // destination position (c_rarg3)
+1844                               Register length,
+1845                               Register temp,
+1846                               Label&amp; L_failed) {
+</pre>
+<hr />
+<pre>
+1983     // (6) src and dst should be arrays.
+1984     // (7) src_pos + length must not exceed length of src.
+1985     // (8) dst_pos + length must not exceed length of dst.
+1986     //
+1987 
+1988     //  if (src == NULL) return -1;
+1989     __ cbz(src, L_failed);
+1990 
+1991     //  if (src_pos &lt; 0) return -1;
+1992     __ tbnz(src_pos, 31, L_failed);  // i.e. sign bit set
+1993 
+1994     //  if (dst == NULL) return -1;
+1995     __ cbz(dst, L_failed);
+1996 
+1997     //  if (dst_pos &lt; 0) return -1;
+1998     __ tbnz(dst_pos, 31, L_failed);  // i.e. sign bit set
+1999 
+2000     // registers used as temp
+2001     const Register scratch_length    = r16; // elements count to copy
+2002     const Register scratch_src_klass = r17; // array klass
+<span class="line-modified">2003     const Register lh                = r15; // layout helper</span>
+2004 
+2005     //  if (length &lt; 0) return -1;
+2006     __ movw(scratch_length, length);        // length (elements count, 32-bits value)
+2007     __ tbnz(scratch_length, 31, L_failed);  // i.e. sign bit set
+2008 
+2009     __ load_klass(scratch_src_klass, src);
+2010 #ifdef ASSERT
+2011     //  assert(src-&gt;klass() != NULL);
+2012     {
+2013       BLOCK_COMMENT(&quot;assert klasses not null {&quot;);
+2014       Label L1, L2;
+2015       __ cbnz(scratch_src_klass, L2);   // it is broken if klass is NULL
+2016       __ bind(L1);
+2017       __ stop(&quot;broken null klass&quot;);
+2018       __ bind(L2);
+2019       __ load_klass(rscratch1, dst);
+2020       __ cbz(rscratch1, L1);     // this would be broken also
+2021       BLOCK_COMMENT(&quot;} assert klasses not null done&quot;);
+2022     }
+2023 #endif
+</pre>
+<hr />
+<pre>
+2054       Label L;
+2055       __ movw(rscratch2, Klass::_lh_array_tag_type_value &lt;&lt; Klass::_lh_array_tag_shift);
+2056       __ cmpw(lh, rscratch2);
+2057       __ br(Assembler::GE, L);
+2058       __ stop(&quot;must be a primitive array&quot;);
+2059       __ bind(L);
+2060       BLOCK_COMMENT(&quot;} assert primitive array done&quot;);
+2061     }
+2062 #endif
+2063 
+2064     arraycopy_range_checks(src, src_pos, dst, dst_pos, scratch_length,
+2065                            rscratch2, L_failed);
+2066 
+2067     // TypeArrayKlass
+2068     //
+2069     // src_addr = (src + array_header_in_bytes()) + (src_pos &lt;&lt; log2elemsize);
+2070     // dst_addr = (dst + array_header_in_bytes()) + (dst_pos &lt;&lt; log2elemsize);
+2071     //
+2072 
+2073     const Register rscratch1_offset = rscratch1;    // array offset
+<span class="line-modified">2074     const Register r15_elsize = lh; // element size</span>
+2075 
+2076     __ ubfx(rscratch1_offset, lh, Klass::_lh_header_size_shift,
+2077            exact_log2(Klass::_lh_header_size_mask+1));   // array_offset
+2078     __ add(src, src, rscratch1_offset);           // src array offset
+2079     __ add(dst, dst, rscratch1_offset);           // dst array offset
+2080     BLOCK_COMMENT(&quot;choose copy loop based on element size&quot;);
+2081 
+2082     // next registers should be set before the jump to corresponding stub
+2083     const Register from     = c_rarg0;  // source array address
+2084     const Register to       = c_rarg1;  // destination array address
+2085     const Register count    = c_rarg2;  // elements count
+2086 
+2087     // &#39;from&#39;, &#39;to&#39;, &#39;count&#39; registers should be set in such order
+2088     // since they are the same as &#39;src&#39;, &#39;src_pos&#39;, &#39;dst&#39;.
+2089 
+2090     assert(Klass::_lh_log2_element_size_shift == 0, &quot;fix this code&quot;);
+2091 
+2092     // The possible values of elsize are 0-3, i.e. exact_log2(element
+2093     // size in bytes).  We do a simple bitwise binary search.
+2094   __ BIND(L_copy_bytes);
+<span class="line-modified">2095     __ tbnz(r15_elsize, 1, L_copy_ints);</span>
+<span class="line-modified">2096     __ tbnz(r15_elsize, 0, L_copy_shorts);</span>
+2097     __ lea(from, Address(src, src_pos));// src_addr
+2098     __ lea(to,   Address(dst, dst_pos));// dst_addr
+2099     __ movw(count, scratch_length); // length
+2100     __ b(RuntimeAddress(byte_copy_entry));
+2101 
+2102   __ BIND(L_copy_shorts);
+2103     __ lea(from, Address(src, src_pos, Address::lsl(1)));// src_addr
+2104     __ lea(to,   Address(dst, dst_pos, Address::lsl(1)));// dst_addr
+2105     __ movw(count, scratch_length); // length
+2106     __ b(RuntimeAddress(short_copy_entry));
+2107 
+2108   __ BIND(L_copy_ints);
+<span class="line-modified">2109     __ tbnz(r15_elsize, 0, L_copy_longs);</span>
+2110     __ lea(from, Address(src, src_pos, Address::lsl(2)));// src_addr
+2111     __ lea(to,   Address(dst, dst_pos, Address::lsl(2)));// dst_addr
+2112     __ movw(count, scratch_length); // length
+2113     __ b(RuntimeAddress(int_copy_entry));
+2114 
+2115   __ BIND(L_copy_longs);
+2116 #ifdef ASSERT
+2117     {
+2118       BLOCK_COMMENT(&quot;assert long copy {&quot;);
+2119       Label L;
+<span class="line-modified">2120       __ andw(lh, lh, Klass::_lh_log2_element_size_mask); // lh -&gt; r15_elsize</span>
+<span class="line-modified">2121       __ cmpw(r15_elsize, LogBytesPerLong);</span>
+2122       __ br(Assembler::EQ, L);
+2123       __ stop(&quot;must be long copy, but elsize is wrong&quot;);
+2124       __ bind(L);
+2125       BLOCK_COMMENT(&quot;} assert long copy done&quot;);
+2126     }
+2127 #endif
+2128     __ lea(from, Address(src, src_pos, Address::lsl(3)));// src_addr
+2129     __ lea(to,   Address(dst, dst_pos, Address::lsl(3)));// dst_addr
+2130     __ movw(count, scratch_length); // length
+2131     __ b(RuntimeAddress(long_copy_entry));
+2132 
+2133     // ObjArrayKlass
+2134   __ BIND(L_objArray);
+2135     // live at this point:  scratch_src_klass, scratch_length, src[_pos], dst[_pos]
+2136 
+2137     Label L_plain_copy, L_checkcast_copy;
+2138     //  test array classes for subtyping
+<span class="line-modified">2139     __ load_klass(r15, dst);</span>
+<span class="line-modified">2140     __ cmp(scratch_src_klass, r15); // usual case is exact equality</span>
+2141     __ br(Assembler::NE, L_checkcast_copy);
+2142 
+2143     // Identically typed arrays can be copied without element-wise checks.
+2144     arraycopy_range_checks(src, src_pos, dst, dst_pos, scratch_length,
+2145                            rscratch2, L_failed);
+2146 
+2147     __ lea(from, Address(src, src_pos, Address::lsl(LogBytesPerHeapOop)));
+2148     __ add(from, from, arrayOopDesc::base_offset_in_bytes(T_OBJECT));
+2149     __ lea(to, Address(dst, dst_pos, Address::lsl(LogBytesPerHeapOop)));
+2150     __ add(to, to, arrayOopDesc::base_offset_in_bytes(T_OBJECT));
+2151     __ movw(count, scratch_length); // length
+2152   __ BIND(L_plain_copy);
+2153     __ b(RuntimeAddress(oop_copy_entry));
+2154 
+2155   __ BIND(L_checkcast_copy);
+<span class="line-modified">2156     // live at this point:  scratch_src_klass, scratch_length, r15 (dst_klass)</span>
+2157     {
+2158       // Before looking at dst.length, make sure dst is also an objArray.
+<span class="line-modified">2159       __ ldrw(rscratch1, Address(r15, lh_offset));</span>
+2160       __ movw(rscratch2, objArray_lh);
+2161       __ eorw(rscratch1, rscratch1, rscratch2);
+2162       __ cbnzw(rscratch1, L_failed);
+2163 
+2164       // It is safe to examine both src.length and dst.length.
+2165       arraycopy_range_checks(src, src_pos, dst, dst_pos, scratch_length,
+<span class="line-modified">2166                              r15, L_failed);</span>
+2167 
+2168       __ load_klass(dst_klass, dst); // reload
+2169 
+2170       // Marshal the base address arguments now, freeing registers.
+2171       __ lea(from, Address(src, src_pos, Address::lsl(LogBytesPerHeapOop)));
+2172       __ add(from, from, arrayOopDesc::base_offset_in_bytes(T_OBJECT));
+2173       __ lea(to, Address(dst, dst_pos, Address::lsl(LogBytesPerHeapOop)));
+2174       __ add(to, to, arrayOopDesc::base_offset_in_bytes(T_OBJECT));
+2175       __ movw(count, length);           // length (reloaded)
+2176       Register sco_temp = c_rarg3;      // this register is free now
+2177       assert_different_registers(from, to, count, sco_temp,
+2178                                  dst_klass, scratch_src_klass);
+2179       // assert_clean_int(count, sco_temp);
+2180 
+2181       // Generate the type check.
+2182       const int sco_offset = in_bytes(Klass::super_check_offset_offset());
+2183       __ ldrw(sco_temp, Address(dst_klass, sco_offset));
+2184 
+2185       // Smashes rscratch1, rscratch2
+2186       generate_type_check(scratch_src_klass, sco_temp, dst_klass, L_plain_copy);
+</pre>
+<hr />
+<pre>
+3264     Label L_simple_by1_loop, L_nmax, L_nmax_loop, L_by16, L_by16_loop, L_by1_loop, L_do_mod, L_combine, L_by1;
+3265 
+3266     // Aliases
+3267     Register adler  = c_rarg0;
+3268     Register s1     = c_rarg0;
+3269     Register s2     = c_rarg3;
+3270     Register buff   = c_rarg1;
+3271     Register len    = c_rarg2;
+3272     Register nmax  = r4;
+3273     Register base  = r5;
+3274     Register count = r6;
+3275     Register temp0 = rscratch1;
+3276     Register temp1 = rscratch2;
+3277     FloatRegister vbytes = v0;
+3278     FloatRegister vs1acc = v1;
+3279     FloatRegister vs2acc = v2;
+3280     FloatRegister vtable = v3;
+3281 
+3282     // Max number of bytes we can process before having to take the mod
+3283     // 0x15B0 is 5552 in decimal, the largest n such that 255n(n+1)/2 + (n+1)(BASE-1) &lt;= 2^32-1
+<span class="line-modified">3284     uint64_t BASE = 0xfff1;</span>
+<span class="line-modified">3285     uint64_t NMAX = 0x15B0;</span>
+3286 
+3287     __ mov(base, BASE);
+3288     __ mov(nmax, NMAX);
+3289 
+3290     // Load accumulation coefficients for the upper 16 bits
+3291     __ lea(temp0, ExternalAddress((address) StubRoutines::aarch64::_adler_table));
+3292     __ ld1(vtable, __ T16B, Address(temp0));
+3293 
+3294     // s1 is initialized to the lower 16 bits of adler
+3295     // s2 is initialized to the upper 16 bits of adler
+3296     __ ubfx(s2, adler, 16, 16);  // s2 = ((adler &gt;&gt; 16) &amp; 0xffff)
+3297     __ uxth(s1, adler);          // s1 = (adler &amp; 0xffff)
+3298 
+3299     // The pipelined loop needs at least 16 elements for 1 iteration
+3300     // It does check this, but it is more effective to skip to the cleanup loop
+3301     __ cmp(len, (u1)16);
+3302     __ br(Assembler::HS, L_nmax);
+3303     __ cbz(len, L_combine);
+3304 
+3305     __ bind(L_simple_by1_loop);
+</pre>
+<hr />
+<pre>
+4042   // r1  = str1
+4043   // r2  = cnt1
+4044   // r3  = str2
+4045   // r4  = cnt2
+4046   // r10 = tmp1
+4047   // r11 = tmp2
+4048   address generate_compare_long_string_different_encoding(bool isLU) {
+4049     __ align(CodeEntryAlignment);
+4050     StubCodeMark mark(this, &quot;StubRoutines&quot;, isLU
+4051         ? &quot;compare_long_string_different_encoding LU&quot;
+4052         : &quot;compare_long_string_different_encoding UL&quot;);
+4053     address entry = __ pc();
+4054     Label SMALL_LOOP, TAIL, TAIL_LOAD_16, LOAD_LAST, DIFF1, DIFF2,
+4055         DONE, CALCULATE_DIFFERENCE, LARGE_LOOP_PREFETCH, NO_PREFETCH,
+4056         LARGE_LOOP_PREFETCH_REPEAT1, LARGE_LOOP_PREFETCH_REPEAT2;
+4057     Register result = r0, str1 = r1, cnt1 = r2, str2 = r3, cnt2 = r4,
+4058         tmp1 = r10, tmp2 = r11, tmp3 = r12, tmp4 = r14;
+4059     FloatRegister vtmpZ = v0, vtmp = v1, vtmp3 = v2;
+4060     RegSet spilled_regs = RegSet::of(tmp3, tmp4);
+4061 
+<span class="line-modified">4062     int prefetchLoopExitCondition = MAX2(64, SoftwarePrefetchHintDistance/2);</span>
+4063 
+4064     __ eor(vtmpZ, __ T16B, vtmpZ, vtmpZ);
+4065     // cnt2 == amount of characters left to compare
+4066     // Check already loaded first 4 symbols(vtmp and tmp2(LU)/tmp1(UL))
+4067     __ zip1(vtmp, __ T8B, vtmp, vtmpZ);
+4068     __ add(str1, str1, isLU ? wordSize/2 : wordSize);
+4069     __ add(str2, str2, isLU ? wordSize : wordSize/2);
+4070     __ fmovd(isLU ? tmp1 : tmp2, vtmp);
+4071     __ subw(cnt2, cnt2, 8); // Already loaded 4 symbols. Last 4 is special case.
+4072     __ eor(rscratch2, tmp1, tmp2);
+4073     __ mov(rscratch1, tmp2);
+4074     __ cbnz(rscratch2, CALCULATE_DIFFERENCE);
+4075     Register tmpU = isLU ? rscratch1 : tmp1, // where to keep U for comparison
+4076              tmpL = isLU ? tmp1 : rscratch1; // where to keep L for comparison
+4077     __ push(spilled_regs, sp);
+4078     __ mov(tmp2, isLU ? str1 : str2); // init the pointer to L next load
+4079     __ mov(cnt1, isLU ? str2 : str1); // init the pointer to U next load
+4080 
+4081     __ ldr(tmp3, Address(__ post(cnt1, 8)));
+4082 
+</pre>
+<hr />
+<pre>
+4156   // r0  = result
+4157   // r1  = str1
+4158   // r2  = cnt1
+4159   // r3  = str2
+4160   // r4  = cnt2
+4161   // r10 = tmp1
+4162   // r11 = tmp2
+4163   address generate_compare_long_string_same_encoding(bool isLL) {
+4164     __ align(CodeEntryAlignment);
+4165     StubCodeMark mark(this, &quot;StubRoutines&quot;, isLL
+4166         ? &quot;compare_long_string_same_encoding LL&quot;
+4167         : &quot;compare_long_string_same_encoding UU&quot;);
+4168     address entry = __ pc();
+4169     Register result = r0, str1 = r1, cnt1 = r2, str2 = r3, cnt2 = r4,
+4170         tmp1 = r10, tmp2 = r11;
+4171     Label SMALL_LOOP, LARGE_LOOP_PREFETCH, CHECK_LAST, DIFF2, TAIL,
+4172         LENGTH_DIFF, DIFF, LAST_CHECK_AND_LENGTH_DIFF,
+4173         DIFF_LAST_POSITION, DIFF_LAST_POSITION2;
+4174     // exit from large loop when less than 64 bytes left to read or we&#39;re about
+4175     // to prefetch memory behind array border
+<span class="line-modified">4176     int largeLoopExitCondition = MAX2(64, SoftwarePrefetchHintDistance)/(isLL ? 1 : 2);</span>
+4177     // cnt1/cnt2 contains amount of characters to compare. cnt1 can be re-used
+4178     // update cnt2 counter with already loaded 8 bytes
+4179     __ sub(cnt2, cnt2, wordSize/(isLL ? 1 : 2));
+4180     // update pointers, because of previous read
+4181     __ add(str1, str1, wordSize);
+4182     __ add(str2, str2, wordSize);
+4183     if (SoftwarePrefetchHintDistance &gt;= 0) {
+4184       __ bind(LARGE_LOOP_PREFETCH);
+4185         __ prfm(Address(str1, SoftwarePrefetchHintDistance));
+4186         __ prfm(Address(str2, SoftwarePrefetchHintDistance));
+4187         compare_string_16_bytes_same(DIFF, DIFF2);
+4188         compare_string_16_bytes_same(DIFF, DIFF2);
+4189         __ sub(cnt2, cnt2, isLL ? 64 : 32);
+4190         compare_string_16_bytes_same(DIFF, DIFF2);
+4191         __ subs(rscratch2, cnt2, largeLoopExitCondition);
+4192         compare_string_16_bytes_same(DIFF, DIFF2);
+4193         __ br(__ GT, LARGE_LOOP_PREFETCH);
+4194         __ cbz(cnt2, LAST_CHECK_AND_LENGTH_DIFF); // no more chars left?
+4195     }
+4196     // less than 16 bytes left?
+</pre>
+<hr />
+<pre>
+4313     RegSet spilled_regs = RegSet::range(tmp1, tmp4);
+4314     // redefinitions
+4315     Register ch1 = rscratch1, ch2 = rscratch2, first = tmp3;
+4316 
+4317     __ push(spilled_regs, sp);
+4318     Label L_LOOP, L_LOOP_PROCEED, L_SMALL, L_HAS_ZERO,
+4319         L_HAS_ZERO_LOOP, L_CMP_LOOP, L_CMP_LOOP_NOMATCH, L_SMALL_PROCEED,
+4320         L_SMALL_HAS_ZERO_LOOP, L_SMALL_CMP_LOOP_NOMATCH, L_SMALL_CMP_LOOP,
+4321         L_POST_LOOP, L_CMP_LOOP_LAST_CMP, L_HAS_ZERO_LOOP_NOMATCH,
+4322         L_SMALL_CMP_LOOP_LAST_CMP, L_SMALL_CMP_LOOP_LAST_CMP2,
+4323         L_CMP_LOOP_LAST_CMP2, DONE, NOMATCH;
+4324     // Read whole register from str1. It is safe, because length &gt;=8 here
+4325     __ ldr(ch1, Address(str1));
+4326     // Read whole register from str2. It is safe, because length &gt;=8 here
+4327     __ ldr(ch2, Address(str2));
+4328     __ sub(cnt2, cnt2, cnt1);
+4329     __ andr(first, ch1, str1_isL ? 0xFF : 0xFFFF);
+4330     if (str1_isL != str2_isL) {
+4331       __ eor(v0, __ T16B, v0, v0);
+4332     }
+<span class="line-modified">4333     __ mov(tmp1, (uint64_t)(str2_isL ? 0x0101010101010101 : 0x0001000100010001));</span>
+4334     __ mul(first, first, tmp1);
+4335     // check if we have less than 1 register to check
+4336     __ subs(cnt2, cnt2, wordSize/str2_chr_size - 1);
+4337     if (str1_isL != str2_isL) {
+4338       __ fmovd(v1, ch1);
+4339     }
+4340     __ br(__ LE, L_SMALL);
+4341     __ eor(ch2, first, ch2);
+4342     if (str1_isL != str2_isL) {
+4343       __ zip1(v1, __ T16B, v1, v0);
+4344     }
+4345     __ sub(tmp2, ch2, tmp1);
+4346     __ orr(ch2, ch2, str2_isL ? 0x7f7f7f7f7f7f7f7f : 0x7fff7fff7fff7fff);
+4347     __ bics(tmp2, tmp2, ch2);
+4348     if (str1_isL != str2_isL) {
+4349       __ fmovd(ch1, v1);
+4350     }
+4351     __ br(__ NE, L_HAS_ZERO);
+4352     __ subs(cnt2, cnt2, wordSize/str2_chr_size);
+4353     __ add(result, result, wordSize/str2_chr_size);
+</pre>
+<hr />
+<pre>
+4582     if (generatePrfm) {
+4583       __ prfm(Address(dst, SoftwarePrefetchHintDistance), PSTL1STRM);
+4584     }
+4585     __ zip1(v3, __ T16B, src2, v0);
+4586     __ zip2(v4, __ T16B, src2, v0);
+4587     __ st1(v1, v2, v3, v4, __ T16B, Address(__ post(dst, 64)));
+4588   }
+4589 
+4590   // R0 = src
+4591   // R1 = dst
+4592   // R2 = len
+4593   // R3 = len &gt;&gt; 3
+4594   // V0 = 0
+4595   // v1 = loaded 8 bytes
+4596   address generate_large_byte_array_inflate() {
+4597     __ align(CodeEntryAlignment);
+4598     StubCodeMark mark(this, &quot;StubRoutines&quot;, &quot;large_byte_array_inflate&quot;);
+4599     address entry = __ pc();
+4600     Label LOOP, LOOP_START, LOOP_PRFM, LOOP_PRFM_START, DONE;
+4601     Register src = r0, dst = r1, len = r2, octetCounter = r3;
+<span class="line-modified">4602     const int large_loop_threshold = MAX2(64, SoftwarePrefetchHintDistance)/8 + 4;</span>
+4603 
+4604     // do one more 8-byte read to have address 16-byte aligned in most cases
+4605     // also use single store instruction
+4606     __ ldrd(v2, __ post(src, 8));
+4607     __ sub(octetCounter, octetCounter, 2);
+4608     __ zip1(v1, __ T16B, v1, v0);
+4609     __ zip1(v2, __ T16B, v2, v0);
+4610     __ st1(v1, v2, __ T16B, __ post(dst, 32));
+4611     __ ld1(v3, v4, v5, v6, __ T16B, Address(__ post(src, 64)));
+4612     __ subs(rscratch1, octetCounter, large_loop_threshold);
+4613     __ br(__ LE, LOOP_START);
+4614     __ b(LOOP_PRFM_START);
+4615     __ bind(LOOP_PRFM);
+4616       __ ld1(v3, v4, v5, v6, __ T16B, Address(__ post(src, 64)));
+4617     __ bind(LOOP_PRFM_START);
+4618       __ prfm(Address(src, SoftwarePrefetchHintDistance));
+4619       __ sub(octetCounter, octetCounter, 8);
+4620       __ subs(rscratch1, octetCounter, large_loop_threshold);
+4621       inflate_and_store_2_fp_registers(true, v3, v4);
+4622       inflate_and_store_2_fp_registers(true, v5, v6);
+</pre>
+<hr />
+<pre>
+4832 
+4833   class MontgomeryMultiplyGenerator : public MacroAssembler {
+4834 
+4835     Register Pa_base, Pb_base, Pn_base, Pm_base, inv, Rlen, Ra, Rb, Rm, Rn,
+4836       Pa, Pb, Pn, Pm, Rhi_ab, Rlo_ab, Rhi_mn, Rlo_mn, t0, t1, t2, Ri, Rj;
+4837 
+4838     RegSet _toSave;
+4839     bool _squaring;
+4840 
+4841   public:
+4842     MontgomeryMultiplyGenerator (Assembler *as, bool squaring)
+4843       : MacroAssembler(as-&gt;code()), _squaring(squaring) {
+4844 
+4845       // Register allocation
+4846 
+4847       Register reg = c_rarg0;
+4848       Pa_base = reg;       // Argument registers
+4849       if (squaring)
+4850         Pb_base = Pa_base;
+4851       else
+<span class="line-modified">4852         Pb_base = next_reg(reg);</span>
+<span class="line-modified">4853       Pn_base = next_reg(reg);</span>
+<span class="line-modified">4854       Rlen= next_reg(reg);</span>
+<span class="line-modified">4855       inv = next_reg(reg);</span>
+<span class="line-modified">4856       Pm_base = next_reg(reg);</span>
+4857 
+4858                           // Working registers:
+<span class="line-modified">4859       Ra =  next_reg(reg); // The current digit of a, b, n, and m.</span>
+<span class="line-modified">4860       Rb =  next_reg(reg);</span>
+<span class="line-modified">4861       Rm =  next_reg(reg);</span>
+<span class="line-modified">4862       Rn =  next_reg(reg);</span>
+4863 
+<span class="line-modified">4864       Pa =  next_reg(reg); // Pointers to the current/next digit of a, b, n, and m.</span>
+<span class="line-modified">4865       Pb =  next_reg(reg);</span>
+<span class="line-modified">4866       Pm =  next_reg(reg);</span>
+<span class="line-modified">4867       Pn =  next_reg(reg);</span>
+4868 
+<span class="line-modified">4869       t0 =  next_reg(reg); // Three registers which form a</span>
+<span class="line-modified">4870       t1 =  next_reg(reg); // triple-precision accumuator.</span>
+<span class="line-modified">4871       t2 =  next_reg(reg);</span>
+4872 
+<span class="line-modified">4873       Ri =  next_reg(reg); // Inner and outer loop indexes.</span>
+<span class="line-modified">4874       Rj =  next_reg(reg);</span>
+4875 
+<span class="line-modified">4876       Rhi_ab = next_reg(reg); // Product registers: low and high parts</span>
+<span class="line-modified">4877       Rlo_ab = next_reg(reg); // of a*b and m*n.</span>
+<span class="line-modified">4878       Rhi_mn = next_reg(reg);</span>
+<span class="line-modified">4879       Rlo_mn = next_reg(reg);</span>
+4880 
+4881       // r19 and up are callee-saved.
+4882       _toSave = RegSet::range(r19, reg) + Pm_base;
+4883     }
+4884 
+4885   private:
+<span class="line-added">4886     Register next_reg(Register &amp;reg) {</span>
+<span class="line-added">4887 #ifdef _WIN64</span>
+<span class="line-added">4888       // skip r18 on Windows, it&#39;s used by native TLS</span>
+<span class="line-added">4889       return ++reg == r18 ? ++reg : reg;</span>
+<span class="line-added">4890 #else</span>
+<span class="line-added">4891       return ++reg;</span>
+<span class="line-added">4892 #endif</span>
+<span class="line-added">4893     }</span>
+<span class="line-added">4894 </span>
+4895     void save_regs() {
+4896       push(_toSave, sp);
+4897     }
+4898 
+4899     void restore_regs() {
+4900       pop(_toSave, sp);
+4901     }
+4902 
+4903     template &lt;typename T&gt;
+4904     void unroll_2(Register count, T block) {
+4905       Label loop, end, odd;
+4906       tbnz(count, 0, odd);
+4907       cbz(count, end);
+4908       align(16);
+4909       bind(loop);
+4910       (this-&gt;*block)();
+4911       bind(odd);
+4912       (this-&gt;*block)();
+4913       subs(count, count, 2);
+4914       br(Assembler::GT, loop);
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="sharedRuntime_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="stubRoutines_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

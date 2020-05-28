@@ -1,0 +1,1504 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames src\hotspot\cpu\aarch64\macroAssembler_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+    <script type="text/javascript" src="..\..\..\..\navigation.js"></script>
+  </head>
+<body onkeypress="keypress(event);">
+<a name="0"></a>
+<hr />
+<pre>   1 /*
+   2  * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+   3  * Copyright (c) 2014, 2019, Red Hat Inc. All rights reserved.
+   4  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+   5  *
+   6  * This code is free software; you can redistribute it and/or modify it
+   7  * under the terms of the GNU General Public License version 2 only, as
+   8  * published by the Free Software Foundation.
+   9  *
+  10  * This code is distributed in the hope that it will be useful, but WITHOUT
+  11  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+  12  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+  13  * version 2 for more details (a copy is included in the LICENSE file that
+  14  * accompanied this code).
+  15  *
+  16  * You should have received a copy of the GNU General Public License version
+  17  * 2 along with this work; if not, write to the Free Software Foundation,
+  18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+  19  *
+  20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+  21  * or visit www.oracle.com if you need additional information or have any
+  22  * questions.
+  23  *
+  24  */
+  25 
+  26 #ifndef CPU_AARCH64_MACROASSEMBLER_AARCH64_HPP
+  27 #define CPU_AARCH64_MACROASSEMBLER_AARCH64_HPP
+  28 
+  29 #include &quot;asm/assembler.hpp&quot;
+  30 #include &quot;oops/compressedOops.hpp&quot;
+  31 
+  32 // MacroAssembler extends Assembler by frequently used macros.
+  33 //
+  34 // Instructions for which a &#39;better&#39; code sequence exists depending
+  35 // on arguments should also go in here.
+  36 
+  37 class MacroAssembler: public Assembler {
+  38   friend class LIR_Assembler;
+  39 
+  40  public:
+  41   using Assembler::mov;
+  42   using Assembler::movi;
+  43 
+  44  protected:
+  45 
+  46   // Support for VM calls
+  47   //
+  48   // This is the base routine called by the different versions of call_VM_leaf. The interpreter
+  49   // may customize this version by overriding it for its purposes (e.g., to save/restore
+  50   // additional registers when doing a VM call).
+  51   virtual void call_VM_leaf_base(
+  52     address entry_point,               // the entry point
+  53     int     number_of_arguments,        // the number of arguments to pop after the call
+  54     Label *retaddr = NULL
+  55   );
+  56 
+  57   virtual void call_VM_leaf_base(
+  58     address entry_point,               // the entry point
+  59     int     number_of_arguments,        // the number of arguments to pop after the call
+  60     Label &amp;retaddr) {
+  61     call_VM_leaf_base(entry_point, number_of_arguments, &amp;retaddr);
+  62   }
+  63 
+  64   // This is the base routine called by the different versions of call_VM. The interpreter
+  65   // may customize this version by overriding it for its purposes (e.g., to save/restore
+  66   // additional registers when doing a VM call).
+  67   //
+  68   // If no java_thread register is specified (noreg) than rthread will be used instead. call_VM_base
+  69   // returns the register which contains the thread upon return. If a thread register has been
+  70   // specified, the return value will correspond to that register. If no last_java_sp is specified
+  71   // (noreg) than rsp will be used instead.
+  72   virtual void call_VM_base(           // returns the register containing the thread upon return
+  73     Register oop_result,               // where an oop-result ends up if any; use noreg otherwise
+  74     Register java_thread,              // the thread if computed before     ; use noreg otherwise
+  75     Register last_java_sp,             // to set up last_Java_frame in stubs; use noreg otherwise
+  76     address  entry_point,              // the entry point
+  77     int      number_of_arguments,      // the number of arguments (w/o thread) to pop after the call
+  78     bool     check_exceptions          // whether to check for pending exceptions after return
+  79   );
+  80 
+  81   void call_VM_helper(Register oop_result, address entry_point, int number_of_arguments, bool check_exceptions = true);
+  82 
+  83   enum KlassDecodeMode {
+  84     KlassDecodeNone,
+  85     KlassDecodeZero,
+  86     KlassDecodeXor,
+  87     KlassDecodeMovk
+  88   };
+  89 
+  90   KlassDecodeMode klass_decode_mode();
+  91 
+  92  private:
+  93   static KlassDecodeMode _klass_decode_mode;
+  94 
+  95  public:
+  96   MacroAssembler(CodeBuffer* code) : Assembler(code) {}
+  97 
+  98  // These routines should emit JVMTI PopFrame and ForceEarlyReturn handling code.
+  99  // The implementation is only non-empty for the InterpreterMacroAssembler,
+ 100  // as only the interpreter handles PopFrame and ForceEarlyReturn requests.
+ 101  virtual void check_and_handle_popframe(Register java_thread);
+ 102  virtual void check_and_handle_earlyret(Register java_thread);
+ 103 
+ 104   void safepoint_poll(Label&amp; slow_path);
+ 105   void safepoint_poll_acquire(Label&amp; slow_path);
+ 106 
+ 107   // Biased locking support
+ 108   // lock_reg and obj_reg must be loaded up with the appropriate values.
+ 109   // swap_reg is killed.
+ 110   // tmp_reg must be supplied and must not be rscratch1 or rscratch2
+ 111   // Optional slow case is for implementations (interpreter and C1) which branch to
+ 112   // slow case directly. Leaves condition codes set for C2&#39;s Fast_Lock node.
+ 113   // Returns offset of first potentially-faulting instruction for null
+ 114   // check info (currently consumed only by C1). If
+ 115   // swap_reg_contains_mark is true then returns -1 as it is assumed
+ 116   // the calling code has already passed any potential faults.
+ 117   int biased_locking_enter(Register lock_reg, Register obj_reg,
+ 118                            Register swap_reg, Register tmp_reg,
+ 119                            bool swap_reg_contains_mark,
+ 120                            Label&amp; done, Label* slow_case = NULL,
+ 121                            BiasedLockingCounters* counters = NULL);
+ 122   void biased_locking_exit (Register obj_reg, Register temp_reg, Label&amp; done);
+ 123 
+ 124 
+ 125   // Helper functions for statistics gathering.
+ 126   // Unconditional atomic increment.
+ 127   void atomic_incw(Register counter_addr, Register tmp, Register tmp2);
+ 128   void atomic_incw(Address counter_addr, Register tmp1, Register tmp2, Register tmp3) {
+ 129     lea(tmp1, counter_addr);
+ 130     atomic_incw(tmp1, tmp2, tmp3);
+ 131   }
+ 132   // Load Effective Address
+ 133   void lea(Register r, const Address &amp;a) {
+ 134     InstructionMark im(this);
+ 135     code_section()-&gt;relocate(inst_mark(), a.rspec());
+ 136     a.lea(this, r);
+ 137   }
+ 138 
+ 139   /* Sometimes we get misaligned loads and stores, usually from Unsafe
+ 140      accesses, and these can exceed the offset range. */
+ 141   Address legitimize_address(const Address &amp;a, int size, Register scratch) {
+ 142     if (a.getMode() == Address::base_plus_offset) {
+ 143       if (! Address::offset_ok_for_immed(a.offset(), exact_log2(size))) {
+ 144         block_comment(&quot;legitimize_address {&quot;);
+ 145         lea(scratch, a);
+ 146         block_comment(&quot;} legitimize_address&quot;);
+ 147         return Address(scratch);
+ 148       }
+ 149     }
+ 150     return a;
+ 151   }
+ 152 
+ 153   void addmw(Address a, Register incr, Register scratch) {
+ 154     ldrw(scratch, a);
+ 155     addw(scratch, scratch, incr);
+ 156     strw(scratch, a);
+ 157   }
+ 158 
+ 159   // Add constant to memory word
+ 160   void addmw(Address a, int imm, Register scratch) {
+ 161     ldrw(scratch, a);
+ 162     if (imm &gt; 0)
+ 163       addw(scratch, scratch, (unsigned)imm);
+ 164     else
+ 165       subw(scratch, scratch, (unsigned)-imm);
+ 166     strw(scratch, a);
+ 167   }
+ 168 
+ 169   void bind(Label&amp; L) {
+ 170     Assembler::bind(L);
+ 171     code()-&gt;clear_last_insn();
+ 172   }
+ 173 
+ 174   void membar(Membar_mask_bits order_constraint);
+ 175 
+ 176   using Assembler::ldr;
+ 177   using Assembler::str;
+ 178 
+ 179   void ldr(Register Rx, const Address &amp;adr);
+ 180   void ldrw(Register Rw, const Address &amp;adr);
+ 181   void str(Register Rx, const Address &amp;adr);
+ 182   void strw(Register Rx, const Address &amp;adr);
+ 183 
+ 184   // Frame creation and destruction shared between JITs.
+ 185   void build_frame(int framesize);
+ 186   void remove_frame(int framesize);
+ 187 
+ 188   virtual void _call_Unimplemented(address call_site) {
+ 189     mov(rscratch2, call_site);
+ 190   }
+ 191 
+<a name="1" id="anc1"></a><span class="line-added"> 192 #ifdef _WIN64</span>
+<span class="line-added"> 193 #define call_Unimplemented() _call_Unimplemented((address)__FUNCSIG__)</span>
+<span class="line-added"> 194 #else</span>
+ 195 #define call_Unimplemented() _call_Unimplemented((address)__PRETTY_FUNCTION__)
+<a name="2" id="anc2"></a><span class="line-added"> 196 #endif</span>
+ 197 
+ 198   // aliases defined in AARCH64 spec
+ 199 
+ 200   template&lt;class T&gt;
+ 201   inline void cmpw(Register Rd, T imm)  { subsw(zr, Rd, imm); }
+ 202 
+ 203   inline void cmp(Register Rd, unsigned char imm8)  { subs(zr, Rd, imm8); }
+<a name="3" id="anc3"></a><span class="line-modified"> 204   inline __declspec(deprecated) void cmp(Register Rd, unsigned imm);</span>
+ 205 
+ 206   inline void cmnw(Register Rd, unsigned imm) { addsw(zr, Rd, imm); }
+ 207   inline void cmn(Register Rd, unsigned imm) { adds(zr, Rd, imm); }
+ 208 
+ 209   void cset(Register Rd, Assembler::Condition cond) {
+ 210     csinc(Rd, zr, zr, ~cond);
+ 211   }
+ 212   void csetw(Register Rd, Assembler::Condition cond) {
+ 213     csincw(Rd, zr, zr, ~cond);
+ 214   }
+ 215 
+ 216   void cneg(Register Rd, Register Rn, Assembler::Condition cond) {
+ 217     csneg(Rd, Rn, Rn, ~cond);
+ 218   }
+ 219   void cnegw(Register Rd, Register Rn, Assembler::Condition cond) {
+ 220     csnegw(Rd, Rn, Rn, ~cond);
+ 221   }
+ 222 
+ 223   inline void movw(Register Rd, Register Rn) {
+ 224     if (Rd == sp || Rn == sp) {
+ 225       addw(Rd, Rn, 0U);
+ 226     } else {
+ 227       orrw(Rd, zr, Rn);
+ 228     }
+ 229   }
+ 230   inline void mov(Register Rd, Register Rn) {
+ 231     assert(Rd != r31_sp &amp;&amp; Rn != r31_sp, &quot;should be&quot;);
+ 232     if (Rd == Rn) {
+ 233     } else if (Rd == sp || Rn == sp) {
+ 234       add(Rd, Rn, 0U);
+ 235     } else {
+ 236       orr(Rd, zr, Rn);
+ 237     }
+ 238   }
+ 239 
+ 240   inline void moviw(Register Rd, unsigned imm) { orrw(Rd, zr, imm); }
+ 241   inline void movi(Register Rd, unsigned imm) { orr(Rd, zr, imm); }
+ 242 
+ 243   inline void tstw(Register Rd, Register Rn) { andsw(zr, Rd, Rn); }
+ 244   inline void tst(Register Rd, Register Rn) { ands(zr, Rd, Rn); }
+ 245 
+ 246   inline void tstw(Register Rd, uint64_t imm) { andsw(zr, Rd, imm); }
+ 247   inline void tst(Register Rd, uint64_t imm) { ands(zr, Rd, imm); }
+ 248 
+ 249   inline void bfiw(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 250     bfmw(Rd, Rn, ((32 - lsb) &amp; 31), (width - 1));
+ 251   }
+ 252   inline void bfi(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 253     bfm(Rd, Rn, ((64 - lsb) &amp; 63), (width - 1));
+ 254   }
+ 255 
+ 256   inline void bfxilw(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 257     bfmw(Rd, Rn, lsb, (lsb + width - 1));
+ 258   }
+ 259   inline void bfxil(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 260     bfm(Rd, Rn, lsb , (lsb + width - 1));
+ 261   }
+ 262 
+ 263   inline void sbfizw(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 264     sbfmw(Rd, Rn, ((32 - lsb) &amp; 31), (width - 1));
+ 265   }
+ 266   inline void sbfiz(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 267     sbfm(Rd, Rn, ((64 - lsb) &amp; 63), (width - 1));
+ 268   }
+ 269 
+ 270   inline void sbfxw(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 271     sbfmw(Rd, Rn, lsb, (lsb + width - 1));
+ 272   }
+ 273   inline void sbfx(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 274     sbfm(Rd, Rn, lsb , (lsb + width - 1));
+ 275   }
+ 276 
+ 277   inline void ubfizw(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 278     ubfmw(Rd, Rn, ((32 - lsb) &amp; 31), (width - 1));
+ 279   }
+ 280   inline void ubfiz(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 281     ubfm(Rd, Rn, ((64 - lsb) &amp; 63), (width - 1));
+ 282   }
+ 283 
+ 284   inline void ubfxw(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 285     ubfmw(Rd, Rn, lsb, (lsb + width - 1));
+ 286   }
+ 287   inline void ubfx(Register Rd, Register Rn, unsigned lsb, unsigned width) {
+ 288     ubfm(Rd, Rn, lsb , (lsb + width - 1));
+ 289   }
+ 290 
+ 291   inline void asrw(Register Rd, Register Rn, unsigned imm) {
+ 292     sbfmw(Rd, Rn, imm, 31);
+ 293   }
+ 294 
+ 295   inline void asr(Register Rd, Register Rn, unsigned imm) {
+ 296     sbfm(Rd, Rn, imm, 63);
+ 297   }
+ 298 
+ 299   inline void lslw(Register Rd, Register Rn, unsigned imm) {
+ 300     ubfmw(Rd, Rn, ((32 - imm) &amp; 31), (31 - imm));
+ 301   }
+ 302 
+ 303   inline void lsl(Register Rd, Register Rn, unsigned imm) {
+ 304     ubfm(Rd, Rn, ((64 - imm) &amp; 63), (63 - imm));
+ 305   }
+ 306 
+ 307   inline void lsrw(Register Rd, Register Rn, unsigned imm) {
+ 308     ubfmw(Rd, Rn, imm, 31);
+ 309   }
+ 310 
+ 311   inline void lsr(Register Rd, Register Rn, unsigned imm) {
+ 312     ubfm(Rd, Rn, imm, 63);
+ 313   }
+ 314 
+ 315   inline void rorw(Register Rd, Register Rn, unsigned imm) {
+ 316     extrw(Rd, Rn, Rn, imm);
+ 317   }
+ 318 
+ 319   inline void ror(Register Rd, Register Rn, unsigned imm) {
+ 320     extr(Rd, Rn, Rn, imm);
+ 321   }
+ 322 
+ 323   inline void sxtbw(Register Rd, Register Rn) {
+ 324     sbfmw(Rd, Rn, 0, 7);
+ 325   }
+ 326   inline void sxthw(Register Rd, Register Rn) {
+ 327     sbfmw(Rd, Rn, 0, 15);
+ 328   }
+ 329   inline void sxtb(Register Rd, Register Rn) {
+ 330     sbfm(Rd, Rn, 0, 7);
+ 331   }
+ 332   inline void sxth(Register Rd, Register Rn) {
+ 333     sbfm(Rd, Rn, 0, 15);
+ 334   }
+ 335   inline void sxtw(Register Rd, Register Rn) {
+ 336     sbfm(Rd, Rn, 0, 31);
+ 337   }
+ 338 
+ 339   inline void uxtbw(Register Rd, Register Rn) {
+ 340     ubfmw(Rd, Rn, 0, 7);
+ 341   }
+ 342   inline void uxthw(Register Rd, Register Rn) {
+ 343     ubfmw(Rd, Rn, 0, 15);
+ 344   }
+ 345   inline void uxtb(Register Rd, Register Rn) {
+ 346     ubfm(Rd, Rn, 0, 7);
+ 347   }
+ 348   inline void uxth(Register Rd, Register Rn) {
+ 349     ubfm(Rd, Rn, 0, 15);
+ 350   }
+ 351   inline void uxtw(Register Rd, Register Rn) {
+ 352     ubfm(Rd, Rn, 0, 31);
+ 353   }
+ 354 
+ 355   inline void cmnw(Register Rn, Register Rm) {
+ 356     addsw(zr, Rn, Rm);
+ 357   }
+ 358   inline void cmn(Register Rn, Register Rm) {
+ 359     adds(zr, Rn, Rm);
+ 360   }
+ 361 
+ 362   inline void cmpw(Register Rn, Register Rm) {
+ 363     subsw(zr, Rn, Rm);
+ 364   }
+ 365   inline void cmp(Register Rn, Register Rm) {
+ 366     subs(zr, Rn, Rm);
+ 367   }
+ 368 
+ 369   inline void negw(Register Rd, Register Rn) {
+ 370     subw(Rd, zr, Rn);
+ 371   }
+ 372 
+ 373   inline void neg(Register Rd, Register Rn) {
+ 374     sub(Rd, zr, Rn);
+ 375   }
+ 376 
+ 377   inline void negsw(Register Rd, Register Rn) {
+ 378     subsw(Rd, zr, Rn);
+ 379   }
+ 380 
+ 381   inline void negs(Register Rd, Register Rn) {
+ 382     subs(Rd, zr, Rn);
+ 383   }
+ 384 
+ 385   inline void cmnw(Register Rn, Register Rm, enum shift_kind kind, unsigned shift = 0) {
+ 386     addsw(zr, Rn, Rm, kind, shift);
+ 387   }
+ 388   inline void cmn(Register Rn, Register Rm, enum shift_kind kind, unsigned shift = 0) {
+ 389     adds(zr, Rn, Rm, kind, shift);
+ 390   }
+ 391 
+ 392   inline void cmpw(Register Rn, Register Rm, enum shift_kind kind, unsigned shift = 0) {
+ 393     subsw(zr, Rn, Rm, kind, shift);
+ 394   }
+ 395   inline void cmp(Register Rn, Register Rm, enum shift_kind kind, unsigned shift = 0) {
+ 396     subs(zr, Rn, Rm, kind, shift);
+ 397   }
+ 398 
+ 399   inline void negw(Register Rd, Register Rn, enum shift_kind kind, unsigned shift = 0) {
+ 400     subw(Rd, zr, Rn, kind, shift);
+ 401   }
+ 402 
+ 403   inline void neg(Register Rd, Register Rn, enum shift_kind kind, unsigned shift = 0) {
+ 404     sub(Rd, zr, Rn, kind, shift);
+ 405   }
+ 406 
+ 407   inline void negsw(Register Rd, Register Rn, enum shift_kind kind, unsigned shift = 0) {
+ 408     subsw(Rd, zr, Rn, kind, shift);
+ 409   }
+ 410 
+ 411   inline void negs(Register Rd, Register Rn, enum shift_kind kind, unsigned shift = 0) {
+ 412     subs(Rd, zr, Rn, kind, shift);
+ 413   }
+ 414 
+ 415   inline void mnegw(Register Rd, Register Rn, Register Rm) {
+ 416     msubw(Rd, Rn, Rm, zr);
+ 417   }
+ 418   inline void mneg(Register Rd, Register Rn, Register Rm) {
+ 419     msub(Rd, Rn, Rm, zr);
+ 420   }
+ 421 
+ 422   inline void mulw(Register Rd, Register Rn, Register Rm) {
+ 423     maddw(Rd, Rn, Rm, zr);
+ 424   }
+ 425   inline void mul(Register Rd, Register Rn, Register Rm) {
+ 426     madd(Rd, Rn, Rm, zr);
+ 427   }
+ 428 
+ 429   inline void smnegl(Register Rd, Register Rn, Register Rm) {
+ 430     smsubl(Rd, Rn, Rm, zr);
+ 431   }
+ 432   inline void smull(Register Rd, Register Rn, Register Rm) {
+ 433     smaddl(Rd, Rn, Rm, zr);
+ 434   }
+ 435 
+ 436   inline void umnegl(Register Rd, Register Rn, Register Rm) {
+ 437     umsubl(Rd, Rn, Rm, zr);
+ 438   }
+ 439   inline void umull(Register Rd, Register Rn, Register Rm) {
+ 440     umaddl(Rd, Rn, Rm, zr);
+ 441   }
+ 442 
+ 443 #define WRAP(INSN)                                                            \
+ 444   void INSN(Register Rd, Register Rn, Register Rm, Register Ra) {             \
+ 445     if ((VM_Version::features() &amp; VM_Version::CPU_A53MAC) &amp;&amp; Ra != zr)        \
+ 446       nop();                                                                  \
+ 447     Assembler::INSN(Rd, Rn, Rm, Ra);                                          \
+ 448   }
+ 449 
+ 450   WRAP(madd) WRAP(msub) WRAP(maddw) WRAP(msubw)
+ 451   WRAP(smaddl) WRAP(smsubl) WRAP(umaddl) WRAP(umsubl)
+ 452 #undef WRAP
+ 453 
+ 454 
+ 455   // macro assembly operations needed for aarch64
+ 456 
+ 457   // first two private routines for loading 32 bit or 64 bit constants
+ 458 private:
+ 459 
+<a name="4" id="anc4"></a><span class="line-modified"> 460   void mov_immediate64(Register dst, uint64_t imm64);</span>
+<span class="line-modified"> 461   void mov_immediate32(Register dst, uint32_t imm32);</span>
+ 462 
+ 463   int push(unsigned int bitset, Register stack);
+ 464   int pop(unsigned int bitset, Register stack);
+ 465 
+ 466   int push_fp(unsigned int bitset, Register stack);
+ 467   int pop_fp(unsigned int bitset, Register stack);
+ 468 
+ 469   void mov(Register dst, Address a);
+ 470 
+ 471 public:
+ 472   void push(RegSet regs, Register stack) { if (regs.bits()) push(regs.bits(), stack); }
+ 473   void pop(RegSet regs, Register stack) { if (regs.bits()) pop(regs.bits(), stack); }
+ 474 
+ 475   void push_fp(RegSet regs, Register stack) { if (regs.bits()) push_fp(regs.bits(), stack); }
+ 476   void pop_fp(RegSet regs, Register stack) { if (regs.bits()) pop_fp(regs.bits(), stack); }
+ 477 
+ 478   // Push and pop everything that might be clobbered by a native
+ 479   // runtime call except rscratch1 and rscratch2.  (They are always
+ 480   // scratch, so we don&#39;t have to protect them.)  Only save the lower
+ 481   // 64 bits of each vector register.
+ 482   void push_call_clobbered_registers();
+ 483   void pop_call_clobbered_registers();
+ 484 
+ 485   // now mov instructions for loading absolute addresses and 32 or
+ 486   // 64 bit integers
+ 487 
+ 488   inline void mov(Register dst, address addr)
+ 489   {
+<a name="5" id="anc5"></a><span class="line-modified"> 490     mov_immediate64(dst, (uint64_t)addr);</span>
+ 491   }
+ 492 
+<a name="6" id="anc6"></a><span class="line-modified"> 493   inline void mov(Register dst, uint64_t imm64)</span>
+ 494   {
+ 495     mov_immediate64(dst, imm64);
+ 496   }
+ 497 
+<a name="7" id="anc7"></a><span class="line-modified"> 498   inline void movw(Register dst, uint32_t imm32)</span>
+ 499   {
+ 500     mov_immediate32(dst, imm32);
+ 501   }
+ 502 
+<a name="8" id="anc8"></a><span class="line-modified"> 503   inline void mov(Register dst, int64_t l)</span>
+ 504   {
+<a name="9" id="anc9"></a><span class="line-modified"> 505     mov(dst, (uint64_t)l);</span>
+ 506   }
+ 507 
+ 508   inline void mov(Register dst, int i)
+ 509   {
+<a name="10" id="anc10"></a><span class="line-modified"> 510     mov(dst, (int64_t)i);</span>
+ 511   }
+ 512 
+ 513   void mov(Register dst, RegisterOrConstant src) {
+ 514     if (src.is_register())
+ 515       mov(dst, src.as_register());
+ 516     else
+<a name="11" id="anc11"></a><span class="line-modified"> 517       mov(dst, (uint64_t)src.as_constant());</span>
+ 518   }
+ 519 
+ 520   void movptr(Register r, uintptr_t imm64);
+ 521 
+<a name="12" id="anc12"></a><span class="line-modified"> 522   void mov(FloatRegister Vd, SIMD_Arrangement T, uint32_t imm32);</span>
+ 523 
+ 524   void mov(FloatRegister Vd, SIMD_Arrangement T, FloatRegister Vn) {
+ 525     orr(Vd, T, Vn, Vn);
+ 526   }
+ 527 
+ 528 public:
+ 529 
+ 530   // Generalized Test Bit And Branch, including a &quot;far&quot; variety which
+ 531   // spans more than 32KiB.
+<a name="13" id="anc13"></a><span class="line-modified"> 532   void tbr(Condition cond, Register Rt, int bitpos, Label &amp;dest, bool isfar = false) {</span>
+ 533     assert(cond == EQ || cond == NE, &quot;must be&quot;);
+ 534 
+<a name="14" id="anc14"></a><span class="line-modified"> 535     if (isfar)</span>
+ 536       cond = ~cond;
+ 537 
+ 538     void (Assembler::* branch)(Register Rt, int bitpos, Label &amp;L);
+ 539     if (cond == Assembler::EQ)
+ 540       branch = &amp;Assembler::tbz;
+ 541     else
+ 542       branch = &amp;Assembler::tbnz;
+ 543 
+<a name="15" id="anc15"></a><span class="line-modified"> 544     if (isfar) {</span>
+ 545       Label L;
+ 546       (this-&gt;*branch)(Rt, bitpos, L);
+ 547       b(dest);
+ 548       bind(L);
+ 549     } else {
+ 550       (this-&gt;*branch)(Rt, bitpos, dest);
+ 551     }
+ 552   }
+ 553 
+ 554   // macro instructions for accessing and updating floating point
+ 555   // status register
+ 556   //
+ 557   // FPSR : op1 == 011
+ 558   //        CRn == 0100
+ 559   //        CRm == 0100
+ 560   //        op2 == 001
+ 561 
+ 562   inline void get_fpsr(Register reg)
+ 563   {
+ 564     mrs(0b11, 0b0100, 0b0100, 0b001, reg);
+ 565   }
+ 566 
+ 567   inline void set_fpsr(Register reg)
+ 568   {
+ 569     msr(0b011, 0b0100, 0b0100, 0b001, reg);
+ 570   }
+ 571 
+ 572   inline void clear_fpsr()
+ 573   {
+ 574     msr(0b011, 0b0100, 0b0100, 0b001, zr);
+ 575   }
+ 576 
+ 577   // DCZID_EL0: op1 == 011
+ 578   //            CRn == 0000
+ 579   //            CRm == 0000
+ 580   //            op2 == 111
+ 581   inline void get_dczid_el0(Register reg)
+ 582   {
+ 583     mrs(0b011, 0b0000, 0b0000, 0b111, reg);
+ 584   }
+ 585 
+ 586   // CTR_EL0:   op1 == 011
+ 587   //            CRn == 0000
+ 588   //            CRm == 0000
+ 589   //            op2 == 001
+ 590   inline void get_ctr_el0(Register reg)
+ 591   {
+ 592     mrs(0b011, 0b0000, 0b0000, 0b001, reg);
+ 593   }
+ 594 
+ 595   // idiv variant which deals with MINLONG as dividend and -1 as divisor
+ 596   int corrected_idivl(Register result, Register ra, Register rb,
+ 597                       bool want_remainder, Register tmp = rscratch1);
+ 598   int corrected_idivq(Register result, Register ra, Register rb,
+ 599                       bool want_remainder, Register tmp = rscratch1);
+ 600 
+ 601   // Support for NULL-checks
+ 602   //
+ 603   // Generates code that causes a NULL OS exception if the content of reg is NULL.
+ 604   // If the accessed location is M[reg + offset] and the offset is known, provide the
+ 605   // offset. No explicit code generation is needed if the offset is within a certain
+ 606   // range (0 &lt;= offset &lt;= page_size).
+ 607 
+ 608   virtual void null_check(Register reg, int offset = -1);
+ 609   static bool needs_explicit_null_check(intptr_t offset);
+ 610   static bool uses_implicit_null_check(void* address);
+ 611 
+ 612   static address target_addr_for_insn(address insn_addr, unsigned insn);
+ 613   static address target_addr_for_insn(address insn_addr) {
+ 614     unsigned insn = *(unsigned*)insn_addr;
+ 615     return target_addr_for_insn(insn_addr, insn);
+ 616   }
+ 617 
+ 618   // Required platform-specific helpers for Label::patch_instructions.
+ 619   // They _shadow_ the declarations in AbstractAssembler, which are undefined.
+ 620   static int pd_patch_instruction_size(address branch, address target);
+ 621   static void pd_patch_instruction(address branch, address target, const char* file = NULL, int line = 0) {
+ 622     pd_patch_instruction_size(branch, target);
+ 623   }
+ 624   static address pd_call_destination(address branch) {
+ 625     return target_addr_for_insn(branch);
+ 626   }
+ 627 #ifndef PRODUCT
+ 628   static void pd_print_patched_instruction(address branch);
+ 629 #endif
+ 630 
+ 631   static int patch_oop(address insn_addr, address o);
+ 632   static int patch_narrow_klass(address insn_addr, narrowKlass n);
+ 633 
+ 634   address emit_trampoline_stub(int insts_call_instruction_offset, address target);
+ 635   void emit_static_call_stub();
+ 636 
+ 637   // The following 4 methods return the offset of the appropriate move instruction
+ 638 
+ 639   // Support for fast byte/short loading with zero extension (depending on particular CPU)
+ 640   int load_unsigned_byte(Register dst, Address src);
+ 641   int load_unsigned_short(Register dst, Address src);
+ 642 
+ 643   // Support for fast byte/short loading with sign extension (depending on particular CPU)
+ 644   int load_signed_byte(Register dst, Address src);
+ 645   int load_signed_short(Register dst, Address src);
+ 646 
+ 647   int load_signed_byte32(Register dst, Address src);
+ 648   int load_signed_short32(Register dst, Address src);
+ 649 
+ 650   // Support for sign-extension (hi:lo = extend_sign(lo))
+ 651   void extend_sign(Register hi, Register lo);
+ 652 
+ 653   // Load and store values by size and signed-ness
+ 654   void load_sized_value(Register dst, Address src, size_t size_in_bytes, bool is_signed, Register dst2 = noreg);
+ 655   void store_sized_value(Address dst, Register src, size_t size_in_bytes, Register src2 = noreg);
+ 656 
+ 657   // Support for inc/dec with optimal instruction selection depending on value
+ 658 
+ 659   // x86_64 aliases an unqualified register/address increment and
+ 660   // decrement to call incrementq and decrementq but also supports
+ 661   // explicitly sized calls to incrementq/decrementq or
+ 662   // incrementl/decrementl
+ 663 
+ 664   // for aarch64 the proper convention would be to use
+ 665   // increment/decrement for 64 bit operatons and
+ 666   // incrementw/decrementw for 32 bit operations. so when porting
+ 667   // x86_64 code we can leave calls to increment/decrement as is,
+ 668   // replace incrementq/decrementq with increment/decrement and
+ 669   // replace incrementl/decrementl with incrementw/decrementw.
+ 670 
+ 671   // n.b. increment/decrement calls with an Address destination will
+ 672   // need to use a scratch register to load the value to be
+ 673   // incremented. increment/decrement calls which add or subtract a
+ 674   // constant value greater than 2^12 will need to use a 2nd scratch
+ 675   // register to hold the constant. so, a register increment/decrement
+ 676   // may trash rscratch2 and an address increment/decrement trash
+ 677   // rscratch and rscratch2
+ 678 
+ 679   void decrementw(Address dst, int value = 1);
+ 680   void decrementw(Register reg, int value = 1);
+ 681 
+ 682   void decrement(Register reg, int value = 1);
+ 683   void decrement(Address dst, int value = 1);
+ 684 
+ 685   void incrementw(Address dst, int value = 1);
+ 686   void incrementw(Register reg, int value = 1);
+ 687 
+ 688   void increment(Register reg, int value = 1);
+ 689   void increment(Address dst, int value = 1);
+ 690 
+ 691 
+ 692   // Alignment
+ 693   void align(int modulus);
+ 694 
+ 695   // Stack frame creation/removal
+ 696   void enter()
+ 697   {
+ 698     stp(rfp, lr, Address(pre(sp, -2 * wordSize)));
+ 699     mov(rfp, sp);
+ 700   }
+ 701   void leave()
+ 702   {
+ 703     mov(sp, rfp);
+ 704     ldp(rfp, lr, Address(post(sp, 2 * wordSize)));
+ 705   }
+ 706 
+ 707   // Support for getting the JavaThread pointer (i.e.; a reference to thread-local information)
+ 708   // The pointer will be loaded into the thread register.
+ 709   void get_thread(Register thread);
+ 710 
+ 711 
+ 712   // Support for VM calls
+ 713   //
+ 714   // It is imperative that all calls into the VM are handled via the call_VM macros.
+ 715   // They make sure that the stack linkage is setup correctly. call_VM&#39;s correspond
+ 716   // to ENTRY/ENTRY_X entry points while call_VM_leaf&#39;s correspond to LEAF entry points.
+ 717 
+ 718 
+ 719   void call_VM(Register oop_result,
+ 720                address entry_point,
+ 721                bool check_exceptions = true);
+ 722   void call_VM(Register oop_result,
+ 723                address entry_point,
+ 724                Register arg_1,
+ 725                bool check_exceptions = true);
+ 726   void call_VM(Register oop_result,
+ 727                address entry_point,
+ 728                Register arg_1, Register arg_2,
+ 729                bool check_exceptions = true);
+ 730   void call_VM(Register oop_result,
+ 731                address entry_point,
+ 732                Register arg_1, Register arg_2, Register arg_3,
+ 733                bool check_exceptions = true);
+ 734 
+ 735   // Overloadings with last_Java_sp
+ 736   void call_VM(Register oop_result,
+ 737                Register last_java_sp,
+ 738                address entry_point,
+ 739                int number_of_arguments = 0,
+ 740                bool check_exceptions = true);
+ 741   void call_VM(Register oop_result,
+ 742                Register last_java_sp,
+ 743                address entry_point,
+ 744                Register arg_1, bool
+ 745                check_exceptions = true);
+ 746   void call_VM(Register oop_result,
+ 747                Register last_java_sp,
+ 748                address entry_point,
+ 749                Register arg_1, Register arg_2,
+ 750                bool check_exceptions = true);
+ 751   void call_VM(Register oop_result,
+ 752                Register last_java_sp,
+ 753                address entry_point,
+ 754                Register arg_1, Register arg_2, Register arg_3,
+ 755                bool check_exceptions = true);
+ 756 
+ 757   void get_vm_result  (Register oop_result, Register thread);
+ 758   void get_vm_result_2(Register metadata_result, Register thread);
+ 759 
+ 760   // These always tightly bind to MacroAssembler::call_VM_base
+ 761   // bypassing the virtual implementation
+ 762   void super_call_VM(Register oop_result, Register last_java_sp, address entry_point, int number_of_arguments = 0, bool check_exceptions = true);
+ 763   void super_call_VM(Register oop_result, Register last_java_sp, address entry_point, Register arg_1, bool check_exceptions = true);
+ 764   void super_call_VM(Register oop_result, Register last_java_sp, address entry_point, Register arg_1, Register arg_2, bool check_exceptions = true);
+ 765   void super_call_VM(Register oop_result, Register last_java_sp, address entry_point, Register arg_1, Register arg_2, Register arg_3, bool check_exceptions = true);
+ 766   void super_call_VM(Register oop_result, Register last_java_sp, address entry_point, Register arg_1, Register arg_2, Register arg_3, Register arg_4, bool check_exceptions = true);
+ 767 
+ 768   void call_VM_leaf(address entry_point,
+ 769                     int number_of_arguments = 0);
+ 770   void call_VM_leaf(address entry_point,
+ 771                     Register arg_1);
+ 772   void call_VM_leaf(address entry_point,
+ 773                     Register arg_1, Register arg_2);
+ 774   void call_VM_leaf(address entry_point,
+ 775                     Register arg_1, Register arg_2, Register arg_3);
+ 776 
+ 777   // These always tightly bind to MacroAssembler::call_VM_leaf_base
+ 778   // bypassing the virtual implementation
+ 779   void super_call_VM_leaf(address entry_point);
+ 780   void super_call_VM_leaf(address entry_point, Register arg_1);
+ 781   void super_call_VM_leaf(address entry_point, Register arg_1, Register arg_2);
+ 782   void super_call_VM_leaf(address entry_point, Register arg_1, Register arg_2, Register arg_3);
+ 783   void super_call_VM_leaf(address entry_point, Register arg_1, Register arg_2, Register arg_3, Register arg_4);
+ 784 
+ 785   // last Java Frame (fills frame anchor)
+ 786   void set_last_Java_frame(Register last_java_sp,
+ 787                            Register last_java_fp,
+ 788                            address last_java_pc,
+ 789                            Register scratch);
+ 790 
+ 791   void set_last_Java_frame(Register last_java_sp,
+ 792                            Register last_java_fp,
+ 793                            Label &amp;last_java_pc,
+ 794                            Register scratch);
+ 795 
+ 796   void set_last_Java_frame(Register last_java_sp,
+ 797                            Register last_java_fp,
+ 798                            Register last_java_pc,
+ 799                            Register scratch);
+ 800 
+ 801   void reset_last_Java_frame(Register thread);
+ 802 
+ 803   // thread in the default location (rthread)
+ 804   void reset_last_Java_frame(bool clear_fp);
+ 805 
+ 806   // Stores
+ 807   void store_check(Register obj);                // store check for obj - register is destroyed afterwards
+ 808   void store_check(Register obj, Address dst);   // same as above, dst is exact store location (reg. is destroyed)
+ 809 
+ 810   void resolve_jobject(Register value, Register thread, Register tmp);
+ 811 
+ 812   // C &#39;boolean&#39; to Java boolean: x == 0 ? 0 : 1
+ 813   void c2bool(Register x);
+ 814 
+ 815   void load_method_holder(Register holder, Register method);
+ 816 
+ 817   // oop manipulations
+ 818   void load_klass(Register dst, Register src);
+ 819   void store_klass(Register dst, Register src);
+ 820   void cmp_klass(Register oop, Register trial_klass, Register tmp);
+ 821 
+ 822   void resolve_oop_handle(Register result, Register tmp = r5);
+ 823   void load_mirror(Register dst, Register method, Register tmp = r5);
+ 824 
+ 825   void access_load_at(BasicType type, DecoratorSet decorators, Register dst, Address src,
+ 826                       Register tmp1, Register tmp_thread);
+ 827 
+ 828   void access_store_at(BasicType type, DecoratorSet decorators, Address dst, Register src,
+ 829                        Register tmp1, Register tmp_thread);
+ 830 
+ 831   // Resolves obj for access. Result is placed in the same register.
+ 832   // All other registers are preserved.
+ 833   void resolve(DecoratorSet decorators, Register obj);
+ 834 
+ 835   void load_heap_oop(Register dst, Address src, Register tmp1 = noreg,
+ 836                      Register thread_tmp = noreg, DecoratorSet decorators = 0);
+ 837 
+ 838   void load_heap_oop_not_null(Register dst, Address src, Register tmp1 = noreg,
+ 839                               Register thread_tmp = noreg, DecoratorSet decorators = 0);
+ 840   void store_heap_oop(Address dst, Register src, Register tmp1 = noreg,
+ 841                       Register tmp_thread = noreg, DecoratorSet decorators = 0);
+ 842 
+ 843   // currently unimplemented
+ 844   // Used for storing NULL. All other oop constants should be
+ 845   // stored using routines that take a jobject.
+ 846   void store_heap_oop_null(Address dst);
+ 847 
+ 848   void load_prototype_header(Register dst, Register src);
+ 849 
+ 850   void store_klass_gap(Register dst, Register src);
+ 851 
+ 852   // This dummy is to prevent a call to store_heap_oop from
+ 853   // converting a zero (like NULL) into a Register by giving
+ 854   // the compiler two choices it can&#39;t resolve
+ 855 
+ 856   void store_heap_oop(Address dst, void* dummy);
+ 857 
+ 858   void encode_heap_oop(Register d, Register s);
+ 859   void encode_heap_oop(Register r) { encode_heap_oop(r, r); }
+ 860   void decode_heap_oop(Register d, Register s);
+ 861   void decode_heap_oop(Register r) { decode_heap_oop(r, r); }
+ 862   void encode_heap_oop_not_null(Register r);
+ 863   void decode_heap_oop_not_null(Register r);
+ 864   void encode_heap_oop_not_null(Register dst, Register src);
+ 865   void decode_heap_oop_not_null(Register dst, Register src);
+ 866 
+ 867   void set_narrow_oop(Register dst, jobject obj);
+ 868 
+ 869   void encode_klass_not_null(Register r);
+ 870   void decode_klass_not_null(Register r);
+ 871   void encode_klass_not_null(Register dst, Register src);
+ 872   void decode_klass_not_null(Register dst, Register src);
+ 873 
+ 874   void set_narrow_klass(Register dst, Klass* k);
+ 875 
+ 876   // if heap base register is used - reinit it with the correct value
+ 877   void reinit_heapbase();
+ 878 
+ 879   DEBUG_ONLY(void verify_heapbase(const char* msg);)
+ 880 
+ 881   void push_CPU_state(bool save_vectors = false);
+ 882   void pop_CPU_state(bool restore_vectors = false) ;
+ 883 
+ 884   // Round up to a power of two
+ 885   void round_to(Register reg, int modulus);
+ 886 
+ 887   // allocation
+ 888   void eden_allocate(
+ 889     Register obj,                      // result: pointer to object after successful allocation
+ 890     Register var_size_in_bytes,        // object size in bytes if unknown at compile time; invalid otherwise
+ 891     int      con_size_in_bytes,        // object size in bytes if   known at compile time
+ 892     Register t1,                       // temp register
+ 893     Label&amp;   slow_case                 // continuation point if fast allocation fails
+ 894   );
+ 895   void tlab_allocate(
+ 896     Register obj,                      // result: pointer to object after successful allocation
+ 897     Register var_size_in_bytes,        // object size in bytes if unknown at compile time; invalid otherwise
+ 898     int      con_size_in_bytes,        // object size in bytes if   known at compile time
+ 899     Register t1,                       // temp register
+ 900     Register t2,                       // temp register
+ 901     Label&amp;   slow_case                 // continuation point if fast allocation fails
+ 902   );
+ 903   void zero_memory(Register addr, Register len, Register t1);
+ 904   void verify_tlab();
+ 905 
+ 906   // interface method calling
+ 907   void lookup_interface_method(Register recv_klass,
+ 908                                Register intf_klass,
+ 909                                RegisterOrConstant itable_index,
+ 910                                Register method_result,
+ 911                                Register scan_temp,
+ 912                                Label&amp; no_such_interface,
+ 913                    bool return_method = true);
+ 914 
+ 915   // virtual method calling
+ 916   // n.b. x86 allows RegisterOrConstant for vtable_index
+ 917   void lookup_virtual_method(Register recv_klass,
+ 918                              RegisterOrConstant vtable_index,
+ 919                              Register method_result);
+ 920 
+ 921   // Test sub_klass against super_klass, with fast and slow paths.
+ 922 
+ 923   // The fast path produces a tri-state answer: yes / no / maybe-slow.
+ 924   // One of the three labels can be NULL, meaning take the fall-through.
+ 925   // If super_check_offset is -1, the value is loaded up from super_klass.
+ 926   // No registers are killed, except temp_reg.
+ 927   void check_klass_subtype_fast_path(Register sub_klass,
+ 928                                      Register super_klass,
+ 929                                      Register temp_reg,
+ 930                                      Label* L_success,
+ 931                                      Label* L_failure,
+ 932                                      Label* L_slow_path,
+ 933                 RegisterOrConstant super_check_offset = RegisterOrConstant(-1));
+ 934 
+ 935   // The rest of the type check; must be wired to a corresponding fast path.
+ 936   // It does not repeat the fast path logic, so don&#39;t use it standalone.
+ 937   // The temp_reg and temp2_reg can be noreg, if no temps are available.
+ 938   // Updates the sub&#39;s secondary super cache as necessary.
+ 939   // If set_cond_codes, condition codes will be Z on success, NZ on failure.
+ 940   void check_klass_subtype_slow_path(Register sub_klass,
+ 941                                      Register super_klass,
+ 942                                      Register temp_reg,
+ 943                                      Register temp2_reg,
+ 944                                      Label* L_success,
+ 945                                      Label* L_failure,
+ 946                                      bool set_cond_codes = false);
+ 947 
+ 948   // Simplified, combined version, good for typical uses.
+ 949   // Falls through on failure.
+ 950   void check_klass_subtype(Register sub_klass,
+ 951                            Register super_klass,
+ 952                            Register temp_reg,
+ 953                            Label&amp; L_success);
+ 954 
+ 955   void clinit_barrier(Register klass,
+ 956                       Register thread,
+ 957                       Label* L_fast_path = NULL,
+ 958                       Label* L_slow_path = NULL);
+ 959 
+ 960   Address argument_address(RegisterOrConstant arg_slot, int extra_slot_offset = 0);
+ 961 
+ 962 
+ 963   // Debugging
+ 964 
+ 965   // only if +VerifyOops
+ 966   void verify_oop(Register reg, const char* s = &quot;broken oop&quot;);
+ 967   void verify_oop_addr(Address addr, const char * s = &quot;broken oop addr&quot;);
+ 968 
+ 969 // TODO: verify method and klass metadata (compare against vptr?)
+ 970   void _verify_method_ptr(Register reg, const char * msg, const char * file, int line) {}
+ 971   void _verify_klass_ptr(Register reg, const char * msg, const char * file, int line){}
+ 972 
+ 973 #define verify_method_ptr(reg) _verify_method_ptr(reg, &quot;broken method &quot; #reg, __FILE__, __LINE__)
+ 974 #define verify_klass_ptr(reg) _verify_klass_ptr(reg, &quot;broken klass &quot; #reg, __FILE__, __LINE__)
+ 975 
+ 976   // only if +VerifyFPU
+ 977   void verify_FPU(int stack_depth, const char* s = &quot;illegal FPU state&quot;);
+ 978 
+ 979   // prints msg, dumps registers and stops execution
+ 980   void stop(const char* msg);
+ 981 
+ 982   // prints msg and continues
+ 983   void warn(const char* msg);
+ 984 
+ 985   static void debug64(char* msg, int64_t pc, int64_t regs[]);
+ 986 
+ 987   void untested()                                { stop(&quot;untested&quot;); }
+ 988 
+ 989   void unimplemented(const char* what = &quot;&quot;);
+ 990 
+ 991   void should_not_reach_here()                   { stop(&quot;should not reach here&quot;); }
+ 992 
+ 993   // Stack overflow checking
+ 994   void bang_stack_with_offset(int offset) {
+ 995     // stack grows down, caller passes positive offset
+ 996     assert(offset &gt; 0, &quot;must bang with negative offset&quot;);
+ 997     sub(rscratch2, sp, offset);
+ 998     str(zr, Address(rscratch2));
+ 999   }
+1000 
+1001   // Writes to stack successive pages until offset reached to check for
+1002   // stack overflow + shadow pages.  Also, clobbers tmp
+1003   void bang_stack_size(Register size, Register tmp);
+1004 
+1005   // Check for reserved stack access in method being exited (for JIT)
+1006   void reserved_stack_check();
+1007 
+1008   virtual RegisterOrConstant delayed_value_impl(intptr_t* delayed_value_addr,
+1009                                                 Register tmp,
+1010                                                 int offset);
+1011 
+1012   // Arithmetics
+1013 
+1014   void addptr(const Address &amp;dst, int32_t src);
+1015   void cmpptr(Register src1, Address src2);
+1016 
+1017   void cmpoop(Register obj1, Register obj2);
+1018 
+1019   // Various forms of CAS
+1020 
+1021   void cmpxchg_obj_header(Register oldv, Register newv, Register obj, Register tmp,
+1022                           Label &amp;suceed, Label *fail);
+1023   void cmpxchgptr(Register oldv, Register newv, Register addr, Register tmp,
+1024                   Label &amp;suceed, Label *fail);
+1025 
+1026   void cmpxchgw(Register oldv, Register newv, Register addr, Register tmp,
+1027                   Label &amp;suceed, Label *fail);
+1028 
+1029   void atomic_add(Register prev, RegisterOrConstant incr, Register addr);
+1030   void atomic_addw(Register prev, RegisterOrConstant incr, Register addr);
+1031   void atomic_addal(Register prev, RegisterOrConstant incr, Register addr);
+1032   void atomic_addalw(Register prev, RegisterOrConstant incr, Register addr);
+1033 
+1034   void atomic_xchg(Register prev, Register newv, Register addr);
+1035   void atomic_xchgw(Register prev, Register newv, Register addr);
+1036   void atomic_xchgal(Register prev, Register newv, Register addr);
+1037   void atomic_xchgalw(Register prev, Register newv, Register addr);
+1038 
+1039   void orptr(Address adr, RegisterOrConstant src) {
+1040     ldr(rscratch1, adr);
+1041     if (src.is_register())
+1042       orr(rscratch1, rscratch1, src.as_register());
+1043     else
+1044       orr(rscratch1, rscratch1, src.as_constant());
+1045     str(rscratch1, adr);
+1046   }
+1047 
+1048   // A generic CAS; success or failure is in the EQ flag.
+1049   // Clobbers rscratch1
+1050   void cmpxchg(Register addr, Register expected, Register new_val,
+1051                enum operand_size size,
+1052                bool acquire, bool release, bool weak,
+1053                Register result);
+1054 private:
+1055   void compare_eq(Register rn, Register rm, enum operand_size size);
+1056 
+1057 public:
+1058   // Calls
+1059 
+1060   address trampoline_call(Address entry, CodeBuffer *cbuf = NULL);
+1061 
+1062   static bool far_branches() {
+1063     return ReservedCodeCacheSize &gt; branch_range || UseAOT;
+1064   }
+1065 
+1066   // Jumps that can reach anywhere in the code cache.
+1067   // Trashes tmp.
+1068   void far_call(Address entry, CodeBuffer *cbuf = NULL, Register tmp = rscratch1);
+1069   void far_jump(Address entry, CodeBuffer *cbuf = NULL, Register tmp = rscratch1);
+1070 
+1071   static int far_branch_size() {
+1072     if (far_branches()) {
+1073       return 3 * 4;  // adrp, add, br
+1074     } else {
+1075       return 4;
+1076     }
+1077   }
+1078 
+1079   // Emit the CompiledIC call idiom
+1080   address ic_call(address entry, jint method_index = 0);
+1081 
+1082 public:
+1083 
+1084   // Data
+1085 
+1086   void mov_metadata(Register dst, Metadata* obj);
+1087   Address allocate_metadata_address(Metadata* obj);
+1088   Address constant_oop_address(jobject obj);
+1089 
+1090   void movoop(Register dst, jobject obj, bool immediate = false);
+1091 
+1092   // CRC32 code for java.util.zip.CRC32::updateBytes() instrinsic.
+1093   void kernel_crc32(Register crc, Register buf, Register len,
+1094         Register table0, Register table1, Register table2, Register table3,
+1095         Register tmp, Register tmp2, Register tmp3);
+1096   // CRC32 code for java.util.zip.CRC32C::updateBytes() instrinsic.
+1097   void kernel_crc32c(Register crc, Register buf, Register len,
+1098         Register table0, Register table1, Register table2, Register table3,
+1099         Register tmp, Register tmp2, Register tmp3);
+1100 
+1101   // Stack push and pop individual 64 bit registers
+1102   void push(Register src);
+1103   void pop(Register dst);
+1104 
+1105   // push all registers onto the stack
+1106   void pusha();
+1107   void popa();
+1108 
+1109   void repne_scan(Register addr, Register value, Register count,
+1110                   Register scratch);
+1111   void repne_scanw(Register addr, Register value, Register count,
+1112                    Register scratch);
+1113 
+1114   typedef void (MacroAssembler::* add_sub_imm_insn)(Register Rd, Register Rn, unsigned imm);
+1115   typedef void (MacroAssembler::* add_sub_reg_insn)(Register Rd, Register Rn, Register Rm, enum shift_kind kind, unsigned shift);
+1116 
+1117   // If a constant does not fit in an immediate field, generate some
+1118   // number of MOV instructions and then perform the operation
+1119   void wrap_add_sub_imm_insn(Register Rd, Register Rn, unsigned imm,
+1120                              add_sub_imm_insn insn1,
+1121                              add_sub_reg_insn insn2);
+1122   // Seperate vsn which sets the flags
+1123   void wrap_adds_subs_imm_insn(Register Rd, Register Rn, unsigned imm,
+1124                              add_sub_imm_insn insn1,
+1125                              add_sub_reg_insn insn2);
+1126 
+1127 #define WRAP(INSN)                                                      \
+1128   void INSN(Register Rd, Register Rn, unsigned imm) {                   \
+1129     wrap_add_sub_imm_insn(Rd, Rn, imm, &amp;Assembler::INSN, &amp;Assembler::INSN); \
+1130   }                                                                     \
+1131                                                                         \
+1132   void INSN(Register Rd, Register Rn, Register Rm,                      \
+1133              enum shift_kind kind, unsigned shift = 0) {                \
+1134     Assembler::INSN(Rd, Rn, Rm, kind, shift);                           \
+1135   }                                                                     \
+1136                                                                         \
+1137   void INSN(Register Rd, Register Rn, Register Rm) {                    \
+1138     Assembler::INSN(Rd, Rn, Rm);                                        \
+1139   }                                                                     \
+1140                                                                         \
+1141   void INSN(Register Rd, Register Rn, Register Rm,                      \
+1142            ext::operation option, int amount = 0) {                     \
+1143     Assembler::INSN(Rd, Rn, Rm, option, amount);                        \
+1144   }
+1145 
+1146   WRAP(add) WRAP(addw) WRAP(sub) WRAP(subw)
+1147 
+1148 #undef WRAP
+1149 #define WRAP(INSN)                                                      \
+1150   void INSN(Register Rd, Register Rn, unsigned imm) {                   \
+1151     wrap_adds_subs_imm_insn(Rd, Rn, imm, &amp;Assembler::INSN, &amp;Assembler::INSN); \
+1152   }                                                                     \
+1153                                                                         \
+1154   void INSN(Register Rd, Register Rn, Register Rm,                      \
+1155              enum shift_kind kind, unsigned shift = 0) {                \
+1156     Assembler::INSN(Rd, Rn, Rm, kind, shift);                           \
+1157   }                                                                     \
+1158                                                                         \
+1159   void INSN(Register Rd, Register Rn, Register Rm) {                    \
+1160     Assembler::INSN(Rd, Rn, Rm);                                        \
+1161   }                                                                     \
+1162                                                                         \
+1163   void INSN(Register Rd, Register Rn, Register Rm,                      \
+1164            ext::operation option, int amount = 0) {                     \
+1165     Assembler::INSN(Rd, Rn, Rm, option, amount);                        \
+1166   }
+1167 
+1168   WRAP(adds) WRAP(addsw) WRAP(subs) WRAP(subsw)
+1169 
+1170   void add(Register Rd, Register Rn, RegisterOrConstant increment);
+1171   void addw(Register Rd, Register Rn, RegisterOrConstant increment);
+1172   void sub(Register Rd, Register Rn, RegisterOrConstant decrement);
+1173   void subw(Register Rd, Register Rn, RegisterOrConstant decrement);
+1174 
+<a name="16" id="anc16"></a><span class="line-modified">1175   void adrp(Register reg1, const Address &amp;dest, uint64_t &amp;byte_offset);</span>
+1176 
+1177   void tableswitch(Register index, jint lowbound, jint highbound,
+1178                    Label &amp;jumptable, Label &amp;jumptable_end, int stride = 1) {
+1179     adr(rscratch1, jumptable);
+1180     subsw(rscratch2, index, lowbound);
+1181     subsw(zr, rscratch2, highbound - lowbound);
+1182     br(Assembler::HS, jumptable_end);
+1183     add(rscratch1, rscratch1, rscratch2,
+1184         ext::sxtw, exact_log2(stride * Assembler::instruction_size));
+1185     br(rscratch1);
+1186   }
+1187 
+1188   // Form an address from base + offset in Rd.  Rd may or may not
+1189   // actually be used: you must use the Address that is returned.  It
+1190   // is up to you to ensure that the shift provided matches the size
+1191   // of your data.
+<a name="17" id="anc17"></a><span class="line-modified">1192   Address form_address(Register Rd, Register base, int64_t byte_offset, int shift);</span>
+1193 
+1194   // Return true iff an address is within the 48-bit AArch64 address
+1195   // space.
+1196   bool is_valid_AArch64_address(address a) {
+1197     return ((uint64_t)a &gt;&gt; 48) == 0;
+1198   }
+1199 
+1200   // Load the base of the cardtable byte map into reg.
+1201   void load_byte_map_base(Register reg);
+1202 
+1203   // Prolog generator routines to support switch between x86 code and
+1204   // generated ARM code
+1205 
+1206   // routine to generate an x86 prolog for a stub function which
+1207   // bootstraps into the generated ARM code which directly follows the
+1208   // stub
+1209   //
+1210 
+1211   public:
+1212 
+1213   void ldr_constant(Register dest, const Address &amp;const_addr) {
+1214     if (NearCpool) {
+1215       ldr(dest, const_addr);
+1216     } else {
+<a name="18" id="anc18"></a><span class="line-modified">1217       uint64_t offset;</span>
+1218       adrp(dest, InternalAddress(const_addr.target()), offset);
+1219       ldr(dest, Address(dest, offset));
+1220     }
+1221   }
+1222 
+1223   address read_polling_page(Register r, address page, relocInfo::relocType rtype);
+1224   address read_polling_page(Register r, relocInfo::relocType rtype);
+1225   void get_polling_page(Register dest, address page, relocInfo::relocType rtype);
+1226 
+1227   // CRC32 code for java.util.zip.CRC32::updateBytes() instrinsic.
+1228   void update_byte_crc32(Register crc, Register val, Register table);
+1229   void update_word_crc32(Register crc, Register v, Register tmp,
+1230         Register table0, Register table1, Register table2, Register table3,
+1231         bool upper = false);
+1232 
+1233   void string_compare(Register str1, Register str2,
+1234                       Register cnt1, Register cnt2, Register result,
+1235                       Register tmp1, Register tmp2, FloatRegister vtmp1,
+1236                       FloatRegister vtmp2, FloatRegister vtmp3, int ae);
+1237 
+1238   void has_negatives(Register ary1, Register len, Register result);
+1239 
+1240   void arrays_equals(Register a1, Register a2, Register result, Register cnt1,
+1241                      Register tmp1, Register tmp2, Register tmp3, int elem_size);
+1242 
+1243   void string_equals(Register a1, Register a2, Register result, Register cnt1,
+1244                      int elem_size);
+1245 
+1246   void fill_words(Register base, Register cnt, Register value);
+<a name="19" id="anc19"></a><span class="line-modified">1247   void zero_words(Register base, uint64_t cnt);</span>
+1248   void zero_words(Register ptr, Register cnt);
+1249   void zero_dcache_blocks(Register base, Register cnt);
+1250 
+1251   static const int zero_words_block_size;
+1252 
+1253   void byte_array_inflate(Register src, Register dst, Register len,
+1254                           FloatRegister vtmp1, FloatRegister vtmp2,
+1255                           FloatRegister vtmp3, Register tmp4);
+1256 
+1257   void char_array_compress(Register src, Register dst, Register len,
+1258                            FloatRegister tmp1Reg, FloatRegister tmp2Reg,
+1259                            FloatRegister tmp3Reg, FloatRegister tmp4Reg,
+1260                            Register result);
+1261 
+1262   void encode_iso_array(Register src, Register dst,
+1263                         Register len, Register result,
+1264                         FloatRegister Vtmp1, FloatRegister Vtmp2,
+1265                         FloatRegister Vtmp3, FloatRegister Vtmp4);
+1266   void string_indexof(Register str1, Register str2,
+1267                       Register cnt1, Register cnt2,
+1268                       Register tmp1, Register tmp2,
+1269                       Register tmp3, Register tmp4,
+1270                       Register tmp5, Register tmp6,
+1271                       int int_cnt1, Register result, int ae);
+1272   void string_indexof_char(Register str1, Register cnt1,
+1273                            Register ch, Register result,
+1274                            Register tmp1, Register tmp2, Register tmp3);
+1275   void fast_log(FloatRegister vtmp0, FloatRegister vtmp1, FloatRegister vtmp2,
+1276                 FloatRegister vtmp3, FloatRegister vtmp4, FloatRegister vtmp5,
+1277                 FloatRegister tmpC1, FloatRegister tmpC2, FloatRegister tmpC3,
+1278                 FloatRegister tmpC4, Register tmp1, Register tmp2,
+1279                 Register tmp3, Register tmp4, Register tmp5);
+1280   void generate_dsin_dcos(bool isCos, address npio2_hw, address two_over_pi,
+1281       address pio2, address dsin_coef, address dcos_coef);
+1282  private:
+1283   // begin trigonometric functions support block
+1284   void generate__ieee754_rem_pio2(address npio2_hw, address two_over_pi, address pio2);
+1285   void generate__kernel_rem_pio2(address two_over_pi, address pio2);
+1286   void generate_kernel_sin(FloatRegister x, bool iyIsOne, address dsin_coef);
+1287   void generate_kernel_cos(FloatRegister x, address dcos_coef);
+1288   // end trigonometric functions support block
+1289   void add2_with_carry(Register final_dest_hi, Register dest_hi, Register dest_lo,
+1290                        Register src1, Register src2);
+1291   void add2_with_carry(Register dest_hi, Register dest_lo, Register src1, Register src2) {
+1292     add2_with_carry(dest_hi, dest_hi, dest_lo, src1, src2);
+1293   }
+1294   void multiply_64_x_64_loop(Register x, Register xstart, Register x_xstart,
+1295                              Register y, Register y_idx, Register z,
+1296                              Register carry, Register product,
+1297                              Register idx, Register kdx);
+1298   void multiply_128_x_128_loop(Register y, Register z,
+1299                                Register carry, Register carry2,
+1300                                Register idx, Register jdx,
+1301                                Register yz_idx1, Register yz_idx2,
+1302                                Register tmp, Register tmp3, Register tmp4,
+1303                                Register tmp7, Register product_hi);
+1304   void kernel_crc32_using_crc32(Register crc, Register buf,
+1305         Register len, Register tmp0, Register tmp1, Register tmp2,
+1306         Register tmp3);
+1307   void kernel_crc32c_using_crc32c(Register crc, Register buf,
+1308         Register len, Register tmp0, Register tmp1, Register tmp2,
+1309         Register tmp3);
+1310 public:
+1311   void multiply_to_len(Register x, Register xlen, Register y, Register ylen, Register z,
+1312                        Register zlen, Register tmp1, Register tmp2, Register tmp3,
+1313                        Register tmp4, Register tmp5, Register tmp6, Register tmp7);
+1314   void mul_add(Register out, Register in, Register offs, Register len, Register k);
+1315   // ISB may be needed because of a safepoint
+1316   void maybe_isb() { isb(); }
+1317 
+1318 private:
+1319   // Return the effective address r + (r1 &lt;&lt; ext) + offset.
+1320   // Uses rscratch2.
+1321   Address offsetted_address(Register r, Register r1, Address::extend ext,
+1322                             int offset, int size);
+1323 
+1324 private:
+1325   // Returns an address on the stack which is reachable with a ldr/str of size
+1326   // Uses rscratch2 if the address is not directly reachable
+1327   Address spill_address(int size, int offset, Register tmp=rscratch2);
+1328 
+<a name="20" id="anc20"></a><span class="line-modified">1329   bool merge_alignment_check(Register base, size_t size, int64_t cur_offset, int64_t prev_offset) const;</span>
+1330 
+1331   // Check whether two loads/stores can be merged into ldp/stp.
+1332   bool ldst_can_merge(Register rx, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store) const;
+1333 
+1334   // Merge current load/store with previous load/store into ldp/stp.
+1335   void merge_ldst(Register rx, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store);
+1336 
+1337   // Try to merge two loads/stores into ldp/stp. If success, returns true else false.
+1338   bool try_merge_ldst(Register rt, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store);
+1339 
+1340 public:
+1341   void spill(Register Rx, bool is64, int offset) {
+1342     if (is64) {
+1343       str(Rx, spill_address(8, offset));
+1344     } else {
+1345       strw(Rx, spill_address(4, offset));
+1346     }
+1347   }
+1348   void spill(FloatRegister Vx, SIMD_RegVariant T, int offset) {
+1349     str(Vx, T, spill_address(1 &lt;&lt; (int)T, offset));
+1350   }
+1351   void unspill(Register Rx, bool is64, int offset) {
+1352     if (is64) {
+1353       ldr(Rx, spill_address(8, offset));
+1354     } else {
+1355       ldrw(Rx, spill_address(4, offset));
+1356     }
+1357   }
+1358   void unspill(FloatRegister Vx, SIMD_RegVariant T, int offset) {
+1359     ldr(Vx, T, spill_address(1 &lt;&lt; (int)T, offset));
+1360   }
+1361   void spill_copy128(int src_offset, int dst_offset,
+1362                      Register tmp1=rscratch1, Register tmp2=rscratch2) {
+1363     if (src_offset &lt; 512 &amp;&amp; (src_offset &amp; 7) == 0 &amp;&amp;
+1364         dst_offset &lt; 512 &amp;&amp; (dst_offset &amp; 7) == 0) {
+1365       ldp(tmp1, tmp2, Address(sp, src_offset));
+1366       stp(tmp1, tmp2, Address(sp, dst_offset));
+1367     } else {
+1368       unspill(tmp1, true, src_offset);
+1369       spill(tmp1, true, dst_offset);
+1370       unspill(tmp1, true, src_offset+8);
+1371       spill(tmp1, true, dst_offset+8);
+1372     }
+1373   }
+1374 
+1375   void cache_wb(Address line);
+1376   void cache_wbsync(bool is_pre);
+1377 };
+1378 
+1379 #ifdef ASSERT
+1380 inline bool AbstractAssembler::pd_check_instruction_mark() { return false; }
+1381 #endif
+1382 
+1383 /**
+1384  * class SkipIfEqual:
+1385  *
+1386  * Instantiating this class will result in assembly code being output that will
+1387  * jump around any code emitted between the creation of the instance and it&#39;s
+1388  * automatic destruction at the end of a scope block, depending on the value of
+1389  * the flag passed to the constructor, which will be checked at run-time.
+1390  */
+1391 class SkipIfEqual {
+1392  private:
+1393   MacroAssembler* _masm;
+1394   Label _label;
+1395 
+1396  public:
+1397    SkipIfEqual(MacroAssembler*, const bool* flag_addr, bool value);
+1398    ~SkipIfEqual();
+1399 };
+1400 
+1401 struct tableswitch {
+1402   Register _reg;
+1403   int _insn_index; jint _first_key; jint _last_key;
+1404   Label _after;
+1405   Label _branches;
+1406 };
+1407 
+1408 #endif // CPU_AARCH64_MACROASSEMBLER_AARCH64_HPP
+<a name="21" id="anc21"></a><b style="font-size: large; color: red">--- EOF ---</b>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<input id="eof" value="21" type="hidden" />
+</body>
+</html>

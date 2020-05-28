@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\utils\hsdis-llvm\hsdis.c</title>
+    <link rel="stylesheet" href="..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 2008, 2018, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * The Universal Permissive License (UPL), Version 1.0
+  6  *
+  7  * Subject to the condition set forth below, permission is hereby granted to
+  8  * any person obtaining a copy of this software, associated documentation
+  9  * and/or data (collectively the &quot;Software&quot;), free of charge and under any
+ 10  * and all copyright rights in the Software, and any and all patent rights
+ 11  * owned or freely licensable by each licensor hereunder covering either (i)
+ 12  * the unmodified Software as contributed to or provided by such licensor,
+ 13  * or (ii) the Larger Works (as defined below), to deal in both
+ 14  *
+ 15  * (a) the Software, and
+ 16  *
+ 17  * (b) any piece of software and/or hardware listed in the lrgrwrks.txt file
+ 18  * if one is included with the Software (each a &quot;Larger Work&quot; to which the
+ 19  * Software is contributed by such licensors),
+ 20  *
+ 21  * without restriction, including without limitation the rights to copy,
+ 22  * create derivative works of, display, perform, and distribute the Software
+ 23  * and make, use, sell, offer for sale, import, export, have made, and have
+ 24  * sold the Software and the Larger Work(s), and to sublicense the foregoing
+ 25  * rights on either these or other terms.
+ 26  *
+ 27  * This license is subject to the following condition:
+ 28  *
+ 29  * The above copyright notice and either this complete permission notice or
+ 30  * at a minimum a reference to the UPL must be included in all copies or
+ 31  * substantial portions of the Software.
+ 32  *
+ 33  * THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ 34  * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ 35  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+ 36  * NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ 37  * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ 38  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+ 39  * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ 40  *
+ 41  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 42  * or visit www.oracle.com if you need additional information or have any
+ 43  * questions.
+ 44  *
+ 45  */
+ 46 
+ 47 /* hsdis.c -- dump a range of addresses as native instructions
+ 48    This implements the plugin protocol required by the
+ 49    HotSpot PrintAssembly option.
+ 50 */
+ 51 
+ 52 #include &lt;stdio.h&gt;
+ 53 #include &lt;errno.h&gt;
+ 54 #include &lt;inttypes.h&gt;
+ 55 #include &lt;string.h&gt;
+ 56 
+ 57 #include &lt;llvm-c/Disassembler.h&gt;
+ 58 #include &lt;llvm-c/DisassemblerTypes.h&gt;
+ 59 #include &lt;llvm-c/Target.h&gt;
+ 60 #include &lt;llvm-c/TargetMachine.h&gt;
+ 61 
+ 62 #include &quot;hsdis.h&quot;
+ 63 
+ 64 #ifndef bool
+ 65 #define bool int
+ 66 #define true 1
+ 67 #define false 0
+ 68 #endif /*bool*/
+ 69 
+ 70 /* short names for stuff in hsdis.h */
+ 71 typedef decode_instructions_event_callback_ftype  event_callback_t;
+ 72 typedef decode_instructions_printf_callback_ftype printf_callback_t;
+ 73 
+ 74 /* disassemble_info.application_data object */
+ 75 struct hsdis_app_data {
+ 76   /* virtual address of data */
+ 77   uintptr_t start_va, end_va;
+ 78   /* the instructions to be decoded */
+ 79   unsigned char* buffer;
+ 80   uintptr_t length;
+ 81   event_callback_t  event_callback;  void* event_stream;
+ 82   printf_callback_t printf_callback; void* printf_stream;
+ 83   bool losing;
+ 84   bool do_newline;
+ 85 
+ 86   /* the architecture being disassembled */
+ 87   const char* arch_name;
+ 88 
+ 89   /* the disassembler we are going to use: */
+ 90   LLVMDisasmContextRef dcontext; /* the actual struct! */
+ 91 
+ 92   char target_triple_option[128];
+ 93 };
+ 94 
+ 95 static void* decode(struct hsdis_app_data* app_data, const char* options);
+ 96 
+ 97 #define DECL_EVENT_CALLBACK(app_data) \
+ 98   event_callback_t  event_callback = (app_data)-&gt;event_callback; \
+ 99   void*             event_stream   = (app_data)-&gt;event_stream
+100 
+101 #define DECL_PRINTF_CALLBACK(app_data) \
+102   printf_callback_t  printf_callback = (app_data)-&gt;printf_callback; \
+103   void*              printf_stream   = (app_data)-&gt;printf_stream
+104 
+105 
+106 static void print_help(struct hsdis_app_data* app_data,
+107                        const char* msg, const char* arg);
+108 static void setup_app_data(struct hsdis_app_data* app_data,
+109                            const char* options);
+110 
+111 void* decode_instructions_virtual(uintptr_t start_va, uintptr_t end_va,
+112                             unsigned char* buffer, uintptr_t length,
+113                             event_callback_t  event_callback_arg,  void* event_stream_arg,
+114                             printf_callback_t printf_callback_arg, void* printf_stream_arg,
+115                             const char* options, int newline) {
+116   struct hsdis_app_data app_data;
+117   memset(&amp;app_data, 0, sizeof(app_data));
+118   app_data.start_va    = start_va;
+119   app_data.end_va      = end_va;
+120   app_data.buffer = buffer;
+121   app_data.length = length;
+122   app_data.event_callback  = event_callback_arg;
+123   app_data.event_stream    = event_stream_arg;
+124   app_data.printf_callback = printf_callback_arg;
+125   app_data.printf_stream   = printf_stream_arg;
+126   app_data.do_newline = newline == 0 ? false : true;
+127 
+128   return decode(&amp;app_data, options);
+129 }
+130 
+131 /* This is the compatability interface for older version of hotspot */
+132 void* decode_instructions(void* start_pv, void* end_pv,
+133                     event_callback_t  event_callback_arg,  void* event_stream_arg,
+134                     printf_callback_t printf_callback_arg, void* printf_stream_arg,
+135                     const char* options) {
+136   return decode_instructions_virtual((uintptr_t)start_pv,
+137                                      (uintptr_t)end_pv,
+138                                      (unsigned char*)start_pv,
+139                                      (uintptr_t)end_pv - (uintptr_t)start_pv,
+140                                      event_callback_arg,
+141                                      event_stream_arg,
+142                                      printf_callback_arg,
+143                                      printf_stream_arg,
+144                                      options, false);
+145 }
+146 
+147 static void* decode(struct hsdis_app_data* app_data, const char* options) {
+148   setup_app_data(app_data, options);
+149   char buf[128];
+150 
+151   {
+152     /* now reload everything from app_data: */
+153     DECL_EVENT_CALLBACK(app_data);
+154     DECL_PRINTF_CALLBACK(app_data);
+155     uintptr_t start = app_data-&gt;start_va;
+156     uintptr_t end   = app_data-&gt;end_va;
+157     uintptr_t p     = start;
+158 
+159     (*event_callback)(event_stream, &quot;insns&quot;, (void*)start);
+160 
+161     (*event_callback)(event_stream, &quot;target_triple name=&#39;%s&#39;&quot;,
+162                       (void*) app_data-&gt;arch_name);
+163 
+164     while (p &lt; end &amp;&amp; !app_data-&gt;losing) {
+165       (*event_callback)(event_stream, &quot;insn&quot;, (void*) p);
+166 
+167       size_t size = LLVMDisasmInstruction(app_data-&gt;dcontext, (uint8_t*)p, (uint64_t)(end - start), (uint64_t)p, buf, sizeof(buf));
+168 
+169       if (size &gt; 0)  { app_data-&gt;printf_callback(app_data-&gt;printf_stream, &quot;%s&quot;, buf); p += size; }
+170       else           app_data-&gt;losing = true;
+171 
+172       if (!app_data-&gt;losing) {
+173         (*event_callback)(event_stream, &quot;/insn&quot;, (void*) p);
+174 
+175         if (app_data-&gt;do_newline) {
+176           /* follow each complete insn by a nice newline */
+177           (*printf_callback)(printf_stream, &quot;\n&quot;);
+178         }
+179       }
+180     }
+181 
+182     if (app_data-&gt;losing) (*event_callback)(event_stream, &quot;/insns&quot;, (void*) p);
+183     LLVMDisasmDispose(app_data-&gt;dcontext);
+184     return (void*) p;
+185   }
+186 }
+187 
+188 /* configuration */
+189 
+190 static void set_optional_callbacks(struct hsdis_app_data* app_data);
+191 static void parse_caller_options(struct hsdis_app_data* app_data,
+192                                  const char* caller_options);
+193 static const char* native_target_triple();
+194 
+195 static void setup_app_data(struct hsdis_app_data* app_data,
+196                            const char* caller_options) {
+197   /* Make reasonable defaults for null callbacks.
+198      A non-null stream for a null callback is assumed to be a FILE* for output.
+199      Events are rendered as XML.
+200   */
+201   set_optional_callbacks(app_data);
+202 
+203   /* Look into caller_options for anything interesting. */
+204   if (caller_options != NULL)
+205     parse_caller_options(app_data, caller_options);
+206 
+207   /* Discover which architecture we are going to disassemble. */
+208   app_data-&gt;arch_name = &amp;app_data-&gt;target_triple_option[0];
+209   if (app_data-&gt;arch_name[0] == &#39;\0&#39;)
+210     app_data-&gt;arch_name = native_target_triple();
+211 
+212   if (LLVMInitializeNativeTarget() != 0) {
+213     fprintf(stderr, &quot;failed to initialize LLVM native target\n&quot;);
+214   }
+215   if (LLVMInitializeNativeAsmPrinter() != 0) {
+216     fprintf(stderr, &quot;failed to initialize LLVM native asm printer\n&quot;);
+217   }
+218   if (LLVMInitializeNativeDisassembler() != 0) {
+219     fprintf(stderr, &quot;failed to initialize LLVM native disassembler\n&quot;);
+220   }
+221 
+222   if ((app_data-&gt;dcontext = LLVMCreateDisasm(app_data-&gt;arch_name, NULL, 0, NULL, NULL)) == NULL) {
+223     const char* bad = app_data-&gt;arch_name;
+224     static bool complained;
+225     if (bad == &amp;app_data-&gt;target_triple_option[0])
+226       print_help(app_data, &quot;bad target_triple=%s&quot;, bad);
+227     else if (!complained)
+228       print_help(app_data, &quot;bad native target_triple=%s; please port hsdis to this platform&quot;, bad);
+229     complained = true;
+230     /* must bail out */
+231     app_data-&gt;losing = true;
+232     return;
+233   }
+234 
+235   LLVMSetDisasmOptions(app_data-&gt;dcontext, LLVMDisassembler_Option_PrintImmHex | LLVMDisassembler_Option_AsmPrinterVariant);
+236 }
+237 
+238 
+239 /* ignore all events, return a null */
+240 static void* null_event_callback(void* ignore_stream, const char* ignore_event, void* arg) {
+241   return NULL;
+242 }
+243 
+244 /* print all events as XML markup */
+245 static void* xml_event_callback(void* stream, const char* event, void* arg) {
+246   FILE* fp = (FILE*) stream;
+247 #define NS_PFX &quot;dis:&quot;
+248   if (event[0] != &#39;/&#39;) {
+249     /* issue the tag, with or without a formatted argument */
+250     fprintf(fp, &quot;&lt;&quot;NS_PFX);
+251     fprintf(fp, event, arg);
+252     fprintf(fp, &quot;&gt;&quot;);
+253   } else {
+254     ++event;                    /* skip slash */
+255     const char* argp = strchr(event, &#39; &#39;);
+256     if (argp == NULL) {
+257       /* no arguments; just issue the closing tag */
+258       fprintf(fp, &quot;&lt;/&quot;NS_PFX&quot;%s&gt;&quot;, event);
+259     } else {
+260       /* split out the closing attributes as &lt;dis:foo_done attr=&#39;val&#39;/&gt; */
+261       int event_prefix = (argp - event);
+262       fprintf(fp, &quot;&lt;&quot;NS_PFX&quot;%.*s_done&quot;, event_prefix, event);
+263       fprintf(fp, argp, arg);
+264       fprintf(fp, &quot;/&gt;&lt;/&quot;NS_PFX&quot;%.*s&gt;&quot;, event_prefix, event);
+265     }
+266   }
+267   return NULL;
+268 }
+269 
+270 static void set_optional_callbacks(struct hsdis_app_data* app_data) {
+271   if (app_data-&gt;printf_callback == NULL) {
+272     int (*fprintf_callback)(FILE*, const char*, ...) = &amp;fprintf;
+273     FILE* fprintf_stream = stdout;
+274     app_data-&gt;printf_callback = (printf_callback_t) fprintf_callback;
+275     if (app_data-&gt;printf_stream == NULL)
+276       app_data-&gt;printf_stream   = (void*)           fprintf_stream;
+277   }
+278   if (app_data-&gt;event_callback == NULL) {
+279     if (app_data-&gt;event_stream == NULL)
+280       app_data-&gt;event_callback = &amp;null_event_callback;
+281     else
+282       app_data-&gt;event_callback = &amp;xml_event_callback;
+283   }
+284 
+285 }
+286 
+287 static void parse_caller_options(struct hsdis_app_data* app_data, const char* caller_options) {
+288   const char* p;
+289   for (p = caller_options; p != NULL; ) {
+290     const char* q = strchr(p, &#39;,&#39;);
+291     size_t plen = (q == NULL) ? strlen(p) : ((q++) - p);
+292     if (plen == 4 &amp;&amp; strncmp(p, &quot;help&quot;, plen) == 0) {
+293       print_help(app_data, NULL, NULL);
+294     } else if (plen &gt;= 14 &amp;&amp; strncmp(p, &quot;target_triple=&quot;, 14) == 0) {
+295       char*  target_triple_option = app_data-&gt;target_triple_option;
+296       size_t mach_size   = sizeof(app_data-&gt;target_triple_option);
+297       mach_size -= 1;           /*leave room for the null*/
+298       if (plen &gt; mach_size)  plen = mach_size;
+299       strncpy(target_triple_option, p, plen);
+300       target_triple_option[plen] = &#39;\0&#39;;
+301     } else if (plen &gt; 6 &amp;&amp; strncmp(p, &quot;hsdis-&quot;, 6) == 0) {
+302       // do not pass these to the next level
+303     }
+304     p = q;
+305   }
+306 }
+307 
+308 static void print_help(struct hsdis_app_data* app_data,
+309                        const char* msg, const char* arg) {
+310   DECL_PRINTF_CALLBACK(app_data);
+311   if (msg != NULL) {
+312     (*printf_callback)(printf_stream, &quot;hsdis: &quot;);
+313     (*printf_callback)(printf_stream, msg, arg);
+314     (*printf_callback)(printf_stream, &quot;\n&quot;);
+315   }
+316   (*printf_callback)(printf_stream, &quot;hsdis output options:\n&quot;);
+317   (*printf_callback)(printf_stream, &quot;  target_triple=&lt;target&gt; select disassembly target triple\n&quot;);
+318 #if defined(LIBARCH_i386) || defined(LIBARCH_amd64)
+319   (*printf_callback)(printf_stream, &quot;  suffix        always print instruction suffix\n&quot;);
+320 #endif
+321   (*printf_callback)(printf_stream, &quot;  help          print this message\n&quot;);
+322 }
+323 
+324 static const char* native_target_triple() {
+325   return &quot;aarch64-pc-windows-msvc&quot;;
+326 }
+    </pre>
+  </body>
+</html>

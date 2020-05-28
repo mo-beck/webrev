@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\cpu\aarch64\stubRoutines_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="stubRoutines_aarch64.cpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="templateInterpreterGenerator_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\stubRoutines_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 183,12 ***</span>
+    static juint    _crc_table[];
+    static jubyte   _adler_table[];
+    // begin trigonometric tables block. See comments in .cpp file
+    static juint    _npio2_hw[];
+    static jdouble   _two_over_pi[];
+<span class="line-modified">!   static jdouble   _pio2[];</span>
+<span class="line-modified">!   static jdouble   _dsin_coef[];</span>
+<span class="line-modified">!   static jdouble  _dcos_coef[];</span>
+    // end trigonometric tables block
+  };
+  
+  #endif // CPU_AARCH64_STUBROUTINES_AARCH64_HPP
+<span class="line-new-header">--- 183,12 ---</span>
+    static juint    _crc_table[];
+    static jubyte   _adler_table[];
+    // begin trigonometric tables block. See comments in .cpp file
+    static juint    _npio2_hw[];
+    static jdouble   _two_over_pi[];
+<span class="line-modified">!   static julong    _pio2[];</span>
+<span class="line-modified">!   static julong    _dsin_coef[];</span>
+<span class="line-modified">!   static julong    _dcos_coef[];</span>
+    // end trigonometric tables block
+  };
+  
+  #endif // CPU_AARCH64_STUBROUTINES_AARCH64_HPP
+</pre>
+<center><a href="stubRoutines_aarch64.cpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="templateInterpreterGenerator_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\cpu\aarch64\vm_version_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="templateTable_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version_aarch64.hpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\vm_version_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -30,38 +30,17 @@</span>
+  #include &quot;runtime/java.hpp&quot;
+  #include &quot;runtime/os.hpp&quot;
+  #include &quot;runtime/stubCodeGenerator.hpp&quot;
+  #include &quot;runtime/vm_version.hpp&quot;
+  #include &quot;utilities/macros.hpp&quot;
+<span class="udiff-line-added">+ #include &quot;vm_version_aarch64.hpp&quot;</span>
+  
+  #include OS_HEADER_INLINE(os)
+  
+<span class="udiff-line-modified-removed">- #include &lt;sys/auxv.h&gt;</span>
+<span class="udiff-line-modified-added">+ #ifndef _WIN64</span>
+<span class="udiff-line-added">+ #include &lt;sys/_features.h&gt;</span>
+  #include &lt;asm/hwcap.h&gt;
+<span class="udiff-line-removed">- </span>
+<span class="udiff-line-removed">- #ifndef HWCAP_AES</span>
+<span class="udiff-line-removed">- #define HWCAP_AES   (1&lt;&lt;3)</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">- </span>
+<span class="udiff-line-removed">- #ifndef HWCAP_PMULL</span>
+<span class="udiff-line-removed">- #define HWCAP_PMULL (1&lt;&lt;4)</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">- </span>
+<span class="udiff-line-removed">- #ifndef HWCAP_SHA1</span>
+<span class="udiff-line-removed">- #define HWCAP_SHA1  (1&lt;&lt;5)</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">- </span>
+<span class="udiff-line-removed">- #ifndef HWCAP_SHA2</span>
+<span class="udiff-line-removed">- #define HWCAP_SHA2  (1&lt;&lt;6)</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">- </span>
+<span class="udiff-line-removed">- #ifndef HWCAP_CRC32</span>
+<span class="udiff-line-removed">- #define HWCAP_CRC32 (1&lt;&lt;7)</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">- </span>
+<span class="udiff-line-removed">- #ifndef HWCAP_ATOMICS</span>
+<span class="udiff-line-removed">- #define HWCAP_ATOMICS (1&lt;&lt;8)</span>
+  #endif
+  
+  int VM_Version::_cpu;
+  int VM_Version::_model;
+  int VM_Version::_model2;
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -97,12 +76,14 @@</span>
+      __ enter();
+  
+      __ get_dczid_el0(rscratch1);
+      __ strw(rscratch1, Address(c_rarg0, in_bytes(VM_Version::dczid_el0_offset())));
+  
+<span class="udiff-line-added">+ #ifndef _WIN64</span>
+      __ get_ctr_el0(rscratch1);
+      __ strw(rscratch1, Address(c_rarg0, in_bytes(VM_Version::ctr_el0_offset())));
+<span class="udiff-line-added">+ #endif</span>
+  
+      __ leave();
+      __ ret(lr);
+  
+  #   undef __
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -159,17 +140,26 @@</span>
+         (SoftwarePrefetchHintDistance &amp; 7)) {
+      warning(&quot;SoftwarePrefetchHintDistance must be -1, or a multiple of 8&quot;);
+      SoftwarePrefetchHintDistance &amp;= ~7;
+    }
+  
+<span class="udiff-line-modified-removed">-   unsigned long auxv = getauxval(AT_HWCAP);</span>
+<span class="udiff-line-modified-added">+ #ifndef _WIN64</span>
+<span class="udiff-line-added">+   _features = getauxval(AT_HWCAP);</span>
+<span class="udiff-line-added">+ #else</span>
+<span class="udiff-line-added">+   if (IsProcessorFeaturePresent(PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE))   _features |= CPU_CRC32;</span>
+<span class="udiff-line-added">+   if (IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE))  _features |= CPU_AES | CPU_SHA1 | CPU_SHA2;</span>
+<span class="udiff-line-added">+ #ifdef PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE</span>
+<span class="udiff-line-added">+   if (IsProcessorFeaturePresent(PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE)) _features |= CPU_DMB_ATOMICS;</span>
+<span class="udiff-line-added">+ #endif</span>
+<span class="udiff-line-added">+   if (IsProcessorFeaturePresent(PF_ARM_VFP_32_REGISTERS_AVAILABLE))        _features |= CPU_ASIMD;</span>
+<span class="udiff-line-added">+   // No check for CPU_PMULL</span>
+<span class="udiff-line-added">+ #endif // _WIN64</span>
+  
+    char buf[512];
+  
+<span class="udiff-line-removed">-   _features = auxv;</span>
+<span class="udiff-line-removed">- </span>
+    int cpu_lines = 0;
+<span class="udiff-line-added">+ #ifndef _WIN64</span>
+    if (FILE *f = fopen(&quot;/proc/cpuinfo&quot;, &quot;r&quot;)) {
+      // need a large buffer as the flags line may include lots of text
+      char buf[1024], *p;
+      while (fgets(buf, sizeof (buf), f) != NULL) {
+        if ((p = strchr(buf, &#39;:&#39;)) != NULL) {
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -191,10 +181,32 @@</span>
+          }
+        }
+      }
+      fclose(f);
+    }
+<span class="udiff-line-added">+ #else</span>
+<span class="udiff-line-added">+   {</span>
+<span class="udiff-line-added">+     char* buf = ::getenv(&quot;PROCESSOR_IDENTIFIER&quot;);</span>
+<span class="udiff-line-added">+     if (buf &amp;&amp; strstr(buf, &quot;Ampere(TM)&quot;) != NULL) {</span>
+<span class="udiff-line-added">+       _cpu = CPU_AMCC;</span>
+<span class="udiff-line-added">+       cpu_lines++;</span>
+<span class="udiff-line-added">+     } else if (buf &amp;&amp; strstr(buf, &quot;Cavium Inc.&quot;) != NULL) {</span>
+<span class="udiff-line-added">+       _cpu = CPU_CAVIUM;</span>
+<span class="udiff-line-added">+       cpu_lines++;</span>
+<span class="udiff-line-added">+     } else {</span>
+<span class="udiff-line-added">+       log_info(os)(&quot;VM_Version: unknown CPU model&quot;);</span>
+<span class="udiff-line-added">+     }</span>
+<span class="udiff-line-added">+ </span>
+<span class="udiff-line-added">+     if (_cpu) {</span>
+<span class="udiff-line-added">+       SYSTEM_INFO si;</span>
+<span class="udiff-line-added">+       GetSystemInfo(&amp;si);</span>
+<span class="udiff-line-added">+       _model = si.wProcessorLevel;</span>
+<span class="udiff-line-added">+       _variant = si.wProcessorRevision / 0xFF;</span>
+<span class="udiff-line-added">+       _revision = si.wProcessorRevision &amp; 0xFF;</span>
+<span class="udiff-line-added">+     }</span>
+<span class="udiff-line-added">+   }</span>
+<span class="udiff-line-added">+ #endif // _WIN64</span>
+  
+    if (os::supports_map_sync()) {
+      // if dcpop is available publish data cache line flush size via
+      // generic field, otherwise let if default to zero thereby
+      // disabling writeback
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -233,10 +245,11 @@</span>
+    }
+  
+    // ThunderX2
+    if ((_cpu == CPU_CAVIUM &amp;&amp; (_model == 0xAF)) ||
+        (_cpu == CPU_BROADCOM &amp;&amp; (_model == 0x516))) {
+<span class="udiff-line-added">+     _features |= CPU_DMB_ATOMICS;</span>
+      if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+        FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+      }
+      if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+        FLAG_SET_DEFAULT(UseSIMDForMemoryOps, true);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -278,24 +291,25 @@</span>
+    // undisclosed A53 cores which we could be swapped to at any stage
+    if (_cpu == CPU_ARM &amp;&amp; cpu_lines == 1 &amp;&amp; _model == 0xd07) _features |= CPU_A53MAC;
+  
+    sprintf(buf, &quot;0x%02x:0x%x:0x%03x:%d&quot;, _cpu, _variant, _model, _revision);
+    if (_model2) sprintf(buf+strlen(buf), &quot;(0x%03x)&quot;, _model2);
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_ASIMD) strcat(buf, &quot;, simd&quot;);</span>
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_CRC32) strcat(buf, &quot;, crc&quot;);</span>
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_AES)   strcat(buf, &quot;, aes&quot;);</span>
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_SHA1)  strcat(buf, &quot;, sha1&quot;);</span>
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_SHA2)  strcat(buf, &quot;, sha256&quot;);</span>
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_ATOMICS) strcat(buf, &quot;, lse&quot;);</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_ASIMD) strcat(buf, &quot;, simd&quot;);</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_CRC32) strcat(buf, &quot;, crc&quot;);</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_AES)   strcat(buf, &quot;, aes&quot;);</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_SHA1)  strcat(buf, &quot;, sha1&quot;);</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_SHA2)  strcat(buf, &quot;, sha256&quot;);</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_LSE)   strcat(buf, &quot;, lse&quot;);</span>
+<span class="udiff-line-added">+   if (_features &amp; CPU_DMB_ATOMICS) strcat(buf, &quot;, atomics&quot;);</span>
+  
+    _features_string = os::strdup(buf);
+  
+    if (FLAG_IS_DEFAULT(UseCRC32)) {
+<span class="udiff-line-modified-removed">-     UseCRC32 = (auxv &amp; HWCAP_CRC32) != 0;</span>
+<span class="udiff-line-modified-added">+     UseCRC32 = (_features &amp; CPU_CRC32) != 0;</span>
+    }
+  
+<span class="udiff-line-modified-removed">-   if (UseCRC32 &amp;&amp; (auxv &amp; HWCAP_CRC32) == 0) {</span>
+<span class="udiff-line-modified-added">+   if (UseCRC32 &amp;&amp; (_features &amp; CPU_CRC32) == 0) {</span>
+      warning(&quot;UseCRC32 specified, but not supported on this CPU&quot;);
+      FLAG_SET_DEFAULT(UseCRC32, false);
+    }
+  
+    if (FLAG_IS_DEFAULT(UseAdler32Intrinsics)) {
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -305,21 +319,21 @@</span>
+    if (UseVectorizedMismatchIntrinsic) {
+      warning(&quot;UseVectorizedMismatchIntrinsic specified, but not available on this CPU.&quot;);
+      FLAG_SET_DEFAULT(UseVectorizedMismatchIntrinsic, false);
+    }
+  
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_ATOMICS) {</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_LSE) {</span>
+      if (FLAG_IS_DEFAULT(UseLSE))
+        FLAG_SET_DEFAULT(UseLSE, true);
+    } else {
+      if (UseLSE) {
+        warning(&quot;UseLSE specified, but not supported on this CPU&quot;);
+        FLAG_SET_DEFAULT(UseLSE, false);
+      }
+    }
+  
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_AES) {</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_AES) {</span>
+      UseAES = UseAES || FLAG_IS_DEFAULT(UseAES);
+      UseAESIntrinsics =
+          UseAESIntrinsics || (UseAES &amp;&amp; FLAG_IS_DEFAULT(UseAESIntrinsics));
+      if (UseAESIntrinsics &amp;&amp; !UseAES) {
+        warning(&quot;UseAESIntrinsics enabled, but UseAES not, enabling&quot;);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -343,11 +357,11 @@</span>
+  
+    if (FLAG_IS_DEFAULT(UseCRC32Intrinsics)) {
+      UseCRC32Intrinsics = true;
+    }
+  
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_CRC32) {</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_CRC32) {</span>
+      if (FLAG_IS_DEFAULT(UseCRC32CIntrinsics)) {
+        FLAG_SET_DEFAULT(UseCRC32CIntrinsics, true);
+      }
+    } else if (UseCRC32CIntrinsics) {
+      warning(&quot;CRC32C is not available on the CPU&quot;);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -356,29 +370,29 @@</span>
+  
+    if (FLAG_IS_DEFAULT(UseFMA)) {
+      FLAG_SET_DEFAULT(UseFMA, true);
+    }
+  
+<span class="udiff-line-modified-removed">-   if (auxv &amp; (HWCAP_SHA1 | HWCAP_SHA2)) {</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; (CPU_SHA1 | CPU_SHA2)) {</span>
+      if (FLAG_IS_DEFAULT(UseSHA)) {
+        FLAG_SET_DEFAULT(UseSHA, true);
+      }
+    } else if (UseSHA) {
+      warning(&quot;SHA instructions are not available on this CPU&quot;);
+      FLAG_SET_DEFAULT(UseSHA, false);
+    }
+  
+<span class="udiff-line-modified-removed">-   if (UseSHA &amp;&amp; (auxv &amp; HWCAP_SHA1)) {</span>
+<span class="udiff-line-modified-added">+   if (UseSHA &amp;&amp; (_features &amp; CPU_SHA1)) {</span>
+      if (FLAG_IS_DEFAULT(UseSHA1Intrinsics)) {
+        FLAG_SET_DEFAULT(UseSHA1Intrinsics, true);
+      }
+    } else if (UseSHA1Intrinsics) {
+      warning(&quot;Intrinsics for SHA-1 crypto hash functions not available on this CPU.&quot;);
+      FLAG_SET_DEFAULT(UseSHA1Intrinsics, false);
+    }
+  
+<span class="udiff-line-modified-removed">-   if (UseSHA &amp;&amp; (auxv &amp; HWCAP_SHA2)) {</span>
+<span class="udiff-line-modified-added">+   if (UseSHA &amp;&amp; (_features &amp; CPU_SHA2)) {</span>
+      if (FLAG_IS_DEFAULT(UseSHA256Intrinsics)) {
+        FLAG_SET_DEFAULT(UseSHA256Intrinsics, true);
+      }
+    } else if (UseSHA256Intrinsics) {
+      warning(&quot;Intrinsics for SHA-224 and SHA-256 crypto hash functions not available on this CPU.&quot;);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -392,11 +406,11 @@</span>
+  
+    if (!(UseSHA1Intrinsics || UseSHA256Intrinsics || UseSHA512Intrinsics)) {
+      FLAG_SET_DEFAULT(UseSHA, false);
+    }
+  
+<span class="udiff-line-modified-removed">-   if (auxv &amp; HWCAP_PMULL) {</span>
+<span class="udiff-line-modified-added">+   if (_features &amp; CPU_PMULL) {</span>
+      if (FLAG_IS_DEFAULT(UseGHASHIntrinsics)) {
+        FLAG_SET_DEFAULT(UseGHASHIntrinsics, true);
+      }
+    } else if (UseGHASHIntrinsics) {
+      warning(&quot;GHASH intrinsics are not available on this CPU&quot;);
+</pre>
+<center><a href="templateTable_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version_aarch64.hpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

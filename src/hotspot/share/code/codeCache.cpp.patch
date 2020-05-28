@@ -1,0 +1,21 @@
+diff a/src/hotspot/share/code/codeCache.cpp b/src/hotspot/share/code/codeCache.cpp
+--- a/src/hotspot/share/code/codeCache.cpp
++++ b/src/hotspot/share/code/codeCache.cpp
+@@ -949,17 +949,11 @@
+     ReservedCodeSpace rs = reserve_heap_memory(ReservedCodeCacheSize);
+     add_heap(rs, "CodeCache", CodeBlobType::All);
+   }
+ 
+   // Initialize ICache flush mechanism
+-  // This service is needed for os::register_code_area
+   icache_init();
+-
+-  // Give OS a chance to register generated code area.
+-  // This is used on Windows 64 bit platforms to register
+-  // Structured Exception Handlers for our generated code.
+-  os::register_code_area((char*)low_bound(), (char*)high_bound());
+ }
+ 
+ void codeCache_init() {
+   CodeCache::initialize();
+   // Load AOT libraries and add AOT code heaps.

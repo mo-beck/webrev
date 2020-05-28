@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\templateTable_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="templateInterpreterGenerator_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\templateTable_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+1688     __ get_fpsr(r1);
+1689     __ cbzw(r1, L_Okay);
+1690     __ call_VM_leaf(CAST_FROM_FN_PTR(address, SharedRuntime::d2l));
+1691     __ bind(L_Okay);
+1692   }
+1693     break;
+1694   case Bytecodes::_d2f:
+1695     __ fcvtd(v0, v0);
+1696     break;
+1697   default:
+1698     ShouldNotReachHere();
+1699   }
+1700 }
+1701 
+1702 void TemplateTable::lcmp()
+1703 {
+1704   transition(ltos, itos);
+1705   Label done;
+1706   __ pop_l(r1);
+1707   __ cmp(r1, r0);
+<span class="line-modified">1708   __ mov(r0, (u_int64_t)-1L);</span>
+1709   __ br(Assembler::LT, done);
+1710   // __ mov(r0, 1UL);
+1711   // __ csel(r0, r0, zr, Assembler::NE);
+1712   // and here is a faster way
+1713   __ csinc(r0, zr, zr, Assembler::EQ);
+1714   __ bind(done);
+1715 }
+1716 
+1717 void TemplateTable::float_cmp(bool is_float, int unordered_result)
+1718 {
+1719   Label done;
+1720   if (is_float) {
+1721     // XXX get rid of pop here, use ... reg, mem32
+1722     __ pop_f(v1);
+1723     __ fcmps(v1, v0);
+1724   } else {
+1725     // XXX get rid of pop here, use ... reg, mem64
+1726     __ pop_d(v1);
+1727     __ fcmpd(v1, v0);
+1728   }
+1729   if (unordered_result &lt; 0) {
+1730     // we want -1 for unordered or less than, 0 for equal and 1 for
+1731     // greater than.
+<span class="line-modified">1732     __ mov(r0, (u_int64_t)-1L);</span>
+1733     // for FP LT tests less than or unordered
+1734     __ br(Assembler::LT, done);
+1735     // install 0 for EQ otherwise 1
+1736     __ csinc(r0, zr, zr, Assembler::EQ);
+1737   } else {
+1738     // we want -1 for less than, 0 for equal and 1 for unordered or
+1739     // greater than.
+1740     __ mov(r0, 1L);
+1741     // for FP HI tests greater than or unordered
+1742     __ br(Assembler::HI, done);
+1743     // install 0 for EQ otherwise ~0
+1744     __ csinv(r0, zr, zr, Assembler::EQ);
+1745 
+1746   }
+1747   __ bind(done);
+1748 }
+1749 
+1750 void TemplateTable::branch(bool is_jsr, bool is_wide)
+1751 {
+1752   // We might be moving to a safepoint.  The thread which calls
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+1688     __ get_fpsr(r1);
+1689     __ cbzw(r1, L_Okay);
+1690     __ call_VM_leaf(CAST_FROM_FN_PTR(address, SharedRuntime::d2l));
+1691     __ bind(L_Okay);
+1692   }
+1693     break;
+1694   case Bytecodes::_d2f:
+1695     __ fcvtd(v0, v0);
+1696     break;
+1697   default:
+1698     ShouldNotReachHere();
+1699   }
+1700 }
+1701 
+1702 void TemplateTable::lcmp()
+1703 {
+1704   transition(ltos, itos);
+1705   Label done;
+1706   __ pop_l(r1);
+1707   __ cmp(r1, r0);
+<span class="line-modified">1708   __ mov(r0, (uint64_t)-1L);</span>
+1709   __ br(Assembler::LT, done);
+1710   // __ mov(r0, 1UL);
+1711   // __ csel(r0, r0, zr, Assembler::NE);
+1712   // and here is a faster way
+1713   __ csinc(r0, zr, zr, Assembler::EQ);
+1714   __ bind(done);
+1715 }
+1716 
+1717 void TemplateTable::float_cmp(bool is_float, int unordered_result)
+1718 {
+1719   Label done;
+1720   if (is_float) {
+1721     // XXX get rid of pop here, use ... reg, mem32
+1722     __ pop_f(v1);
+1723     __ fcmps(v1, v0);
+1724   } else {
+1725     // XXX get rid of pop here, use ... reg, mem64
+1726     __ pop_d(v1);
+1727     __ fcmpd(v1, v0);
+1728   }
+1729   if (unordered_result &lt; 0) {
+1730     // we want -1 for unordered or less than, 0 for equal and 1 for
+1731     // greater than.
+<span class="line-modified">1732     __ mov(r0, (uint64_t)-1L);</span>
+1733     // for FP LT tests less than or unordered
+1734     __ br(Assembler::LT, done);
+1735     // install 0 for EQ otherwise 1
+1736     __ csinc(r0, zr, zr, Assembler::EQ);
+1737   } else {
+1738     // we want -1 for less than, 0 for equal and 1 for unordered or
+1739     // greater than.
+1740     __ mov(r0, 1L);
+1741     // for FP HI tests greater than or unordered
+1742     __ br(Assembler::HI, done);
+1743     // install 0 for EQ otherwise ~0
+1744     __ csinv(r0, zr, zr, Assembler::EQ);
+1745 
+1746   }
+1747   __ bind(done);
+1748 }
+1749 
+1750 void TemplateTable::branch(bool is_jsr, bool is_wide)
+1751 {
+1752   // We might be moving to a safepoint.  The thread which calls
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="templateInterpreterGenerator_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

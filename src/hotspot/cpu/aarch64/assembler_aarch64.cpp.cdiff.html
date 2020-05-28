@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\cpu\aarch64\assembler_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="aarch64.ad.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="assembler_aarch64.hpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\assembler_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 29,11 ***</span>
+  #include &quot;asm/assembler.hpp&quot;
+  #include &quot;asm/assembler.inline.hpp&quot;
+  #include &quot;interpreter/interpreter.hpp&quot;
+  
+  #ifndef PRODUCT
+<span class="line-modified">! const unsigned long Assembler::asm_bp = 0x00007fffee09ac88;</span>
+  #endif
+  
+  #include &quot;compiler/disassembler.hpp&quot;
+  #include &quot;memory/resourceArea.hpp&quot;
+  #include &quot;runtime/interfaceSupport.inline.hpp&quot;
+<span class="line-new-header">--- 29,11 ---</span>
+  #include &quot;asm/assembler.hpp&quot;
+  #include &quot;asm/assembler.inline.hpp&quot;
+  #include &quot;interpreter/interpreter.hpp&quot;
+  
+  #ifndef PRODUCT
+<span class="line-modified">! const uint64_t Assembler::asm_bp = 0x00007fffee09ac88;</span>
+  #endif
+  
+  #include &quot;compiler/disassembler.hpp&quot;
+  #include &quot;memory/resourceArea.hpp&quot;
+  #include &quot;runtime/interfaceSupport.inline.hpp&quot;
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 51,10 ***</span>
+<span class="line-new-header">--- 51,16 ---</span>
+  
+  #define BIND(label) bind(label); __ BLOCK_COMMENT(#label &quot;:&quot;)
+  
+  static float unpack(unsigned value);
+  
+<span class="line-added">+ #ifdef _WIN64</span>
+<span class="line-added">+ address Assembler::locate_next_instruction(address inst) {</span>
+<span class="line-added">+ 	return inst + Assembler::instruction_size;</span>
+<span class="line-added">+ }</span>
+<span class="line-added">+ #endif</span>
+<span class="line-added">+ </span>
+  short Assembler::SIMD_Size_in_bytes[] = {
+    // T8B, T16B, T4H, T8H, T2S, T4S, T1D, T2D, T1Q
+         8,   16,   8,  16,   8,  16,   8,  16,  16
+  };
+  
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1457,11 ***</span>
+         0x4cd17200, // ld1   {v0.16b}, [x16], x17
+        };
+      asm_check((unsigned int *)PC, vector_insns,
+                sizeof vector_insns / sizeof vector_insns[0]);
+    }
+<span class="line-removed">- </span>
+  #endif // ASSERT
+  }
+  
+  #undef __
+  
+<span class="line-new-header">--- 1463,10 ---</span>
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1494,19 ***</span>
+        Disassembler::decode((address)start + len, (address)start);
+      else
+        Disassembler::decode((address)start, (address)start + len);
+    }
+  
+<span class="line-modified">!   JNIEXPORT void das1(unsigned long insn) {</span>
+      das(insn, 1);
+    }
+  }
+  
+  #define gas_assert(ARG1) assert(ARG1, #ARG1)
+  
+  #define __ as-&gt;
+  
+  void Address::lea(MacroAssembler *as, Register r) const {
+    Relocation* reloc = _rspec.reloc();
+    relocInfo::relocType rtype = (relocInfo::relocType) reloc-&gt;type();
+  
+    switch(_mode) {
+<span class="line-new-header">--- 1499,20 ---</span>
+        Disassembler::decode((address)start + len, (address)start);
+      else
+        Disassembler::decode((address)start, (address)start + len);
+    }
+  
+<span class="line-modified">!   JNIEXPORT void das1(uint64_t insn) {</span>
+      das(insn, 1);
+    }
+  }
+  
+  #define gas_assert(ARG1) assert(ARG1, #ARG1)
+  
+  #define __ as-&gt;
+  
+<span class="line-added">+ </span>
+  void Address::lea(MacroAssembler *as, Register r) const {
+    Relocation* reloc = _rspec.reloc();
+    relocInfo::relocType rtype = (relocInfo::relocType) reloc-&gt;type();
+  
+    switch(_mode) {
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1518,11 ***</span>
+      else
+        __ sub(r, _base, -_offset);
+        break;
+    }
+    case base_plus_offset_reg: {
+<span class="line-modified">!     __ add(r, _base, _index, _ext.op(), MAX(_ext.shift(), 0));</span>
+      break;
+    }
+    case literal: {
+      if (rtype == relocInfo::none)
+        __ mov(r, target());
+<span class="line-new-header">--- 1524,11 ---</span>
+      else
+        __ sub(r, _base, -_offset);
+        break;
+    }
+    case base_plus_offset_reg: {
+<span class="line-modified">!     __ add(r, _base, _index, _ext.op(), MAX2(_ext.shift(), 0));</span>
+      break;
+    }
+    case literal: {
+      if (rtype == relocInfo::none)
+        __ mov(r, target());
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1533,31 ***</span>
+    default:
+      ShouldNotReachHere();
+    }
+  }
+  
+<span class="line-modified">! void Assembler::adrp(Register reg1, const Address &amp;dest, unsigned long &amp;byte_offset) {</span>
+    ShouldNotReachHere();
+  }
+  
+  #undef __
+  
+  #define starti Instruction_aarch64 do_not_use(this); set_current(&amp;do_not_use)
+  
+    void Assembler::adr(Register Rd, address adr) {
+<span class="line-modified">!     long offset = adr - pc();</span>
+      int offset_lo = offset &amp; 3;
+      offset &gt;&gt;= 2;
+      starti;
+      f(0, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+      rf(Rd, 0);
+    }
+  
+    void Assembler::_adrp(Register Rd, address adr) {
+      uint64_t pc_page = (uint64_t)pc() &gt;&gt; 12;
+      uint64_t adr_page = (uint64_t)adr &gt;&gt; 12;
+<span class="line-modified">!     long offset = adr_page - pc_page;</span>
+      int offset_lo = offset &amp; 3;
+      offset &gt;&gt;= 2;
+      starti;
+      f(1, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+      rf(Rd, 0);
+<span class="line-new-header">--- 1539,31 ---</span>
+    default:
+      ShouldNotReachHere();
+    }
+  }
+  
+<span class="line-modified">! void Assembler::adrp(Register reg1, const Address &amp;dest, uint64_t &amp;byte_offset) {</span>
+    ShouldNotReachHere();
+  }
+  
+  #undef __
+  
+  #define starti Instruction_aarch64 do_not_use(this); set_current(&amp;do_not_use)
+  
+    void Assembler::adr(Register Rd, address adr) {
+<span class="line-modified">!     int64_t offset = adr - pc();</span>
+      int offset_lo = offset &amp; 3;
+      offset &gt;&gt;= 2;
+      starti;
+      f(0, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+      rf(Rd, 0);
+    }
+  
+    void Assembler::_adrp(Register Rd, address adr) {
+      uint64_t pc_page = (uint64_t)pc() &gt;&gt; 12;
+      uint64_t adr_page = (uint64_t)adr &gt;&gt; 12;
+<span class="line-modified">!     int64_t offset = adr_page - pc_page;</span>
+      int offset_lo = offset &amp; 3;
+      offset &gt;&gt;= 2;
+      starti;
+      f(1, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+      rf(Rd, 0);
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1702,13 ***</span>
+      srf(Rd, 0);
+  
+    srf(Rn, 5);
+  }
+  
+<span class="line-modified">! bool Assembler::operand_valid_for_add_sub_immediate(long imm) {</span>
+    bool shift = false;
+<span class="line-modified">!   unsigned long uimm = uabs(imm);</span>
+    if (uimm &lt; (1 &lt;&lt; 12))
+      return true;
+    if (uimm &lt; (1 &lt;&lt; 24)
+        &amp;&amp; ((uimm &gt;&gt; 12) &lt;&lt; 12 == uimm)) {
+      return true;
+<span class="line-new-header">--- 1708,13 ---</span>
+      srf(Rd, 0);
+  
+    srf(Rn, 5);
+  }
+  
+<span class="line-modified">! bool Assembler::operand_valid_for_add_sub_immediate(int64_t imm) {</span>
+    bool shift = false;
+<span class="line-modified">!   uint64_t uimm = uabs(imm);</span>
+    if (uimm &lt; (1 &lt;&lt; 12))
+      return true;
+    if (uimm &lt; (1 &lt;&lt; 24)
+        &amp;&amp; ((uimm &gt;&gt; 12) &lt;&lt; 12 == uimm)) {
+      return true;
+</pre>
+<center><a href="aarch64.ad.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="assembler_aarch64.hpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

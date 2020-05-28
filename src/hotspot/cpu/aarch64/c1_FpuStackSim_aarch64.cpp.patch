@@ -1,0 +1,10 @@
+diff a/src/hotspot/cpu/aarch64/c1_FpuStackSim_aarch64.cpp b/src/hotspot/cpu/aarch64/c1_FpuStackSim_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/c1_FpuStackSim_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/c1_FpuStackSim_aarch64.cpp
+@@ -26,5 +26,6 @@
+ //--------------------------------------------------------
+ //               FpuStackSim
+ //--------------------------------------------------------
+ 
+ // No FPU stack on AARCH64
++#include "precompiled.hpp"

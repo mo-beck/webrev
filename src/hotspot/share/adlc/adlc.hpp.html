@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\hotspot\share\adlc\adlc.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 1998, 2019, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 #ifndef SHARE_ADLC_ADLC_HPP
+ 26 #define SHARE_ADLC_ADLC_HPP
+ 27 
+ 28 //
+ 29 // Standard include file for ADLC parser
+ 30 //
+ 31 
+ 32 // standard library constants
+ 33 #include &lt;iostream&gt;
+ 34 
+ 35 #include &lt;stdio.h&gt;
+ 36 #include &lt;stdlib.h&gt;
+ 37 #include &lt;string.h&gt;
+ 38 #include &lt;ctype.h&gt;
+ 39 #include &lt;stdarg.h&gt;
+ 40 #include &lt;sys/types.h&gt;
+ 41 
+ 42 #ifdef _WIN32
+ 43 
+ 44 /* Make sure that we don&#39;t define min/max */
+ 45 #define NOMINMAX
+ 46 
+ 47 /* Make sure that we have the intptr_t and uintptr_t definitions */
+ 48 #if _MSC_VER &gt;= 1300
+ 49 using namespace std;
+ 50 #endif
+ 51 
+ 52 #if _MSC_VER &gt;= 1400
+ 53 #define strdup _strdup
+ 54 #endif
+ 55 
+ 56 #if _MSC_VER &lt; 1900
+ 57 #define snprintf _snprintf
+ 58 #endif
+ 59 
+ 60 #ifndef _INTPTR_T_DEFINED
+ 61 #ifdef _WIN64
+ 62 typedef __int64 intptr_t;
+ 63 #else
+ 64 typedef int intptr_t;
+ 65 #endif
+ 66 #define _INTPTR_T_DEFINED
+ 67 #endif
+ 68 
+ 69 #ifndef _UINTPTR_T_DEFINED
+ 70 #ifdef _WIN64
+ 71 typedef unsigned __int64 uintptr_t;
+ 72 #else
+ 73 typedef unsigned int uintptr_t;
+ 74 #endif
+ 75 #define _UINTPTR_T_DEFINED
+ 76 #endif
+ 77 
+ 78 #endif // _WIN32
+ 79 
+ 80 #if defined(LINUX) || defined(_ALLBSD_SOURCE)
+ 81   #include &lt;inttypes.h&gt;
+ 82 #endif // LINUX || _ALLBSD_SOURCE
+ 83 
+ 84 // Macros
+ 85 #define uint32 unsigned int
+ 86 #define uint   unsigned int
+ 87 
+ 88 // VM components
+ 89 #include &quot;opto/opcodes.hpp&quot;
+ 90 
+ 91 // Macros
+ 92 // Debugging note:  Put a breakpoint on &quot;abort&quot;.
+ 93 #undef assert
+ 94 #define assert(cond, msg) { if (!(cond)) { fprintf(stderr, &quot;assert fails %s %d: %s\n&quot;, __FILE__, __LINE__, msg); abort(); }}
+ 95 #undef max
+ 96 #define max(a, b)   (((a)&gt;(b)) ? (a) : (b))
+ 97 
+ 98 // ADLC components
+ 99 #include &quot;arena.hpp&quot;
+100 #include &quot;opto/adlcVMDeps.hpp&quot;
+101 #include &quot;filebuff.hpp&quot;
+102 #include &quot;dict2.hpp&quot;
+103 #include &quot;forms.hpp&quot;
+104 #include &quot;formsopt.hpp&quot;
+105 #include &quot;formssel.hpp&quot;
+106 #include &quot;archDesc.hpp&quot;
+107 #include &quot;adlparse.hpp&quot;
+108 
+109 // globally define ArchDesc for convenience.  Alternatively every form
+110 // could have a backpointer to the AD but it&#39;s too complicated to pass
+111 // it everywhere it needs to be available.
+112 extern ArchDesc* globalAD;
+113 
+114 #endif // SHARE_ADLC_ADLC_HPP
+    </pre>
+  </body>
+</html>

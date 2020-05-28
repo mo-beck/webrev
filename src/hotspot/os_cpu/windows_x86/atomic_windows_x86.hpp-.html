@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Old src\hotspot\os_cpu\windows_x86\atomic_windows_x86.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 1999, 2019, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 #ifndef OS_CPU_WINDOWS_X86_ATOMIC_WINDOWS_X86_HPP
+ 26 #define OS_CPU_WINDOWS_X86_ATOMIC_WINDOWS_X86_HPP
+ 27 
+ 28 #include &quot;runtime/os.hpp&quot;
+ 29 
+ 30 // Note that in MSVC, volatile memory accesses are explicitly
+ 31 // guaranteed to have acquire release semantics (w.r.t. compiler
+ 32 // reordering) and therefore does not even need a compiler barrier
+ 33 // for normal acquire release accesses. And all generalized
+ 34 // bound calls like release_store go through Atomic::load
+ 35 // and Atomic::store which do volatile memory accesses.
+ 36 template&lt;&gt; inline void ScopedFence&lt;X_ACQUIRE&gt;::postfix()       { }
+ 37 template&lt;&gt; inline void ScopedFence&lt;RELEASE_X&gt;::prefix()        { }
+ 38 template&lt;&gt; inline void ScopedFence&lt;RELEASE_X_FENCE&gt;::prefix()  { }
+ 39 template&lt;&gt; inline void ScopedFence&lt;RELEASE_X_FENCE&gt;::postfix() { OrderAccess::fence(); }
+ 40 
+ 41 // The following alternative implementations are needed because
+ 42 // Windows 95 doesn&#39;t support (some of) the corresponding Windows NT
+ 43 // calls. Furthermore, these versions allow inlining in the caller.
+ 44 // (More precisely: The documentation for InterlockedExchange says
+ 45 // it is supported for Windows 95. However, when single-stepping
+ 46 // through the assembly code we cannot step into the routine and
+ 47 // when looking at the routine address we see only garbage code.
+ 48 // Better safe then sorry!). Was bug 7/31/98 (gri).
+ 49 //
+ 50 // Performance note: On uniprocessors, the &#39;lock&#39; prefixes are not
+ 51 // necessary (and expensive). We should generate separate cases if
+ 52 // this becomes a performance problem.
+ 53 
+ 54 #pragma warning(disable: 4035) // Disables warnings reporting missing return statement
+ 55 
+ 56 template&lt;size_t byte_size&gt;
+ 57 struct Atomic::PlatformAdd
+ 58   : Atomic::AddAndFetch&lt;Atomic::PlatformAdd&lt;byte_size&gt; &gt;
+ 59 {
+ 60   template&lt;typename D, typename I&gt;
+ 61   D add_and_fetch(D volatile* dest, I add_value, atomic_memory_order order) const;
+ 62 };
+ 63 
+ 64 #ifdef AMD64
+ 65 template&lt;&gt;
+ 66 template&lt;typename D, typename I&gt;
+ 67 inline D Atomic::PlatformAdd&lt;4&gt;::add_and_fetch(D volatile* dest, I add_value,
+ 68                                                atomic_memory_order order) const {
+ 69   return add_using_helper&lt;int32_t&gt;(os::atomic_add_func, dest, add_value);
+ 70 }
+ 71 
+ 72 template&lt;&gt;
+ 73 template&lt;typename D, typename I&gt;
+ 74 inline D Atomic::PlatformAdd&lt;8&gt;::add_and_fetch(D volatile* dest, I add_value,
+ 75                                                atomic_memory_order order) const {
+ 76   return add_using_helper&lt;int64_t&gt;(os::atomic_add_long_func, dest, add_value);
+ 77 }
+ 78 
+ 79 #define DEFINE_STUB_XCHG(ByteSize, StubType, StubName)                  \
+ 80   template&lt;&gt;                                                            \
+ 81   template&lt;typename T&gt;                                                  \
+ 82   inline T Atomic::PlatformXchg&lt;ByteSize&gt;::operator()(T volatile* dest, \
+ 83                                                       T exchange_value, \
+ 84                                                       atomic_memory_order order) const { \
+ 85     STATIC_ASSERT(ByteSize == sizeof(T));                               \
+ 86     return xchg_using_helper&lt;StubType&gt;(StubName, dest, exchange_value); \
+ 87   }
+ 88 
+ 89 DEFINE_STUB_XCHG(4, int32_t, os::atomic_xchg_func)
+ 90 DEFINE_STUB_XCHG(8, int64_t, os::atomic_xchg_long_func)
+ 91 
+ 92 #undef DEFINE_STUB_XCHG
+ 93 
+ 94 #define DEFINE_STUB_CMPXCHG(ByteSize, StubType, StubName)                  \
+ 95   template&lt;&gt;                                                               \
+ 96   template&lt;typename T&gt;                                                     \
+ 97   inline T Atomic::PlatformCmpxchg&lt;ByteSize&gt;::operator()(T volatile* dest, \
+ 98                                                          T compare_value,  \
+ 99                                                          T exchange_value, \
+100                                                          atomic_memory_order order) const { \
+101     STATIC_ASSERT(ByteSize == sizeof(T));                                  \
+102     return cmpxchg_using_helper&lt;StubType&gt;(StubName, dest, compare_value, exchange_value); \
+103   }
+104 
+105 DEFINE_STUB_CMPXCHG(1, int8_t,  os::atomic_cmpxchg_byte_func)
+106 DEFINE_STUB_CMPXCHG(4, int32_t, os::atomic_cmpxchg_func)
+107 DEFINE_STUB_CMPXCHG(8, int64_t, os::atomic_cmpxchg_long_func)
+108 
+109 #undef DEFINE_STUB_CMPXCHG
+110 
+111 #else // !AMD64
+112 
+113 template&lt;&gt;
+114 template&lt;typename D, typename I&gt;
+115 inline D Atomic::PlatformAdd&lt;4&gt;::add_and_fetch(D volatile* dest, I add_value,
+116                                                atomic_memory_order order) const {
+117   STATIC_ASSERT(4 == sizeof(I));
+118   STATIC_ASSERT(4 == sizeof(D));
+119   __asm {
+120     mov edx, dest;
+121     mov eax, add_value;
+122     mov ecx, eax;
+123     lock xadd dword ptr [edx], eax;
+124     add eax, ecx;
+125   }
+126 }
+127 
+128 template&lt;&gt;
+129 template&lt;typename T&gt;
+130 inline T Atomic::PlatformXchg&lt;4&gt;::operator()(T volatile* dest,
+131                                              T exchange_value,
+132                                              atomic_memory_order order) const {
+133   STATIC_ASSERT(4 == sizeof(T));
+134   // alternative for InterlockedExchange
+135   __asm {
+136     mov eax, exchange_value;
+137     mov ecx, dest;
+138     xchg eax, dword ptr [ecx];
+139   }
+140 }
+141 
+142 template&lt;&gt;
+143 template&lt;typename T&gt;
+144 inline T Atomic::PlatformCmpxchg&lt;1&gt;::operator()(T volatile* dest,
+145                                                 T compare_value,
+146                                                 T exchange_value,
+147                                                 atomic_memory_order order) const {
+148   STATIC_ASSERT(1 == sizeof(T));
+149   // alternative for InterlockedCompareExchange
+150   __asm {
+151     mov edx, dest
+152     mov cl, exchange_value
+153     mov al, compare_value
+154     lock cmpxchg byte ptr [edx], cl
+155   }
+156 }
+157 
+158 template&lt;&gt;
+159 template&lt;typename T&gt;
+160 inline T Atomic::PlatformCmpxchg&lt;4&gt;::operator()(T volatile* dest,
+161                                                 T compare_value,
+162                                                 T exchange_value,
+163                                                 atomic_memory_order order) const {
+164   STATIC_ASSERT(4 == sizeof(T));
+165   // alternative for InterlockedCompareExchange
+166   __asm {
+167     mov edx, dest
+168     mov ecx, exchange_value
+169     mov eax, compare_value
+170     lock cmpxchg dword ptr [edx], ecx
+171   }
+172 }
+173 
+174 template&lt;&gt;
+175 template&lt;typename T&gt;
+176 inline T Atomic::PlatformCmpxchg&lt;8&gt;::operator()(T volatile* dest,
+177                                                 T compare_value,
+178                                                 T exchange_value,
+179                                                 atomic_memory_order order) const {
+180   STATIC_ASSERT(8 == sizeof(T));
+181   int32_t ex_lo  = (int32_t)exchange_value;
+182   int32_t ex_hi  = *( ((int32_t*)&amp;exchange_value) + 1 );
+183   int32_t cmp_lo = (int32_t)compare_value;
+184   int32_t cmp_hi = *( ((int32_t*)&amp;compare_value) + 1 );
+185   __asm {
+186     push ebx
+187     push edi
+188     mov eax, cmp_lo
+189     mov edx, cmp_hi
+190     mov edi, dest
+191     mov ebx, ex_lo
+192     mov ecx, ex_hi
+193     lock cmpxchg8b qword ptr [edi]
+194     pop edi
+195     pop ebx
+196   }
+197 }
+198 
+199 template&lt;&gt;
+200 template&lt;typename T&gt;
+201 inline T Atomic::PlatformLoad&lt;8&gt;::operator()(T const volatile* src) const {
+202   STATIC_ASSERT(8 == sizeof(T));
+203   volatile T dest;
+204   volatile T* pdest = &amp;dest;
+205   __asm {
+206     mov eax, src
+207     fild     qword ptr [eax]
+208     mov eax, pdest
+209     fistp    qword ptr [eax]
+210   }
+211   return dest;
+212 }
+213 
+214 template&lt;&gt;
+215 template&lt;typename T&gt;
+216 inline void Atomic::PlatformStore&lt;8&gt;::operator()(T volatile* dest,
+217                                                  T store_value) const {
+218   STATIC_ASSERT(8 == sizeof(T));
+219   volatile T* src = &amp;store_value;
+220   __asm {
+221     mov eax, src
+222     fild     qword ptr [eax]
+223     mov eax, dest
+224     fistp    qword ptr [eax]
+225   }
+226 }
+227 
+228 #endif // AMD64
+229 
+230 #pragma warning(default: 4035) // Enables warnings reporting missing return statement
+231 
+232 #ifndef AMD64
+233 template&lt;&gt;
+234 struct Atomic::PlatformOrderedStore&lt;1, RELEASE_X_FENCE&gt;
+235 {
+236   template &lt;typename T&gt;
+237   void operator()(volatile T* p, T v) const {
+238     __asm {
+239       mov edx, p;
+240       mov al, v;
+241       xchg al, byte ptr [edx];
+242     }
+243   }
+244 };
+245 
+246 template&lt;&gt;
+247 struct Atomic::PlatformOrderedStore&lt;2, RELEASE_X_FENCE&gt;
+248 {
+249   template &lt;typename T&gt;
+250   void operator()(volatile T* p, T v) const {
+251     __asm {
+252       mov edx, p;
+253       mov ax, v;
+254       xchg ax, word ptr [edx];
+255     }
+256   }
+257 };
+258 
+259 template&lt;&gt;
+260 struct Atomic::PlatformOrderedStore&lt;4, RELEASE_X_FENCE&gt;
+261 {
+262   template &lt;typename T&gt;
+263   void operator()(volatile T* p, T v) const {
+264     __asm {
+265       mov edx, p;
+266       mov eax, v;
+267       xchg eax, dword ptr [edx];
+268     }
+269   }
+270 };
+271 #endif // AMD64
+272 
+273 #endif // OS_CPU_WINDOWS_X86_ATOMIC_WINDOWS_X86_HPP
+    </pre>
+  </body>
+</html>

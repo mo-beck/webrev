@@ -1,0 +1,16 @@
+diff a/src/jdk.attach/windows/classes/sun/tools/attach/AttachProviderImpl.java b/src/jdk.attach/windows/classes/sun/tools/attach/AttachProviderImpl.java
+--- a/src/jdk.attach/windows/classes/sun/tools/attach/AttachProviderImpl.java
++++ b/src/jdk.attach/windows/classes/sun/tools/attach/AttachProviderImpl.java
+@@ -41,11 +41,11 @@
+         if (os.startsWith("Windows 9") || os.equals("Windows Me")) {
+             throw new RuntimeException(
+                 "This provider is not supported on this version of Windows");
+         }
+         String arch = System.getProperty("os.arch");
+-        if (!arch.equals("x86") && !arch.equals("amd64")) {
++        if (!arch.equals("x86") && !arch.equals("amd64") && !arch.equals("aarch64")) {
+             throw new RuntimeException(
+                 "This provider is not supported on this processor architecture");
+         }
+     }
+ 

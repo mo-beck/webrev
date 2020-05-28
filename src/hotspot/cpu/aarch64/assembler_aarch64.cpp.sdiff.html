@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\assembler_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="aarch64.ad.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="assembler_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\assembler_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+  14  * accompanied this code).
+  15  *
+  16  * You should have received a copy of the GNU General Public License version
+  17  * 2 along with this work; if not, write to the Free Software Foundation,
+  18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+  19  *
+  20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+  21  * or visit www.oracle.com if you need additional information or have any
+  22  * questions.
+  23  */
+  24 
+  25 #include &lt;stdio.h&gt;
+  26 #include &lt;sys/types.h&gt;
+  27 
+  28 #include &quot;precompiled.hpp&quot;
+  29 #include &quot;asm/assembler.hpp&quot;
+  30 #include &quot;asm/assembler.inline.hpp&quot;
+  31 #include &quot;interpreter/interpreter.hpp&quot;
+  32 
+  33 #ifndef PRODUCT
+<span class="line-modified">  34 const unsigned long Assembler::asm_bp = 0x00007fffee09ac88;</span>
+  35 #endif
+  36 
+  37 #include &quot;compiler/disassembler.hpp&quot;
+  38 #include &quot;memory/resourceArea.hpp&quot;
+  39 #include &quot;runtime/interfaceSupport.inline.hpp&quot;
+  40 #include &quot;runtime/sharedRuntime.hpp&quot;
+  41 #include &quot;immediate_aarch64.hpp&quot;
+  42 
+  43 extern &quot;C&quot; void entry(CodeBuffer *cb);
+  44 
+  45 #define __ _masm.
+  46 #ifdef PRODUCT
+  47 #define BLOCK_COMMENT(str) /* nothing */
+  48 #else
+  49 #define BLOCK_COMMENT(str) block_comment(str)
+  50 #endif
+  51 
+  52 #define BIND(label) bind(label); __ BLOCK_COMMENT(#label &quot;:&quot;)
+  53 
+  54 static float unpack(unsigned value);
+  55 
+
+
+
+
+
+
+  56 short Assembler::SIMD_Size_in_bytes[] = {
+  57   // T8B, T16B, T4H, T8H, T2S, T4S, T1D, T2D, T1Q
+  58        8,   16,   8,  16,   8,  16,   8,  16,  16
+  59 };
+  60 
+  61 #ifdef ASSERT
+  62 static void asm_check(const unsigned int *insns, const unsigned int *insns1, size_t len) {
+  63     bool ok = true;
+  64     for (unsigned int i = 0; i &lt; len; i++) {
+  65       if (insns[i] != insns1[i]) {
+  66         ok = false;
+  67         printf(&quot;Ours:\n&quot;);
+  68         Disassembler::decode((address)&amp;insns1[i], (address)&amp;insns1[i+1]);
+  69         printf(&quot;Theirs:\n&quot;);
+  70         Disassembler::decode((address)&amp;insns[i], (address)&amp;insns[i+1]);
+  71         printf(&quot;\n&quot;);
+  72       }
+  73     }
+  74     assert(ok, &quot;Assembler smoke test failed&quot;);
+  75   }
+</pre>
+<hr />
+<pre>
+1442   };
+1443 // END  Generated code -- do not edit
+1444 
+1445   asm_check((unsigned int *)entry, insns, sizeof insns / sizeof insns[0]);
+1446 
+1447   {
+1448     address PC = __ pc();
+1449     __ ld1(v0, __ T16B, Address(r16));      // No offset
+1450     __ ld1(v0, __ T8H, __ post(r16, 16));   // Post-index
+1451     __ ld2(v0, v1, __ T8H, __ post(r24, 16 * 2));   // Post-index
+1452     __ ld1(v0, __ T16B, __ post(r16, r17)); // Register post-index
+1453     static const unsigned int vector_insns[] = {
+1454        0x4c407200, // ld1   {v0.16b}, [x16]
+1455        0x4cdf7600, // ld1   {v0.8h}, [x16], #16
+1456        0x4cdf8700, // ld2   {v0.8h, v1.8h}, [x24], #32
+1457        0x4cd17200, // ld1   {v0.16b}, [x16], x17
+1458       };
+1459     asm_check((unsigned int *)PC, vector_insns,
+1460               sizeof vector_insns / sizeof vector_insns[0]);
+1461   }
+<span class="line-removed">1462 </span>
+1463 #endif // ASSERT
+1464 }
+1465 
+1466 #undef __
+1467 
+1468 void Assembler::emit_data64(jlong data,
+1469                             relocInfo::relocType rtype,
+1470                             int format) {
+1471   if (rtype == relocInfo::none) {
+1472     emit_int64(data);
+1473   } else {
+1474     emit_data64(data, Relocation::spec_simple(rtype), format);
+1475   }
+1476 }
+1477 
+1478 void Assembler::emit_data64(jlong data,
+1479                             RelocationHolder const&amp; rspec,
+1480                             int format) {
+1481 
+1482   assert(inst_mark() != NULL, &quot;must be inside InstructionMark&quot;);
+1483   // Do not use AbstractAssembler::relocate, which is not intended for
+1484   // embedded words.  Instead, relocate to the enclosing instruction.
+1485   code_section()-&gt;relocate(inst_mark(), rspec, format);
+1486   emit_int64(data);
+1487 }
+1488 
+1489 extern &quot;C&quot; {
+1490   void das(uint64_t start, int len) {
+1491     ResourceMark rm;
+1492     len &lt;&lt;= 2;
+1493     if (len &lt; 0)
+1494       Disassembler::decode((address)start + len, (address)start);
+1495     else
+1496       Disassembler::decode((address)start, (address)start + len);
+1497   }
+1498 
+<span class="line-modified">1499   JNIEXPORT void das1(unsigned long insn) {</span>
+1500     das(insn, 1);
+1501   }
+1502 }
+1503 
+1504 #define gas_assert(ARG1) assert(ARG1, #ARG1)
+1505 
+1506 #define __ as-&gt;
+1507 
+
+1508 void Address::lea(MacroAssembler *as, Register r) const {
+1509   Relocation* reloc = _rspec.reloc();
+1510   relocInfo::relocType rtype = (relocInfo::relocType) reloc-&gt;type();
+1511 
+1512   switch(_mode) {
+1513   case base_plus_offset: {
+1514     if (_offset == 0 &amp;&amp; _base == r) // it&#39;s a nop
+1515       break;
+1516     if (_offset &gt; 0)
+1517       __ add(r, _base, _offset);
+1518     else
+1519       __ sub(r, _base, -_offset);
+1520       break;
+1521   }
+1522   case base_plus_offset_reg: {
+<span class="line-modified">1523     __ add(r, _base, _index, _ext.op(), MAX(_ext.shift(), 0));</span>
+1524     break;
+1525   }
+1526   case literal: {
+1527     if (rtype == relocInfo::none)
+1528       __ mov(r, target());
+1529     else
+1530       __ movptr(r, (uint64_t)target());
+1531     break;
+1532   }
+1533   default:
+1534     ShouldNotReachHere();
+1535   }
+1536 }
+1537 
+<span class="line-modified">1538 void Assembler::adrp(Register reg1, const Address &amp;dest, unsigned long &amp;byte_offset) {</span>
+1539   ShouldNotReachHere();
+1540 }
+1541 
+1542 #undef __
+1543 
+1544 #define starti Instruction_aarch64 do_not_use(this); set_current(&amp;do_not_use)
+1545 
+1546   void Assembler::adr(Register Rd, address adr) {
+<span class="line-modified">1547     long offset = adr - pc();</span>
+1548     int offset_lo = offset &amp; 3;
+1549     offset &gt;&gt;= 2;
+1550     starti;
+1551     f(0, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+1552     rf(Rd, 0);
+1553   }
+1554 
+1555   void Assembler::_adrp(Register Rd, address adr) {
+1556     uint64_t pc_page = (uint64_t)pc() &gt;&gt; 12;
+1557     uint64_t adr_page = (uint64_t)adr &gt;&gt; 12;
+<span class="line-modified">1558     long offset = adr_page - pc_page;</span>
+1559     int offset_lo = offset &amp; 3;
+1560     offset &gt;&gt;= 2;
+1561     starti;
+1562     f(1, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+1563     rf(Rd, 0);
+1564   }
+1565 
+1566 #undef starti
+1567 
+1568 Address::Address(address target, relocInfo::relocType rtype) : _mode(literal){
+1569   _is_lval = false;
+1570   _target = target;
+1571   switch (rtype) {
+1572   case relocInfo::oop_type:
+1573   case relocInfo::metadata_type:
+1574     // Oops are a special case. Normally they would be their own section
+1575     // but in cases like icBuffer they are literals in the code stream that
+1576     // we don&#39;t have a section for. We use none so that we get a literal address
+1577     // which is always patchable.
+1578     break;
+</pre>
+<hr />
+<pre>
+1687     op = negated_op;
+1688   }
+1689   assert(Rd != sp || imm % 16 == 0, &quot;misaligned stack&quot;);
+1690   if (imm &gt;= (1 &lt;&lt; 11)
+1691       &amp;&amp; ((imm &gt;&gt; 12) &lt;&lt; 12 == imm)) {
+1692     imm &gt;&gt;= 12;
+1693     shift = true;
+1694   }
+1695   f(op, 31, 29), f(0b10001, 28, 24), f(shift, 23, 22), f(imm, 21, 10);
+1696 
+1697   // add/subtract immediate ops with the S bit set treat r31 as zr;
+1698   // with S unset they use sp.
+1699   if (sets_flags)
+1700     zrf(Rd, 0);
+1701   else
+1702     srf(Rd, 0);
+1703 
+1704   srf(Rn, 5);
+1705 }
+1706 
+<span class="line-modified">1707 bool Assembler::operand_valid_for_add_sub_immediate(long imm) {</span>
+1708   bool shift = false;
+<span class="line-modified">1709   unsigned long uimm = uabs(imm);</span>
+1710   if (uimm &lt; (1 &lt;&lt; 12))
+1711     return true;
+1712   if (uimm &lt; (1 &lt;&lt; 24)
+1713       &amp;&amp; ((uimm &gt;&gt; 12) &lt;&lt; 12 == uimm)) {
+1714     return true;
+1715   }
+1716   return false;
+1717 }
+1718 
+1719 bool Assembler::operand_valid_for_logical_immediate(bool is32, uint64_t imm) {
+1720   return encode_logical_immediate(is32, imm) != 0xffffffff;
+1721 }
+1722 
+1723 static uint64_t doubleTo64Bits(jdouble d) {
+1724   union {
+1725     jdouble double_value;
+1726     uint64_t double_bits;
+1727   };
+1728 
+1729   double_value = d;
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+  14  * accompanied this code).
+  15  *
+  16  * You should have received a copy of the GNU General Public License version
+  17  * 2 along with this work; if not, write to the Free Software Foundation,
+  18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+  19  *
+  20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+  21  * or visit www.oracle.com if you need additional information or have any
+  22  * questions.
+  23  */
+  24 
+  25 #include &lt;stdio.h&gt;
+  26 #include &lt;sys/types.h&gt;
+  27 
+  28 #include &quot;precompiled.hpp&quot;
+  29 #include &quot;asm/assembler.hpp&quot;
+  30 #include &quot;asm/assembler.inline.hpp&quot;
+  31 #include &quot;interpreter/interpreter.hpp&quot;
+  32 
+  33 #ifndef PRODUCT
+<span class="line-modified">  34 const uint64_t Assembler::asm_bp = 0x00007fffee09ac88;</span>
+  35 #endif
+  36 
+  37 #include &quot;compiler/disassembler.hpp&quot;
+  38 #include &quot;memory/resourceArea.hpp&quot;
+  39 #include &quot;runtime/interfaceSupport.inline.hpp&quot;
+  40 #include &quot;runtime/sharedRuntime.hpp&quot;
+  41 #include &quot;immediate_aarch64.hpp&quot;
+  42 
+  43 extern &quot;C&quot; void entry(CodeBuffer *cb);
+  44 
+  45 #define __ _masm.
+  46 #ifdef PRODUCT
+  47 #define BLOCK_COMMENT(str) /* nothing */
+  48 #else
+  49 #define BLOCK_COMMENT(str) block_comment(str)
+  50 #endif
+  51 
+  52 #define BIND(label) bind(label); __ BLOCK_COMMENT(#label &quot;:&quot;)
+  53 
+  54 static float unpack(unsigned value);
+  55 
+<span class="line-added">  56 #ifdef _WIN64</span>
+<span class="line-added">  57 address Assembler::locate_next_instruction(address inst) {</span>
+<span class="line-added">  58 	return inst + Assembler::instruction_size;</span>
+<span class="line-added">  59 }</span>
+<span class="line-added">  60 #endif</span>
+<span class="line-added">  61 </span>
+  62 short Assembler::SIMD_Size_in_bytes[] = {
+  63   // T8B, T16B, T4H, T8H, T2S, T4S, T1D, T2D, T1Q
+  64        8,   16,   8,  16,   8,  16,   8,  16,  16
+  65 };
+  66 
+  67 #ifdef ASSERT
+  68 static void asm_check(const unsigned int *insns, const unsigned int *insns1, size_t len) {
+  69     bool ok = true;
+  70     for (unsigned int i = 0; i &lt; len; i++) {
+  71       if (insns[i] != insns1[i]) {
+  72         ok = false;
+  73         printf(&quot;Ours:\n&quot;);
+  74         Disassembler::decode((address)&amp;insns1[i], (address)&amp;insns1[i+1]);
+  75         printf(&quot;Theirs:\n&quot;);
+  76         Disassembler::decode((address)&amp;insns[i], (address)&amp;insns[i+1]);
+  77         printf(&quot;\n&quot;);
+  78       }
+  79     }
+  80     assert(ok, &quot;Assembler smoke test failed&quot;);
+  81   }
+</pre>
+<hr />
+<pre>
+1448   };
+1449 // END  Generated code -- do not edit
+1450 
+1451   asm_check((unsigned int *)entry, insns, sizeof insns / sizeof insns[0]);
+1452 
+1453   {
+1454     address PC = __ pc();
+1455     __ ld1(v0, __ T16B, Address(r16));      // No offset
+1456     __ ld1(v0, __ T8H, __ post(r16, 16));   // Post-index
+1457     __ ld2(v0, v1, __ T8H, __ post(r24, 16 * 2));   // Post-index
+1458     __ ld1(v0, __ T16B, __ post(r16, r17)); // Register post-index
+1459     static const unsigned int vector_insns[] = {
+1460        0x4c407200, // ld1   {v0.16b}, [x16]
+1461        0x4cdf7600, // ld1   {v0.8h}, [x16], #16
+1462        0x4cdf8700, // ld2   {v0.8h, v1.8h}, [x24], #32
+1463        0x4cd17200, // ld1   {v0.16b}, [x16], x17
+1464       };
+1465     asm_check((unsigned int *)PC, vector_insns,
+1466               sizeof vector_insns / sizeof vector_insns[0]);
+1467   }
+
+1468 #endif // ASSERT
+1469 }
+1470 
+1471 #undef __
+1472 
+1473 void Assembler::emit_data64(jlong data,
+1474                             relocInfo::relocType rtype,
+1475                             int format) {
+1476   if (rtype == relocInfo::none) {
+1477     emit_int64(data);
+1478   } else {
+1479     emit_data64(data, Relocation::spec_simple(rtype), format);
+1480   }
+1481 }
+1482 
+1483 void Assembler::emit_data64(jlong data,
+1484                             RelocationHolder const&amp; rspec,
+1485                             int format) {
+1486 
+1487   assert(inst_mark() != NULL, &quot;must be inside InstructionMark&quot;);
+1488   // Do not use AbstractAssembler::relocate, which is not intended for
+1489   // embedded words.  Instead, relocate to the enclosing instruction.
+1490   code_section()-&gt;relocate(inst_mark(), rspec, format);
+1491   emit_int64(data);
+1492 }
+1493 
+1494 extern &quot;C&quot; {
+1495   void das(uint64_t start, int len) {
+1496     ResourceMark rm;
+1497     len &lt;&lt;= 2;
+1498     if (len &lt; 0)
+1499       Disassembler::decode((address)start + len, (address)start);
+1500     else
+1501       Disassembler::decode((address)start, (address)start + len);
+1502   }
+1503 
+<span class="line-modified">1504   JNIEXPORT void das1(uint64_t insn) {</span>
+1505     das(insn, 1);
+1506   }
+1507 }
+1508 
+1509 #define gas_assert(ARG1) assert(ARG1, #ARG1)
+1510 
+1511 #define __ as-&gt;
+1512 
+<span class="line-added">1513 </span>
+1514 void Address::lea(MacroAssembler *as, Register r) const {
+1515   Relocation* reloc = _rspec.reloc();
+1516   relocInfo::relocType rtype = (relocInfo::relocType) reloc-&gt;type();
+1517 
+1518   switch(_mode) {
+1519   case base_plus_offset: {
+1520     if (_offset == 0 &amp;&amp; _base == r) // it&#39;s a nop
+1521       break;
+1522     if (_offset &gt; 0)
+1523       __ add(r, _base, _offset);
+1524     else
+1525       __ sub(r, _base, -_offset);
+1526       break;
+1527   }
+1528   case base_plus_offset_reg: {
+<span class="line-modified">1529     __ add(r, _base, _index, _ext.op(), MAX2(_ext.shift(), 0));</span>
+1530     break;
+1531   }
+1532   case literal: {
+1533     if (rtype == relocInfo::none)
+1534       __ mov(r, target());
+1535     else
+1536       __ movptr(r, (uint64_t)target());
+1537     break;
+1538   }
+1539   default:
+1540     ShouldNotReachHere();
+1541   }
+1542 }
+1543 
+<span class="line-modified">1544 void Assembler::adrp(Register reg1, const Address &amp;dest, uint64_t &amp;byte_offset) {</span>
+1545   ShouldNotReachHere();
+1546 }
+1547 
+1548 #undef __
+1549 
+1550 #define starti Instruction_aarch64 do_not_use(this); set_current(&amp;do_not_use)
+1551 
+1552   void Assembler::adr(Register Rd, address adr) {
+<span class="line-modified">1553     int64_t offset = adr - pc();</span>
+1554     int offset_lo = offset &amp; 3;
+1555     offset &gt;&gt;= 2;
+1556     starti;
+1557     f(0, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+1558     rf(Rd, 0);
+1559   }
+1560 
+1561   void Assembler::_adrp(Register Rd, address adr) {
+1562     uint64_t pc_page = (uint64_t)pc() &gt;&gt; 12;
+1563     uint64_t adr_page = (uint64_t)adr &gt;&gt; 12;
+<span class="line-modified">1564     int64_t offset = adr_page - pc_page;</span>
+1565     int offset_lo = offset &amp; 3;
+1566     offset &gt;&gt;= 2;
+1567     starti;
+1568     f(1, 31), f(offset_lo, 30, 29), f(0b10000, 28, 24), sf(offset, 23, 5);
+1569     rf(Rd, 0);
+1570   }
+1571 
+1572 #undef starti
+1573 
+1574 Address::Address(address target, relocInfo::relocType rtype) : _mode(literal){
+1575   _is_lval = false;
+1576   _target = target;
+1577   switch (rtype) {
+1578   case relocInfo::oop_type:
+1579   case relocInfo::metadata_type:
+1580     // Oops are a special case. Normally they would be their own section
+1581     // but in cases like icBuffer they are literals in the code stream that
+1582     // we don&#39;t have a section for. We use none so that we get a literal address
+1583     // which is always patchable.
+1584     break;
+</pre>
+<hr />
+<pre>
+1693     op = negated_op;
+1694   }
+1695   assert(Rd != sp || imm % 16 == 0, &quot;misaligned stack&quot;);
+1696   if (imm &gt;= (1 &lt;&lt; 11)
+1697       &amp;&amp; ((imm &gt;&gt; 12) &lt;&lt; 12 == imm)) {
+1698     imm &gt;&gt;= 12;
+1699     shift = true;
+1700   }
+1701   f(op, 31, 29), f(0b10001, 28, 24), f(shift, 23, 22), f(imm, 21, 10);
+1702 
+1703   // add/subtract immediate ops with the S bit set treat r31 as zr;
+1704   // with S unset they use sp.
+1705   if (sets_flags)
+1706     zrf(Rd, 0);
+1707   else
+1708     srf(Rd, 0);
+1709 
+1710   srf(Rn, 5);
+1711 }
+1712 
+<span class="line-modified">1713 bool Assembler::operand_valid_for_add_sub_immediate(int64_t imm) {</span>
+1714   bool shift = false;
+<span class="line-modified">1715   uint64_t uimm = uabs(imm);</span>
+1716   if (uimm &lt; (1 &lt;&lt; 12))
+1717     return true;
+1718   if (uimm &lt; (1 &lt;&lt; 24)
+1719       &amp;&amp; ((uimm &gt;&gt; 12) &lt;&lt; 12 == uimm)) {
+1720     return true;
+1721   }
+1722   return false;
+1723 }
+1724 
+1725 bool Assembler::operand_valid_for_logical_immediate(bool is32, uint64_t imm) {
+1726   return encode_logical_immediate(is32, imm) != 0xffffffff;
+1727 }
+1728 
+1729 static uint64_t doubleTo64Bits(jdouble d) {
+1730   union {
+1731     jdouble double_value;
+1732     uint64_t double_bits;
+1733   };
+1734 
+1735   double_value = d;
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="aarch64.ad.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="assembler_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,14 @@
+diff a/src/hotspot/os_cpu/linux_ppc/os_linux_ppc.hpp b/src/hotspot/os_cpu/linux_ppc/os_linux_ppc.hpp
+--- a/src/hotspot/os_cpu/linux_ppc/os_linux_ppc.hpp
++++ b/src/hotspot/os_cpu/linux_ppc/os_linux_ppc.hpp
+@@ -26,10 +26,6 @@
+ #ifndef OS_CPU_LINUX_PPC_OS_LINUX_PPC_HPP
+ #define OS_CPU_LINUX_PPC_OS_LINUX_PPC_HPP
+ 
+   static void setup_fpu() {}
+ 
+-  // Used to register dynamic code cache area with the OS
+-  // Note: Currently only used in 64 bit Windows implementations
+-  static bool register_code_area(char *low, char *high) { return true; }
+-
+ #endif // OS_CPU_LINUX_PPC_OS_LINUX_PPC_HPP

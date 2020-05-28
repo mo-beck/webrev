@@ -1,0 +1,68 @@
+diff a/src/hotspot/cpu/aarch64/vm_version_aarch64.hpp b/src/hotspot/cpu/aarch64/vm_version_aarch64.hpp
+--- a/src/hotspot/cpu/aarch64/vm_version_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/vm_version_aarch64.hpp
+@@ -27,10 +27,11 @@
+ #define CPU_AARCH64_VM_VERSION_AARCH64_HPP
+ 
+ #include "runtime/abstract_vm_version.hpp"
+ #include "runtime/globals_extension.hpp"
+ #include "utilities/sizes.hpp"
++#include "runtime/java.hpp"
+ 
+ class VM_Version : public Abstract_VM_Version {
+   friend class JVMCIVMStructs;
+ 
+ protected:
+@@ -41,11 +42,13 @@
+   static int _revision;
+   static int _stepping;
+   static bool _dcpop;
+   struct PsrInfo {
+     uint32_t dczid_el0;
++#ifndef _WIN64
+     uint32_t ctr_el0;
++#endif
+   };
+   static PsrInfo _psr_info;
+   static void get_processor_features();
+ 
+ public:
+@@ -105,12 +108,15 @@
+   static int cpu_model()                      { return _model; }
+   static int cpu_model2()                     { return _model2; }
+   static int cpu_variant()                    { return _variant; }
+   static int cpu_revision()                   { return _revision; }
+   static bool supports_dcpop()                { return _dcpop; }
++
+   static ByteSize dczid_el0_offset() { return byte_offset_of(PsrInfo, dczid_el0); }
++#ifndef _WIN64
+   static ByteSize ctr_el0_offset()   { return byte_offset_of(PsrInfo, ctr_el0); }
++#endif
+   static bool is_zva_enabled() {
+     // Check the DZP bit (bit 4) of dczid_el0 is zero
+     // and block size (bit 0~3) is not zero.
+     return ((_psr_info.dczid_el0 & 0x10) == 0 &&
+             (_psr_info.dczid_el0 & 0xf) != 0);
+@@ -118,14 +124,22 @@
+   static int zva_length() {
+     assert(is_zva_enabled(), "ZVA not available");
+     return 4 << (_psr_info.dczid_el0 & 0xf);
+   }
+   static int icache_line_size() {
++#ifndef _WIN64
+     return (1 << (_psr_info.ctr_el0 & 0x0f)) * 4;
++#else
++    return os::win32::get_cacheline_size();
++#endif
+   }
+   static int dcache_line_size() {
++#ifndef _WIN64
+     return (1 << ((_psr_info.ctr_el0 >> 16) & 0x0f)) * 4;
++#else
++    return os::win32::get_cacheline_size();
++#endif
+   }
+   static bool supports_fast_class_init_checks() { return true; }
+ };
+ 
+ #endif // CPU_AARCH64_VM_VERSION_AARCH64_HPP

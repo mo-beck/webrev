@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Old src\hotspot\os_cpu\linux_arm\os_linux_arm.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+ 1 /*
+ 2  * Copyright (c) 2008, 2019, Oracle and/or its affiliates. All rights reserved.
+ 3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ 4  *
+ 5  * This code is free software; you can redistribute it and/or modify it
+ 6  * under the terms of the GNU General Public License version 2 only, as
+ 7  * published by the Free Software Foundation.
+ 8  *
+ 9  * This code is distributed in the hope that it will be useful, but WITHOUT
+10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+12  * version 2 for more details (a copy is included in the LICENSE file that
+13  * accompanied this code).
+14  *
+15  * You should have received a copy of the GNU General Public License version
+16  * 2 along with this work; if not, write to the Free Software Foundation,
+17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+18  *
+19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+20  * or visit www.oracle.com if you need additional information or have any
+21  * questions.
+22  *
+23  */
+24 
+25 #ifndef OS_CPU_LINUX_ARM_OS_LINUX_ARM_HPP
+26 #define OS_CPU_LINUX_ARM_OS_LINUX_ARM_HPP
+27 
+28 #ifndef __thumb__
+29   enum {
+30     // Offset to add to frame::_fp when dealing with non-thumb C frames
+31     C_frame_offset =  -1,
+32   };
+33 #endif
+34 
+35   static void setup_fpu();
+36 
+37   static bool is_allocatable(size_t bytes);
+38 
+39   // Used to register dynamic code cache area with the OS
+40   // Note: Currently only used in 64 bit Windows implementations
+41   static bool register_code_area(char *low, char *high) { return true; }
+42 
+43   static int64_t (*atomic_cmpxchg_long_func)(int64_t compare_value,
+44                                              int64_t exchange_value,
+45                                              volatile int64_t *dest);
+46 
+47   static int64_t (*atomic_load_long_func)(const volatile int64_t*);
+48 
+49   static void (*atomic_store_long_func)(int64_t, volatile int64_t*);
+50 
+51   static int32_t  (*atomic_add_func)(int32_t add_value, volatile int32_t *dest);
+52 
+53   static int32_t  (*atomic_xchg_func)(int32_t exchange_value, volatile int32_t *dest);
+54 
+55   static int32_t  (*atomic_cmpxchg_func)(int32_t compare_value,
+56                                          int32_t exchange_value,
+57                                          volatile int32_t *dest);
+58 
+59   static int64_t atomic_cmpxchg_long_bootstrap(int64_t, int64_t, volatile int64_t*);
+60 
+61   static int64_t atomic_load_long_bootstrap(const volatile int64_t*);
+62 
+63   static void atomic_store_long_bootstrap(int64_t, volatile int64_t*);
+64 
+65   static int32_t  atomic_add_bootstrap(int32_t add_value, volatile int32_t *dest);
+66 
+67   static int32_t  atomic_xchg_bootstrap(int32_t exchange_value, volatile int32_t *dest);
+68 
+69   static int32_t  atomic_cmpxchg_bootstrap(int32_t compare_value,
+70                                            int32_t exchange_value,
+71                                            volatile int32_t *dest);
+72 
+73 #endif // OS_CPU_LINUX_ARM_OS_LINUX_ARM_HPP
+    </pre>
+  </body>
+</html>

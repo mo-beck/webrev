@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames src\hotspot\cpu\aarch64\vm_version_ext_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+    <script type="text/javascript" src="..\..\..\..\navigation.js"></script>
+  </head>
+<body onkeypress="keypress(event);">
+<a name="0"></a>
+<hr />
+<pre> 1 /*
+ 2  * Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+ 3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ 4  *
+ 5  * This code is free software; you can redistribute it and/or modify it
+ 6  * under the terms of the GNU General Public License version 2 only, as
+ 7  * published by the Free Software Foundation.
+ 8  *
+ 9  * This code is distributed in the hope that it will be useful, but WITHOUT
+10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+12  * version 2 for more details (a copy is included in the LICENSE file that
+13  * accompanied this code).
+14  *
+15  * You should have received a copy of the GNU General Public License version
+16  * 2 along with this work; if not, write to the Free Software Foundation,
+17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+18  *
+19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+20  * or visit www.oracle.com if you need additional information or have any
+21  * questions.
+22  *
+23  */
+24 
+<a name="1" id="anc1"></a><span class="line-added">25 #include &quot;precompiled.hpp&quot;</span>
+26 #include &quot;memory/allocation.hpp&quot;
+27 #include &quot;memory/allocation.inline.hpp&quot;
+28 #include &quot;runtime/os.inline.hpp&quot;
+29 #include &quot;vm_version_ext_aarch64.hpp&quot;
+30 
+31 // VM_Version_Ext statics
+32 int VM_Version_Ext::_no_of_threads = 0;
+33 int VM_Version_Ext::_no_of_cores = 0;
+34 int VM_Version_Ext::_no_of_sockets = 0;
+35 bool VM_Version_Ext::_initialized = false;
+36 char VM_Version_Ext::_cpu_name[CPU_TYPE_DESC_BUF_SIZE] = {0};
+37 char VM_Version_Ext::_cpu_desc[CPU_DETAILED_DESC_BUF_SIZE] = {0};
+38 
+39 void VM_Version_Ext::initialize_cpu_information(void) {
+40   // do nothing if cpu info has been initialized
+41   if (_initialized) {
+42     return;
+43   }
+44 
+45   int core_id = -1;
+46   int chip_id = -1;
+47   int len = 0;
+48   char* src_string = NULL;
+49 
+50   _no_of_cores  = os::processor_count();
+51   _no_of_threads = _no_of_cores;
+52   _no_of_sockets = _no_of_cores;
+53   snprintf(_cpu_name, CPU_TYPE_DESC_BUF_SIZE - 1, &quot;AArch64&quot;);
+54   snprintf(_cpu_desc, CPU_DETAILED_DESC_BUF_SIZE, &quot;AArch64 %s&quot;, _features_string);
+55   _initialized = true;
+56 }
+57 
+58 int VM_Version_Ext::number_of_threads(void) {
+59   initialize_cpu_information();
+60   return _no_of_threads;
+61 }
+62 
+63 int VM_Version_Ext::number_of_cores(void) {
+64   initialize_cpu_information();
+65   return _no_of_cores;
+66 }
+67 
+68 int VM_Version_Ext::number_of_sockets(void) {
+69   initialize_cpu_information();
+70   return _no_of_sockets;
+71 }
+72 
+73 const char* VM_Version_Ext::cpu_name(void) {
+74   initialize_cpu_information();
+75   char* tmp = NEW_C_HEAP_ARRAY_RETURN_NULL(char, CPU_TYPE_DESC_BUF_SIZE, mtTracing);
+76   if (NULL == tmp) {
+77     return NULL;
+78   }
+79   strncpy(tmp, _cpu_name, CPU_TYPE_DESC_BUF_SIZE);
+80   return tmp;
+81 }
+82 
+83 const char* VM_Version_Ext::cpu_description(void) {
+84   initialize_cpu_information();
+85   char* tmp = NEW_C_HEAP_ARRAY_RETURN_NULL(char, CPU_DETAILED_DESC_BUF_SIZE, mtTracing);
+86   if (NULL == tmp) {
+87     return NULL;
+88   }
+89   strncpy(tmp, _cpu_desc, CPU_DETAILED_DESC_BUF_SIZE);
+90   return tmp;
+91 }
+<a name="2" id="anc2"></a><b style="font-size: large; color: red">--- EOF ---</b>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<input id="eof" value="2" type="hidden" />
+</body>
+</html>

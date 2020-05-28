@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\assembler_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="assembler_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_Defs_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\assembler_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 182 
+ 183     u = val &lt;&lt; (31 - hi);
+ 184     n = n &gt;&gt; (31 - hi + lo);
+ 185     return n;
+ 186   }
+ 187 
+ 188   static inline uint32_t extract(uint32_t val, int msb, int lsb) {
+ 189     int nbits = msb - lsb + 1;
+ 190     assert_cond(msb &gt;= lsb);
+ 191     uint32_t mask = (1U &lt;&lt; nbits) - 1;
+ 192     uint32_t result = val &gt;&gt; lsb;
+ 193     result &amp;= mask;
+ 194     return result;
+ 195   }
+ 196 
+ 197   static inline int32_t sextract(uint32_t val, int msb, int lsb) {
+ 198     uint32_t uval = extract(val, msb, lsb);
+ 199     return extend(uval, msb - lsb);
+ 200   }
+ 201 
+<span class="line-modified"> 202   static void patch(address a, int msb, int lsb, unsigned long val) {</span>
+ 203     int nbits = msb - lsb + 1;
+ 204     guarantee(val &lt; (1U &lt;&lt; nbits), &quot;Field too big for insn&quot;);
+ 205     assert_cond(msb &gt;= lsb);
+ 206     unsigned mask = (1U &lt;&lt; nbits) - 1;
+ 207     val &lt;&lt;= lsb;
+ 208     mask &lt;&lt;= lsb;
+ 209     unsigned target = *(unsigned *)a;
+ 210     target &amp;= ~mask;
+ 211     target |= val;
+ 212     *(unsigned *)a = target;
+ 213   }
+ 214 
+<span class="line-modified"> 215   static void spatch(address a, int msb, int lsb, long val) {</span>
+ 216     int nbits = msb - lsb + 1;
+<span class="line-modified"> 217     long chk = val &gt;&gt; (nbits - 1);</span>
+ 218     guarantee (chk == -1 || chk == 0, &quot;Field too big for insn&quot;);
+ 219     unsigned uval = val;
+ 220     unsigned mask = (1U &lt;&lt; nbits) - 1;
+ 221     uval &amp;= mask;
+ 222     uval &lt;&lt;= lsb;
+ 223     mask &lt;&lt;= lsb;
+ 224     unsigned target = *(unsigned *)a;
+ 225     target &amp;= ~mask;
+ 226     target |= uval;
+ 227     *(unsigned *)a = target;
+ 228   }
+ 229 
+ 230   void f(unsigned val, int msb, int lsb) {
+ 231     int nbits = msb - lsb + 1;
+ 232     guarantee(val &lt; (1U &lt;&lt; nbits), &quot;Field too big for insn&quot;);
+ 233     assert_cond(msb &gt;= lsb);
+ 234     unsigned mask = (1U &lt;&lt; nbits) - 1;
+ 235     val &lt;&lt;= lsb;
+ 236     mask &lt;&lt;= lsb;
+ 237     insn |= val;
+ 238     assert_cond((bits &amp; mask) == 0);
+ 239 #ifdef ASSERT
+ 240     bits |= mask;
+ 241 #endif
+ 242   }
+ 243 
+ 244   void f(unsigned val, int bit) {
+ 245     f(val, bit, bit);
+ 246   }
+ 247 
+<span class="line-modified"> 248   void sf(long val, int msb, int lsb) {</span>
+ 249     int nbits = msb - lsb + 1;
+<span class="line-modified"> 250     long chk = val &gt;&gt; (nbits - 1);</span>
+ 251     guarantee (chk == -1 || chk == 0, &quot;Field too big for insn&quot;);
+ 252     unsigned uval = val;
+ 253     unsigned mask = (1U &lt;&lt; nbits) - 1;
+ 254     uval &amp;= mask;
+ 255     f(uval, lsb + nbits - 1, lsb);
+ 256   }
+ 257 
+ 258   void rf(Register r, int lsb) {
+ 259     f(r-&gt;encoding_nocheck(), lsb + 4, lsb);
+ 260   }
+ 261 
+ 262   // reg|ZR
+ 263   void zrf(Register r, int lsb) {
+ 264     f(r-&gt;encoding_nocheck() - (r == zr), lsb + 4, lsb);
+ 265   }
+ 266 
+ 267   // reg|SP
+ 268   void srf(Register r, int lsb) {
+ 269     f(r == sp ? 31 : r-&gt;encoding_nocheck(), lsb + 4, lsb);
+ 270   }
+</pre>
+<hr />
+<pre>
+ 340   class uxtw : public extend {
+ 341   public:
+ 342     uxtw(int shift = -1): extend(shift, 0b010, ext::uxtw) { }
+ 343   };
+ 344   class lsl : public extend {
+ 345   public:
+ 346     lsl(int shift = -1): extend(shift, 0b011, ext::uxtx) { }
+ 347   };
+ 348   class sxtw : public extend {
+ 349   public:
+ 350     sxtw(int shift = -1): extend(shift, 0b110, ext::sxtw) { }
+ 351   };
+ 352   class sxtx : public extend {
+ 353   public:
+ 354     sxtx(int shift = -1): extend(shift, 0b111, ext::sxtx) { }
+ 355   };
+ 356 
+ 357  private:
+ 358   Register _base;
+ 359   Register _index;
+<span class="line-modified"> 360   long _offset;</span>
+ 361   enum mode _mode;
+ 362   extend _ext;
+ 363 
+ 364   RelocationHolder _rspec;
+ 365 
+ 366   // Typically we use AddressLiterals we want to use their rval
+ 367   // However in some situations we want the lval (effect address) of
+ 368   // the item.  We provide a special factory for making those lvals.
+ 369   bool _is_lval;
+ 370 
+ 371   // If the target is far we&#39;ll need to load the ea of this to a
+ 372   // register to reach it. Otherwise if near we can do PC-relative
+ 373   // addressing.
+ 374   address          _target;
+ 375 
+ 376  public:
+ 377   Address()
+ 378     : _mode(no_mode) { }
+ 379   Address(Register r)
+ 380     : _base(r), _index(noreg), _offset(0), _mode(base_plus_offset), _target(0) { }
+ 381   Address(Register r, int o)
+ 382     : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+<span class="line-modified"> 383   Address(Register r, long o)</span>
+ 384     : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+<span class="line-modified"> 385   Address(Register r, unsigned long o)</span>
+ 386     : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+ 387 #ifdef ASSERT
+ 388   Address(Register r, ByteSize disp)
+ 389     : _base(r), _index(noreg), _offset(in_bytes(disp)), _mode(base_plus_offset), _target(0) { }
+ 390 #endif
+ 391   Address(Register r, Register r1, extend ext = lsl())
+ 392     : _base(r), _index(r1), _offset(0), _mode(base_plus_offset_reg),
+ 393       _ext(ext), _target(0) { }
+ 394   Address(Pre p)
+ 395     : _base(p.reg()), _offset(p.offset()), _mode(pre) { }
+ 396   Address(Post p)
+ 397     : _base(p.reg()),  _index(p.idx_reg()), _offset(p.offset()),
+ 398       _mode(p.is_postreg() ? post_reg : post), _target(0) { }
+ 399   Address(address target, RelocationHolder const&amp; rspec)
+ 400     : _mode(literal),
+ 401       _rspec(rspec),
+ 402       _is_lval(false),
+ 403       _target(target)  { }
+ 404   Address(address target, relocInfo::relocType rtype = relocInfo::external_word_type);
+ 405   Address(Register base, RegisterOrConstant index, extend ext = lsl())
+ 406     : _base (base),
+ 407       _offset(0), _ext(ext), _target(0) {
+ 408     if (index.is_register()) {
+ 409       _mode = base_plus_offset_reg;
+ 410       _index = index.as_register();
+ 411     } else {
+ 412       guarantee(ext.option() == ext::uxtx, &quot;should be&quot;);
+ 413       assert(index.is_constant(), &quot;should be&quot;);
+ 414       _mode = base_plus_offset;
+ 415       _offset = index.as_constant() &lt;&lt; ext.shift();
+ 416     }
+ 417   }
+ 418 
+ 419   Register base() const {
+<span class="line-modified"> 420     guarantee((_mode == base_plus_offset | _mode == base_plus_offset_reg</span>
+<span class="line-modified"> 421                | _mode == post | _mode == post_reg),</span>
+ 422               &quot;wrong mode&quot;);
+ 423     return _base;
+ 424   }
+<span class="line-modified"> 425   long offset() const {</span>
+ 426     return _offset;
+ 427   }
+ 428   Register index() const {
+ 429     return _index;
+ 430   }
+ 431   mode getMode() const {
+ 432     return _mode;
+ 433   }
+ 434   bool uses(Register reg) const { return _base == reg || _index == reg; }
+ 435   address target() const { return _target; }
+ 436   const RelocationHolder&amp; rspec() const { return _rspec; }
+ 437 
+ 438   void encode(Instruction_aarch64 *i) const {
+ 439     i-&gt;f(0b111, 29, 27);
+ 440     i-&gt;srf(_base, 5);
+ 441 
+ 442     switch(_mode) {
+ 443     case base_plus_offset:
+ 444       {
+ 445         unsigned size = i-&gt;get(31, 30);
+</pre>
+<hr />
+<pre>
+ 537     size = 4 &lt;&lt; size;
+ 538     guarantee(_offset % size == 0, &quot;bad offset&quot;);
+ 539     i-&gt;sf(_offset / size, 21, 15);
+ 540     i-&gt;srf(_base, 5);
+ 541   }
+ 542 
+ 543   void encode_nontemporal_pair(Instruction_aarch64 *i) const {
+ 544     // Only base + offset is allowed
+ 545     i-&gt;f(0b000, 25, 23);
+ 546     unsigned size = i-&gt;get(31, 31);
+ 547     size = 4 &lt;&lt; size;
+ 548     guarantee(_offset % size == 0, &quot;bad offset&quot;);
+ 549     i-&gt;sf(_offset / size, 21, 15);
+ 550     i-&gt;srf(_base, 5);
+ 551     guarantee(_mode == Address::base_plus_offset,
+ 552               &quot;Bad addressing mode for non-temporal op&quot;);
+ 553   }
+ 554 
+ 555   void lea(MacroAssembler *, Register) const;
+ 556 
+<span class="line-modified"> 557   static bool offset_ok_for_immed(long offset, int shift) {</span>
+ 558     unsigned mask = (1 &lt;&lt; shift) - 1;
+ 559     if (offset &lt; 0 || offset &amp; mask) {
+ 560       return (uabs(offset) &lt; (1 &lt;&lt; (20 - 12))); // Unscaled offset
+ 561     } else {
+ 562       return ((offset &gt;&gt; shift) &lt; (1 &lt;&lt; (21 - 10 + 1))); // Scaled, unsigned offset
+ 563     }
+ 564   }
+ 565 };
+ 566 
+ 567 // Convience classes
+ 568 class RuntimeAddress: public Address {
+ 569 
+ 570   public:
+ 571 
+ 572   RuntimeAddress(address target) : Address(target, relocInfo::runtime_call_type) {}
+ 573 
+ 574 };
+ 575 
+ 576 class OopAddress: public Address {
+ 577 
+</pre>
+<hr />
+<pre>
+ 599 
+ 600 class InternalAddress: public Address {
+ 601 
+ 602   public:
+ 603 
+ 604   InternalAddress(address target) : Address(target, relocInfo::internal_word_type) {}
+ 605 };
+ 606 
+ 607 const int FPUStateSizeInWords = FloatRegisterImpl::number_of_registers *
+ 608                                 FloatRegisterImpl::save_slots_per_register;
+ 609 
+ 610 typedef enum {
+ 611   PLDL1KEEP = 0b00000, PLDL1STRM, PLDL2KEEP, PLDL2STRM, PLDL3KEEP, PLDL3STRM,
+ 612   PSTL1KEEP = 0b10000, PSTL1STRM, PSTL2KEEP, PSTL2STRM, PSTL3KEEP, PSTL3STRM,
+ 613   PLIL1KEEP = 0b01000, PLIL1STRM, PLIL2KEEP, PLIL2STRM, PLIL3KEEP, PLIL3STRM
+ 614 } prfop;
+ 615 
+ 616 class Assembler : public AbstractAssembler {
+ 617 
+ 618 #ifndef PRODUCT
+<span class="line-modified"> 619   static const unsigned long asm_bp;</span>
+ 620 
+ 621   void emit_long(jint x) {
+<span class="line-modified"> 622     if ((unsigned long)pc() == asm_bp)</span>
+
+
+
+ 623       asm volatile (&quot;nop&quot;);
+
+
+ 624     AbstractAssembler::emit_int32(x);
+ 625   }
+ 626 #else
+ 627   void emit_long(jint x) {
+ 628     AbstractAssembler::emit_int32(x);
+ 629   }
+ 630 #endif
+ 631 
+ 632 public:
+ 633 
+ 634   enum { instruction_size = 4 };
+ 635 
+ 636   //---&lt;  calculate length of instruction  &gt;---
+ 637   // We just use the values set above.
+ 638   // instruction must start at passed address
+ 639   static unsigned int instr_len(unsigned char *instr) { return instruction_size; }
+ 640 
+ 641   //---&lt;  longest instructions  &gt;---
+ 642   static unsigned int instr_maxlen() { return instruction_size; }
+ 643 
+ 644   Address adjust(Register base, int offset, bool preIncrement) {
+ 645     if (preIncrement)
+ 646       return Address(Pre(base, offset));
+ 647     else
+ 648       return Address(Post(base, offset));
+ 649   }
+ 650 
+ 651   Address pre(Register base, int offset) {
+ 652     return adjust(base, offset, true);
+ 653   }
+ 654 
+ 655   Address post(Register base, int offset) {
+ 656     return adjust(base, offset, false);
+ 657   }
+ 658 
+ 659   Address post(Register base, Register idx) {
+ 660     return Address(Post(base, idx));
+ 661   }
+ 662 
+
+
+ 663   Instruction_aarch64* current;
+ 664 
+ 665   void set_current(Instruction_aarch64* i) { current = i; }
+ 666 
+ 667   void f(unsigned val, int msb, int lsb) {
+ 668     current-&gt;f(val, msb, lsb);
+ 669   }
+ 670   void f(unsigned val, int msb) {
+ 671     current-&gt;f(val, msb, msb);
+ 672   }
+<span class="line-modified"> 673   void sf(long val, int msb, int lsb) {</span>
+ 674     current-&gt;sf(val, msb, lsb);
+ 675   }
+ 676   void rf(Register reg, int lsb) {
+ 677     current-&gt;rf(reg, lsb);
+ 678   }
+ 679   void srf(Register reg, int lsb) {
+ 680     current-&gt;srf(reg, lsb);
+ 681   }
+ 682   void zrf(Register reg, int lsb) {
+ 683     current-&gt;zrf(reg, lsb);
+ 684   }
+ 685   void rf(FloatRegister reg, int lsb) {
+ 686     current-&gt;rf(reg, lsb);
+ 687   }
+ 688   void fixed(unsigned value, unsigned mask) {
+ 689     current-&gt;fixed(value, mask);
+ 690   }
+ 691 
+ 692   void emit() {
+ 693     emit_long(current-&gt;get_insn());
+</pre>
+<hr />
+<pre>
+ 702 
+ 703   void wrap_label(Label &amp;L, uncond_branch_insn insn);
+ 704   void wrap_label(Register r, Label &amp;L, compare_and_branch_insn insn);
+ 705   void wrap_label(Register r, int bitpos, Label &amp;L, test_and_branch_insn insn);
+ 706   void wrap_label(Label &amp;L, prfop, prefetch_insn insn);
+ 707 
+ 708   // PC-rel. addressing
+ 709 
+ 710   void adr(Register Rd, address dest);
+ 711   void _adrp(Register Rd, address dest);
+ 712 
+ 713   void adr(Register Rd, const Address &amp;dest);
+ 714   void _adrp(Register Rd, const Address &amp;dest);
+ 715 
+ 716   void adr(Register Rd, Label &amp;L) {
+ 717     wrap_label(Rd, L, &amp;Assembler::Assembler::adr);
+ 718   }
+ 719   void _adrp(Register Rd, Label &amp;L) {
+ 720     wrap_label(Rd, L, &amp;Assembler::_adrp);
+ 721   }
+<span class="line-modified"> 722 </span>
+<span class="line-removed"> 723   void adrp(Register Rd, const Address &amp;dest, unsigned long &amp;offset);</span>
+ 724 
+ 725 #undef INSN
+ 726 
+ 727   void add_sub_immediate(Register Rd, Register Rn, unsigned uimm, int op,
+ 728                          int negated_op);
+ 729 
+ 730   // Add/subtract (immediate)
+ 731 #define INSN(NAME, decode, negated)                                     \
+ 732   void NAME(Register Rd, Register Rn, unsigned imm, unsigned shift) {   \
+ 733     starti;                                                             \
+ 734     f(decode, 31, 29), f(0b10001, 28, 24), f(shift, 23, 22), f(imm, 21, 10); \
+ 735     zrf(Rd, 0), srf(Rn, 5);                                             \
+ 736   }                                                                     \
+ 737                                                                         \
+ 738   void NAME(Register Rd, Register Rn, unsigned imm) {                   \
+ 739     starti;                                                             \
+ 740     add_sub_immediate(Rd, Rn, imm, decode, negated);                    \
+ 741   }
+ 742 
+ 743   INSN(addsw, 0b001, 0b011);
+</pre>
+<hr />
+<pre>
+ 829 #undef INSN
+ 830 
+ 831   // Extract
+ 832 #define INSN(NAME, opcode, size)                                        \
+ 833   void NAME(Register Rd, Register Rn, Register Rm, unsigned imms) {     \
+ 834     starti;                                                             \
+ 835     guarantee(size == 1 || imms &lt; 32, &quot;incorrect imms&quot;);                \
+ 836     f(opcode, 31, 21), f(imms, 15, 10);                                 \
+ 837     zrf(Rm, 16), zrf(Rn, 5), zrf(Rd, 0);                                \
+ 838   }
+ 839 
+ 840   INSN(extrw, 0b00010011100, 0);
+ 841   INSN(extr,  0b10010011110, 1);
+ 842 
+ 843 #undef INSN
+ 844 
+ 845   // The maximum range of a branch is fixed for the AArch64
+ 846   // architecture.  In debug mode we shrink it in order to test
+ 847   // trampolines, but not so small that branches in the interpreter
+ 848   // are out of range.
+<span class="line-modified"> 849   static const unsigned long branch_range = NOT_DEBUG(128 * M) DEBUG_ONLY(2 * M);</span>
+ 850 
+ 851   static bool reachable_from_branch_at(address branch, address target) {
+ 852     return uabs(target - branch) &lt; branch_range;
+ 853   }
+ 854 
+ 855   // Unconditional branch (immediate)
+ 856 #define INSN(NAME, opcode)                                              \
+ 857   void NAME(address dest) {                                             \
+ 858     starti;                                                             \
+<span class="line-modified"> 859     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+ 860     DEBUG_ONLY(assert(reachable_from_branch_at(pc(), dest), &quot;debug only&quot;)); \
+ 861     f(opcode, 31), f(0b00101, 30, 26), sf(offset, 25, 0);               \
+ 862   }                                                                     \
+ 863   void NAME(Label &amp;L) {                                                 \
+ 864     wrap_label(L, &amp;Assembler::NAME);                                    \
+ 865   }                                                                     \
+ 866   void NAME(const Address &amp;dest);
+ 867 
+ 868   INSN(b, 0);
+ 869   INSN(bl, 1);
+ 870 
+ 871 #undef INSN
+ 872 
+ 873   // Compare &amp; branch (immediate)
+ 874 #define INSN(NAME, opcode)                              \
+ 875   void NAME(Register Rt, address dest) {                \
+<span class="line-modified"> 876     long offset = (dest - pc()) &gt;&gt; 2;                   \</span>
+ 877     starti;                                             \
+ 878     f(opcode, 31, 24), sf(offset, 23, 5), rf(Rt, 0);    \
+ 879   }                                                     \
+ 880   void NAME(Register Rt, Label &amp;L) {                    \
+ 881     wrap_label(Rt, L, &amp;Assembler::NAME);                \
+ 882   }
+ 883 
+ 884   INSN(cbzw,  0b00110100);
+ 885   INSN(cbnzw, 0b00110101);
+ 886   INSN(cbz,   0b10110100);
+ 887   INSN(cbnz,  0b10110101);
+ 888 
+ 889 #undef INSN
+ 890 
+ 891   // Test &amp; branch (immediate)
+ 892 #define INSN(NAME, opcode)                                              \
+ 893   void NAME(Register Rt, int bitpos, address dest) {                    \
+<span class="line-modified"> 894     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+ 895     int b5 = bitpos &gt;&gt; 5;                                               \
+ 896     bitpos &amp;= 0x1f;                                                     \
+ 897     starti;                                                             \
+ 898     f(b5, 31), f(opcode, 30, 24), f(bitpos, 23, 19), sf(offset, 18, 5); \
+ 899     rf(Rt, 0);                                                          \
+ 900   }                                                                     \
+ 901   void NAME(Register Rt, int bitpos, Label &amp;L) {                        \
+ 902     wrap_label(Rt, bitpos, L, &amp;Assembler::NAME);                        \
+ 903   }
+ 904 
+ 905   INSN(tbz,  0b0110110);
+ 906   INSN(tbnz, 0b0110111);
+ 907 
+ 908 #undef INSN
+ 909 
+ 910   // Conditional branch (immediate)
+ 911   enum Condition
+ 912     {EQ, NE, HS, CS=HS, LO, CC=LO, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL, NV};
+ 913 
+ 914   void br(Condition  cond, address dest) {
+<span class="line-modified"> 915     long offset = (dest - pc()) &gt;&gt; 2;</span>
+ 916     starti;
+ 917     f(0b0101010, 31, 25), f(0, 24), sf(offset, 23, 5), f(0, 4), f(cond, 3, 0);
+ 918   }
+ 919 
+ 920 #define INSN(NAME, cond)                        \
+ 921   void NAME(address dest) {                     \
+ 922     br(cond, dest);                             \
+ 923   }
+ 924 
+ 925   INSN(beq, EQ);
+ 926   INSN(bne, NE);
+ 927   INSN(bhs, HS);
+ 928   INSN(bcs, CS);
+ 929   INSN(blo, LO);
+ 930   INSN(bcc, CC);
+ 931   INSN(bmi, MI);
+ 932   INSN(bpl, PL);
+ 933   INSN(bvs, VS);
+ 934   INSN(bvc, VC);
+ 935   INSN(bhi, HI);
+</pre>
+<hr />
+<pre>
+1275   void NAME_L(operand_size sz, Register Rs, Register Rt, Register Rn) { \
+1276     lse_atomic(Rs, Rt, Rn, sz, op1, op2, false, true);                  \
+1277   }                                                                     \
+1278   void NAME_AL(operand_size sz, Register Rs, Register Rt, Register Rn) {\
+1279     lse_atomic(Rs, Rt, Rn, sz, op1, op2, true, true);                   \
+1280   }
+1281   INSN(ldadd,  ldadda,  ldaddl,  ldaddal,  0, 0b000);
+1282   INSN(ldbic,  ldbica,  ldbicl,  ldbical,  0, 0b001);
+1283   INSN(ldeor,  ldeora,  ldeorl,  ldeoral,  0, 0b010);
+1284   INSN(ldorr,  ldorra,  ldorrl,  ldorral,  0, 0b011);
+1285   INSN(ldsmax, ldsmaxa, ldsmaxl, ldsmaxal, 0, 0b100);
+1286   INSN(ldsmin, ldsmina, ldsminl, ldsminal, 0, 0b101);
+1287   INSN(ldumax, ldumaxa, ldumaxl, ldumaxal, 0, 0b110);
+1288   INSN(ldumin, ldumina, lduminl, lduminal, 0, 0b111);
+1289   INSN(swp,    swpa,    swpl,    swpal,    1, 0b000);
+1290 #undef INSN
+1291 
+1292   // Load register (literal)
+1293 #define INSN(NAME, opc, V)                                              \
+1294   void NAME(Register Rt, address dest) {                                \
+<span class="line-modified">1295     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+1296     starti;                                                             \
+1297     f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+1298       sf(offset, 23, 5);                                                \
+1299     rf(Rt, 0);                                                          \
+1300   }                                                                     \
+1301   void NAME(Register Rt, address dest, relocInfo::relocType rtype) {    \
+1302     InstructionMark im(this);                                           \
+1303     guarantee(rtype == relocInfo::internal_word_type,                   \
+1304               &quot;only internal_word_type relocs make sense here&quot;);        \
+1305     code_section()-&gt;relocate(inst_mark(), InternalAddress(dest).rspec()); \
+1306     NAME(Rt, dest);                                                     \
+1307   }                                                                     \
+1308   void NAME(Register Rt, Label &amp;L) {                                    \
+1309     wrap_label(Rt, L, &amp;Assembler::NAME);                                \
+1310   }
+1311 
+1312   INSN(ldrw, 0b00, 0);
+1313   INSN(ldr, 0b01, 0);
+1314   INSN(ldrsw, 0b10, 0);
+1315 
+1316 #undef INSN
+1317 
+1318 #define INSN(NAME, opc, V)                                              \
+1319   void NAME(FloatRegister Rt, address dest) {                           \
+<span class="line-modified">1320     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+1321     starti;                                                             \
+1322     f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+1323       sf(offset, 23, 5);                                                \
+1324     rf((Register)Rt, 0);                                                \
+1325   }
+1326 
+1327   INSN(ldrs, 0b00, 1);
+1328   INSN(ldrd, 0b01, 1);
+1329   INSN(ldrq, 0b10, 1);
+1330 
+1331 #undef INSN
+1332 
+1333 #define INSN(NAME, opc, V)                                              \
+1334   void NAME(address dest, prfop op = PLDL1KEEP) {                       \
+<span class="line-modified">1335     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+1336     starti;                                                             \
+1337     f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+1338       sf(offset, 23, 5);                                                \
+1339     f(op, 4, 0);                                                        \
+1340   }                                                                     \
+1341   void NAME(Label &amp;L, prfop op = PLDL1KEEP) {                           \
+1342     wrap_label(L, op, &amp;Assembler::NAME);                                \
+1343   }
+1344 
+1345   INSN(prfm, 0b11, 0);
+1346 
+1347 #undef INSN
+1348 
+1349   // Load/store
+1350   void ld_st1(int opc, int p1, int V, int L,
+1351               Register Rt1, Register Rt2, Address adr, bool no_allocate) {
+1352     starti;
+1353     f(opc, 31, 30), f(p1, 29, 27), f(V, 26), f(L, 22);
+1354     zrf(Rt2, 10), zrf(Rt1, 0);
+1355     if (no_allocate) {
+</pre>
+<hr />
+<pre>
+1391   INSN(stpq, 0b10, 0b101, 1, 0, false);
+1392   INSN(ldpq, 0b10, 0b101, 1, 1, false);
+1393 
+1394 #undef INSN
+1395 
+1396   // Load/store register (all modes)
+1397   void ld_st2(Register Rt, const Address &amp;adr, int size, int op, int V = 0) {
+1398     starti;
+1399 
+1400     f(V, 26); // general reg?
+1401     zrf(Rt, 0);
+1402 
+1403     // Encoding for literal loads is done here (rather than pushed
+1404     // down into Address::encode) because the encoding of this
+1405     // instruction is too different from all of the other forms to
+1406     // make it worth sharing.
+1407     if (adr.getMode() == Address::literal) {
+1408       assert(size == 0b10 || size == 0b11, &quot;bad operand size in ldr&quot;);
+1409       assert(op == 0b01, &quot;literal form can only be used with loads&quot;);
+1410       f(size &amp; 0b01, 31, 30), f(0b011, 29, 27), f(0b00, 25, 24);
+<span class="line-modified">1411       long offset = (adr.target() - pc()) &gt;&gt; 2;</span>
+1412       sf(offset, 23, 5);
+1413       code_section()-&gt;relocate(pc(), adr.rspec());
+1414       return;
+1415     }
+1416 
+1417     f(size, 31, 30);
+1418     f(op, 23, 22); // str
+1419     adr.encode(current);
+1420   }
+1421 
+1422 #define INSN(NAME, size, op)                            \
+1423   void NAME(Register Rt, const Address &amp;adr) {          \
+1424     ld_st2(Rt, adr, size, op);                          \
+1425   }                                                     \
+1426 
+1427   INSN(str, 0b11, 0b00);
+1428   INSN(strw, 0b10, 0b00);
+1429   INSN(strb, 0b00, 0b00);
+1430   INSN(strh, 0b01, 0b00);
+1431 
+</pre>
+<hr />
+<pre>
+1512                                                                         \
+1513   /* These instructions have no immediate form. Provide an overload so  \
+1514      that if anyone does try to use an immediate operand -- this has    \
+1515      happened! -- we&#39;ll get a compile-time error. */                    \
+1516   void NAME(Register Rd, Register Rn, unsigned imm,                     \
+1517             enum shift_kind kind = LSL, unsigned shift = 0) {           \
+1518     assert(false, &quot; can&#39;t be used with immediate operand&quot;);             \
+1519   }
+1520 
+1521   INSN(bic, 1, 0b00, 1);
+1522   INSN(orn, 1, 0b01, 1);
+1523   INSN(eon, 1, 0b10, 1);
+1524   INSN(bics, 1, 0b11, 1);
+1525   INSN(bicw, 0, 0b00, 1);
+1526   INSN(ornw, 0, 0b01, 1);
+1527   INSN(eonw, 0, 0b10, 1);
+1528   INSN(bicsw, 0, 0b11, 1);
+1529 
+1530 #undef INSN
+1531 
+
+1532   // Aliases for short forms of orn
+1533 void mvn(Register Rd, Register Rm,
+1534             enum shift_kind kind = LSL, unsigned shift = 0) {
+1535   orn(Rd, zr, Rm, kind, shift);
+1536 }
+
+1537 
+1538 void mvnw(Register Rd, Register Rm,
+1539             enum shift_kind kind = LSL, unsigned shift = 0) {
+1540   ornw(Rd, zr, Rm, kind, shift);
+1541 }
+1542 
+1543   // Add/subtract (shifted register)
+1544 #define INSN(NAME, size, op)                            \
+1545   void NAME(Register Rd, Register Rn, Register Rm,      \
+1546             enum shift_kind kind, unsigned shift = 0) { \
+1547     starti;                                             \
+1548     f(0, 21);                                           \
+1549     assert_cond(kind != ROR);                           \
+1550     guarantee(size == 1 || shift &lt; 32, &quot;incorrect shift&quot;);\
+1551     zrf(Rd, 0), zrf(Rn, 5), zrf(Rm, 16);                \
+1552     op_shifted_reg(0b01011, kind, shift, size, op);     \
+1553   }
+1554 
+1555   INSN(add, 1, 0b000);
+1556   INSN(sub, 1, 0b10);
+</pre>
+<hr />
+<pre>
+2662     assert((T == T8B &amp;&amp; index &lt;= 0b0111) || (T == T16B &amp;&amp; index &lt;= 0b1111), &quot;Invalid index value&quot;);
+2663     f(0, 31), f((int)T &amp; 1, 30), f(0b101110000, 29, 21);
+2664     rf(Vm, 16), f(0, 15), f(index, 14, 11);
+2665     f(0, 10), rf(Vn, 5), rf(Vd, 0);
+2666   }
+2667 
+2668   Assembler(CodeBuffer* code) : AbstractAssembler(code) {
+2669   }
+2670 
+2671   virtual RegisterOrConstant delayed_value_impl(intptr_t* delayed_value_addr,
+2672                                                 Register tmp,
+2673                                                 int offset) {
+2674     ShouldNotCallThis();
+2675     return RegisterOrConstant();
+2676   }
+2677 
+2678   // Stack overflow checking
+2679   virtual void bang_stack_with_offset(int offset);
+2680 
+2681   static bool operand_valid_for_logical_immediate(bool is32, uint64_t imm);
+<span class="line-modified">2682   static bool operand_valid_for_add_sub_immediate(long imm);</span>
+2683   static bool operand_valid_for_float_immediate(double imm);
+2684 
+2685   void emit_data64(jlong data, relocInfo::relocType rtype, int format = 0);
+2686   void emit_data64(jlong data, RelocationHolder const&amp; rspec, int format = 0);
+2687 };
+2688 
+2689 inline Assembler::Membar_mask_bits operator|(Assembler::Membar_mask_bits a,
+2690                                              Assembler::Membar_mask_bits b) {
+2691   return Assembler::Membar_mask_bits(unsigned(a)|unsigned(b));
+2692 }
+2693 
+2694 Instruction_aarch64::~Instruction_aarch64() {
+2695   assem-&gt;emit();
+2696 }
+2697 
+2698 #undef starti
+2699 
+2700 // Invert a condition
+2701 inline const Assembler::Condition operator~(const Assembler::Condition cond) {
+2702   return Assembler::Condition(int(cond) ^ 1);
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 182 
+ 183     u = val &lt;&lt; (31 - hi);
+ 184     n = n &gt;&gt; (31 - hi + lo);
+ 185     return n;
+ 186   }
+ 187 
+ 188   static inline uint32_t extract(uint32_t val, int msb, int lsb) {
+ 189     int nbits = msb - lsb + 1;
+ 190     assert_cond(msb &gt;= lsb);
+ 191     uint32_t mask = (1U &lt;&lt; nbits) - 1;
+ 192     uint32_t result = val &gt;&gt; lsb;
+ 193     result &amp;= mask;
+ 194     return result;
+ 195   }
+ 196 
+ 197   static inline int32_t sextract(uint32_t val, int msb, int lsb) {
+ 198     uint32_t uval = extract(val, msb, lsb);
+ 199     return extend(uval, msb - lsb);
+ 200   }
+ 201 
+<span class="line-modified"> 202   static void patch(address a, int msb, int lsb, uint64_t val) {</span>
+ 203     int nbits = msb - lsb + 1;
+ 204     guarantee(val &lt; (1U &lt;&lt; nbits), &quot;Field too big for insn&quot;);
+ 205     assert_cond(msb &gt;= lsb);
+ 206     unsigned mask = (1U &lt;&lt; nbits) - 1;
+ 207     val &lt;&lt;= lsb;
+ 208     mask &lt;&lt;= lsb;
+ 209     unsigned target = *(unsigned *)a;
+ 210     target &amp;= ~mask;
+ 211     target |= val;
+ 212     *(unsigned *)a = target;
+ 213   }
+ 214 
+<span class="line-modified"> 215   static void spatch(address a, int msb, int lsb, int64_t val) {</span>
+ 216     int nbits = msb - lsb + 1;
+<span class="line-modified"> 217     int64_t chk = val &gt;&gt; (nbits - 1);</span>
+ 218     guarantee (chk == -1 || chk == 0, &quot;Field too big for insn&quot;);
+ 219     unsigned uval = val;
+ 220     unsigned mask = (1U &lt;&lt; nbits) - 1;
+ 221     uval &amp;= mask;
+ 222     uval &lt;&lt;= lsb;
+ 223     mask &lt;&lt;= lsb;
+ 224     unsigned target = *(unsigned *)a;
+ 225     target &amp;= ~mask;
+ 226     target |= uval;
+ 227     *(unsigned *)a = target;
+ 228   }
+ 229 
+ 230   void f(unsigned val, int msb, int lsb) {
+ 231     int nbits = msb - lsb + 1;
+ 232     guarantee(val &lt; (1U &lt;&lt; nbits), &quot;Field too big for insn&quot;);
+ 233     assert_cond(msb &gt;= lsb);
+ 234     unsigned mask = (1U &lt;&lt; nbits) - 1;
+ 235     val &lt;&lt;= lsb;
+ 236     mask &lt;&lt;= lsb;
+ 237     insn |= val;
+ 238     assert_cond((bits &amp; mask) == 0);
+ 239 #ifdef ASSERT
+ 240     bits |= mask;
+ 241 #endif
+ 242   }
+ 243 
+ 244   void f(unsigned val, int bit) {
+ 245     f(val, bit, bit);
+ 246   }
+ 247 
+<span class="line-modified"> 248   void sf(int64_t val, int msb, int lsb) {</span>
+ 249     int nbits = msb - lsb + 1;
+<span class="line-modified"> 250     int64_t chk = val &gt;&gt; (nbits - 1);</span>
+ 251     guarantee (chk == -1 || chk == 0, &quot;Field too big for insn&quot;);
+ 252     unsigned uval = val;
+ 253     unsigned mask = (1U &lt;&lt; nbits) - 1;
+ 254     uval &amp;= mask;
+ 255     f(uval, lsb + nbits - 1, lsb);
+ 256   }
+ 257 
+ 258   void rf(Register r, int lsb) {
+ 259     f(r-&gt;encoding_nocheck(), lsb + 4, lsb);
+ 260   }
+ 261 
+ 262   // reg|ZR
+ 263   void zrf(Register r, int lsb) {
+ 264     f(r-&gt;encoding_nocheck() - (r == zr), lsb + 4, lsb);
+ 265   }
+ 266 
+ 267   // reg|SP
+ 268   void srf(Register r, int lsb) {
+ 269     f(r == sp ? 31 : r-&gt;encoding_nocheck(), lsb + 4, lsb);
+ 270   }
+</pre>
+<hr />
+<pre>
+ 340   class uxtw : public extend {
+ 341   public:
+ 342     uxtw(int shift = -1): extend(shift, 0b010, ext::uxtw) { }
+ 343   };
+ 344   class lsl : public extend {
+ 345   public:
+ 346     lsl(int shift = -1): extend(shift, 0b011, ext::uxtx) { }
+ 347   };
+ 348   class sxtw : public extend {
+ 349   public:
+ 350     sxtw(int shift = -1): extend(shift, 0b110, ext::sxtw) { }
+ 351   };
+ 352   class sxtx : public extend {
+ 353   public:
+ 354     sxtx(int shift = -1): extend(shift, 0b111, ext::sxtx) { }
+ 355   };
+ 356 
+ 357  private:
+ 358   Register _base;
+ 359   Register _index;
+<span class="line-modified"> 360   int64_t _offset;</span>
+ 361   enum mode _mode;
+ 362   extend _ext;
+ 363 
+ 364   RelocationHolder _rspec;
+ 365 
+ 366   // Typically we use AddressLiterals we want to use their rval
+ 367   // However in some situations we want the lval (effect address) of
+ 368   // the item.  We provide a special factory for making those lvals.
+ 369   bool _is_lval;
+ 370 
+ 371   // If the target is far we&#39;ll need to load the ea of this to a
+ 372   // register to reach it. Otherwise if near we can do PC-relative
+ 373   // addressing.
+ 374   address          _target;
+ 375 
+ 376  public:
+ 377   Address()
+ 378     : _mode(no_mode) { }
+ 379   Address(Register r)
+ 380     : _base(r), _index(noreg), _offset(0), _mode(base_plus_offset), _target(0) { }
+ 381   Address(Register r, int o)
+ 382     : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+<span class="line-modified"> 383   Address(Register r, int64_t o)</span>
+ 384     : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+<span class="line-modified"> 385   Address(Register r, uint64_t o)</span>
+ 386     : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+ 387 #ifdef ASSERT
+ 388   Address(Register r, ByteSize disp)
+ 389     : _base(r), _index(noreg), _offset(in_bytes(disp)), _mode(base_plus_offset), _target(0) { }
+ 390 #endif
+ 391   Address(Register r, Register r1, extend ext = lsl())
+ 392     : _base(r), _index(r1), _offset(0), _mode(base_plus_offset_reg),
+ 393       _ext(ext), _target(0) { }
+ 394   Address(Pre p)
+ 395     : _base(p.reg()), _offset(p.offset()), _mode(pre) { }
+ 396   Address(Post p)
+ 397     : _base(p.reg()),  _index(p.idx_reg()), _offset(p.offset()),
+ 398       _mode(p.is_postreg() ? post_reg : post), _target(0) { }
+ 399   Address(address target, RelocationHolder const&amp; rspec)
+ 400     : _mode(literal),
+ 401       _rspec(rspec),
+ 402       _is_lval(false),
+ 403       _target(target)  { }
+ 404   Address(address target, relocInfo::relocType rtype = relocInfo::external_word_type);
+ 405   Address(Register base, RegisterOrConstant index, extend ext = lsl())
+ 406     : _base (base),
+ 407       _offset(0), _ext(ext), _target(0) {
+ 408     if (index.is_register()) {
+ 409       _mode = base_plus_offset_reg;
+ 410       _index = index.as_register();
+ 411     } else {
+ 412       guarantee(ext.option() == ext::uxtx, &quot;should be&quot;);
+ 413       assert(index.is_constant(), &quot;should be&quot;);
+ 414       _mode = base_plus_offset;
+ 415       _offset = index.as_constant() &lt;&lt; ext.shift();
+ 416     }
+ 417   }
+ 418 
+ 419   Register base() const {
+<span class="line-modified"> 420     guarantee(((_mode == base_plus_offset) | (_mode == base_plus_offset_reg)</span>
+<span class="line-modified"> 421                | (_mode == post) | (_mode == post_reg)),</span>
+ 422               &quot;wrong mode&quot;);
+ 423     return _base;
+ 424   }
+<span class="line-modified"> 425   int64_t offset() const {</span>
+ 426     return _offset;
+ 427   }
+ 428   Register index() const {
+ 429     return _index;
+ 430   }
+ 431   mode getMode() const {
+ 432     return _mode;
+ 433   }
+ 434   bool uses(Register reg) const { return _base == reg || _index == reg; }
+ 435   address target() const { return _target; }
+ 436   const RelocationHolder&amp; rspec() const { return _rspec; }
+ 437 
+ 438   void encode(Instruction_aarch64 *i) const {
+ 439     i-&gt;f(0b111, 29, 27);
+ 440     i-&gt;srf(_base, 5);
+ 441 
+ 442     switch(_mode) {
+ 443     case base_plus_offset:
+ 444       {
+ 445         unsigned size = i-&gt;get(31, 30);
+</pre>
+<hr />
+<pre>
+ 537     size = 4 &lt;&lt; size;
+ 538     guarantee(_offset % size == 0, &quot;bad offset&quot;);
+ 539     i-&gt;sf(_offset / size, 21, 15);
+ 540     i-&gt;srf(_base, 5);
+ 541   }
+ 542 
+ 543   void encode_nontemporal_pair(Instruction_aarch64 *i) const {
+ 544     // Only base + offset is allowed
+ 545     i-&gt;f(0b000, 25, 23);
+ 546     unsigned size = i-&gt;get(31, 31);
+ 547     size = 4 &lt;&lt; size;
+ 548     guarantee(_offset % size == 0, &quot;bad offset&quot;);
+ 549     i-&gt;sf(_offset / size, 21, 15);
+ 550     i-&gt;srf(_base, 5);
+ 551     guarantee(_mode == Address::base_plus_offset,
+ 552               &quot;Bad addressing mode for non-temporal op&quot;);
+ 553   }
+ 554 
+ 555   void lea(MacroAssembler *, Register) const;
+ 556 
+<span class="line-modified"> 557   static bool offset_ok_for_immed(int64_t offset, int shift) {</span>
+ 558     unsigned mask = (1 &lt;&lt; shift) - 1;
+ 559     if (offset &lt; 0 || offset &amp; mask) {
+ 560       return (uabs(offset) &lt; (1 &lt;&lt; (20 - 12))); // Unscaled offset
+ 561     } else {
+ 562       return ((offset &gt;&gt; shift) &lt; (1 &lt;&lt; (21 - 10 + 1))); // Scaled, unsigned offset
+ 563     }
+ 564   }
+ 565 };
+ 566 
+ 567 // Convience classes
+ 568 class RuntimeAddress: public Address {
+ 569 
+ 570   public:
+ 571 
+ 572   RuntimeAddress(address target) : Address(target, relocInfo::runtime_call_type) {}
+ 573 
+ 574 };
+ 575 
+ 576 class OopAddress: public Address {
+ 577 
+</pre>
+<hr />
+<pre>
+ 599 
+ 600 class InternalAddress: public Address {
+ 601 
+ 602   public:
+ 603 
+ 604   InternalAddress(address target) : Address(target, relocInfo::internal_word_type) {}
+ 605 };
+ 606 
+ 607 const int FPUStateSizeInWords = FloatRegisterImpl::number_of_registers *
+ 608                                 FloatRegisterImpl::save_slots_per_register;
+ 609 
+ 610 typedef enum {
+ 611   PLDL1KEEP = 0b00000, PLDL1STRM, PLDL2KEEP, PLDL2STRM, PLDL3KEEP, PLDL3STRM,
+ 612   PSTL1KEEP = 0b10000, PSTL1STRM, PSTL2KEEP, PSTL2STRM, PSTL3KEEP, PSTL3STRM,
+ 613   PLIL1KEEP = 0b01000, PLIL1STRM, PLIL2KEEP, PLIL2STRM, PLIL3KEEP, PLIL3STRM
+ 614 } prfop;
+ 615 
+ 616 class Assembler : public AbstractAssembler {
+ 617 
+ 618 #ifndef PRODUCT
+<span class="line-modified"> 619   static const uint64_t asm_bp;</span>
+ 620 
+ 621   void emit_long(jint x) {
+<span class="line-modified"> 622     if ((uint64_t)pc() == asm_bp) {</span>
+<span class="line-added"> 623 #ifdef _WIN64</span>
+<span class="line-added"> 624       __nop();</span>
+<span class="line-added"> 625 #else</span>
+ 626       asm volatile (&quot;nop&quot;);
+<span class="line-added"> 627 #endif</span>
+<span class="line-added"> 628     }</span>
+ 629     AbstractAssembler::emit_int32(x);
+ 630   }
+ 631 #else
+ 632   void emit_long(jint x) {
+ 633     AbstractAssembler::emit_int32(x);
+ 634   }
+ 635 #endif
+ 636 
+ 637 public:
+ 638 
+ 639   enum { instruction_size = 4 };
+ 640 
+ 641   //---&lt;  calculate length of instruction  &gt;---
+ 642   // We just use the values set above.
+ 643   // instruction must start at passed address
+ 644   static unsigned int instr_len(unsigned char *instr) { return instruction_size; }
+ 645 
+ 646   //---&lt;  longest instructions  &gt;---
+ 647   static unsigned int instr_maxlen() { return instruction_size; }
+ 648 
+ 649   Address adjust(Register base, int offset, bool preIncrement) {
+ 650     if (preIncrement)
+ 651       return Address(Pre(base, offset));
+ 652     else
+ 653       return Address(Post(base, offset));
+ 654   }
+ 655 
+ 656   Address pre(Register base, int offset) {
+ 657     return adjust(base, offset, true);
+ 658   }
+ 659 
+ 660   Address post(Register base, int offset) {
+ 661     return adjust(base, offset, false);
+ 662   }
+ 663 
+ 664   Address post(Register base, Register idx) {
+ 665     return Address(Post(base, idx));
+ 666   }
+ 667 
+<span class="line-added"> 668   static address locate_next_instruction(address inst);</span>
+<span class="line-added"> 669 </span>
+ 670   Instruction_aarch64* current;
+ 671 
+ 672   void set_current(Instruction_aarch64* i) { current = i; }
+ 673 
+ 674   void f(unsigned val, int msb, int lsb) {
+ 675     current-&gt;f(val, msb, lsb);
+ 676   }
+ 677   void f(unsigned val, int msb) {
+ 678     current-&gt;f(val, msb, msb);
+ 679   }
+<span class="line-modified"> 680   void sf(int64_t val, int msb, int lsb) {</span>
+ 681     current-&gt;sf(val, msb, lsb);
+ 682   }
+ 683   void rf(Register reg, int lsb) {
+ 684     current-&gt;rf(reg, lsb);
+ 685   }
+ 686   void srf(Register reg, int lsb) {
+ 687     current-&gt;srf(reg, lsb);
+ 688   }
+ 689   void zrf(Register reg, int lsb) {
+ 690     current-&gt;zrf(reg, lsb);
+ 691   }
+ 692   void rf(FloatRegister reg, int lsb) {
+ 693     current-&gt;rf(reg, lsb);
+ 694   }
+ 695   void fixed(unsigned value, unsigned mask) {
+ 696     current-&gt;fixed(value, mask);
+ 697   }
+ 698 
+ 699   void emit() {
+ 700     emit_long(current-&gt;get_insn());
+</pre>
+<hr />
+<pre>
+ 709 
+ 710   void wrap_label(Label &amp;L, uncond_branch_insn insn);
+ 711   void wrap_label(Register r, Label &amp;L, compare_and_branch_insn insn);
+ 712   void wrap_label(Register r, int bitpos, Label &amp;L, test_and_branch_insn insn);
+ 713   void wrap_label(Label &amp;L, prfop, prefetch_insn insn);
+ 714 
+ 715   // PC-rel. addressing
+ 716 
+ 717   void adr(Register Rd, address dest);
+ 718   void _adrp(Register Rd, address dest);
+ 719 
+ 720   void adr(Register Rd, const Address &amp;dest);
+ 721   void _adrp(Register Rd, const Address &amp;dest);
+ 722 
+ 723   void adr(Register Rd, Label &amp;L) {
+ 724     wrap_label(Rd, L, &amp;Assembler::Assembler::adr);
+ 725   }
+ 726   void _adrp(Register Rd, Label &amp;L) {
+ 727     wrap_label(Rd, L, &amp;Assembler::_adrp);
+ 728   }
+<span class="line-modified"> 729   void adrp(Register Rd, const Address &amp;dest, uint64_t &amp;offset);</span>
+
+ 730 
+ 731 #undef INSN
+ 732 
+ 733   void add_sub_immediate(Register Rd, Register Rn, unsigned uimm, int op,
+ 734                          int negated_op);
+ 735 
+ 736   // Add/subtract (immediate)
+ 737 #define INSN(NAME, decode, negated)                                     \
+ 738   void NAME(Register Rd, Register Rn, unsigned imm, unsigned shift) {   \
+ 739     starti;                                                             \
+ 740     f(decode, 31, 29), f(0b10001, 28, 24), f(shift, 23, 22), f(imm, 21, 10); \
+ 741     zrf(Rd, 0), srf(Rn, 5);                                             \
+ 742   }                                                                     \
+ 743                                                                         \
+ 744   void NAME(Register Rd, Register Rn, unsigned imm) {                   \
+ 745     starti;                                                             \
+ 746     add_sub_immediate(Rd, Rn, imm, decode, negated);                    \
+ 747   }
+ 748 
+ 749   INSN(addsw, 0b001, 0b011);
+</pre>
+<hr />
+<pre>
+ 835 #undef INSN
+ 836 
+ 837   // Extract
+ 838 #define INSN(NAME, opcode, size)                                        \
+ 839   void NAME(Register Rd, Register Rn, Register Rm, unsigned imms) {     \
+ 840     starti;                                                             \
+ 841     guarantee(size == 1 || imms &lt; 32, &quot;incorrect imms&quot;);                \
+ 842     f(opcode, 31, 21), f(imms, 15, 10);                                 \
+ 843     zrf(Rm, 16), zrf(Rn, 5), zrf(Rd, 0);                                \
+ 844   }
+ 845 
+ 846   INSN(extrw, 0b00010011100, 0);
+ 847   INSN(extr,  0b10010011110, 1);
+ 848 
+ 849 #undef INSN
+ 850 
+ 851   // The maximum range of a branch is fixed for the AArch64
+ 852   // architecture.  In debug mode we shrink it in order to test
+ 853   // trampolines, but not so small that branches in the interpreter
+ 854   // are out of range.
+<span class="line-modified"> 855   static const uint64_t branch_range = NOT_DEBUG(128 * M) DEBUG_ONLY(2 * M);</span>
+ 856 
+ 857   static bool reachable_from_branch_at(address branch, address target) {
+ 858     return uabs(target - branch) &lt; branch_range;
+ 859   }
+ 860 
+ 861   // Unconditional branch (immediate)
+ 862 #define INSN(NAME, opcode)                                              \
+ 863   void NAME(address dest) {                                             \
+ 864     starti;                                                             \
+<span class="line-modified"> 865     int64_t offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+ 866     DEBUG_ONLY(assert(reachable_from_branch_at(pc(), dest), &quot;debug only&quot;)); \
+ 867     f(opcode, 31), f(0b00101, 30, 26), sf(offset, 25, 0);               \
+ 868   }                                                                     \
+ 869   void NAME(Label &amp;L) {                                                 \
+ 870     wrap_label(L, &amp;Assembler::NAME);                                    \
+ 871   }                                                                     \
+ 872   void NAME(const Address &amp;dest);
+ 873 
+ 874   INSN(b, 0);
+ 875   INSN(bl, 1);
+ 876 
+ 877 #undef INSN
+ 878 
+ 879   // Compare &amp; branch (immediate)
+ 880 #define INSN(NAME, opcode)                              \
+ 881   void NAME(Register Rt, address dest) {                \
+<span class="line-modified"> 882     int64_t offset = (dest - pc()) &gt;&gt; 2;                \</span>
+ 883     starti;                                             \
+ 884     f(opcode, 31, 24), sf(offset, 23, 5), rf(Rt, 0);    \
+ 885   }                                                     \
+ 886   void NAME(Register Rt, Label &amp;L) {                    \
+ 887     wrap_label(Rt, L, &amp;Assembler::NAME);                \
+ 888   }
+ 889 
+ 890   INSN(cbzw,  0b00110100);
+ 891   INSN(cbnzw, 0b00110101);
+ 892   INSN(cbz,   0b10110100);
+ 893   INSN(cbnz,  0b10110101);
+ 894 
+ 895 #undef INSN
+ 896 
+ 897   // Test &amp; branch (immediate)
+ 898 #define INSN(NAME, opcode)                                              \
+ 899   void NAME(Register Rt, int bitpos, address dest) {                    \
+<span class="line-modified"> 900     int64_t offset = (dest - pc()) &gt;&gt; 2;                                \</span>
+ 901     int b5 = bitpos &gt;&gt; 5;                                               \
+ 902     bitpos &amp;= 0x1f;                                                     \
+ 903     starti;                                                             \
+ 904     f(b5, 31), f(opcode, 30, 24), f(bitpos, 23, 19), sf(offset, 18, 5); \
+ 905     rf(Rt, 0);                                                          \
+ 906   }                                                                     \
+ 907   void NAME(Register Rt, int bitpos, Label &amp;L) {                        \
+ 908     wrap_label(Rt, bitpos, L, &amp;Assembler::NAME);                        \
+ 909   }
+ 910 
+ 911   INSN(tbz,  0b0110110);
+ 912   INSN(tbnz, 0b0110111);
+ 913 
+ 914 #undef INSN
+ 915 
+ 916   // Conditional branch (immediate)
+ 917   enum Condition
+ 918     {EQ, NE, HS, CS=HS, LO, CC=LO, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL, NV};
+ 919 
+ 920   void br(Condition  cond, address dest) {
+<span class="line-modified"> 921     int64_t offset = (dest - pc()) &gt;&gt; 2;</span>
+ 922     starti;
+ 923     f(0b0101010, 31, 25), f(0, 24), sf(offset, 23, 5), f(0, 4), f(cond, 3, 0);
+ 924   }
+ 925 
+ 926 #define INSN(NAME, cond)                        \
+ 927   void NAME(address dest) {                     \
+ 928     br(cond, dest);                             \
+ 929   }
+ 930 
+ 931   INSN(beq, EQ);
+ 932   INSN(bne, NE);
+ 933   INSN(bhs, HS);
+ 934   INSN(bcs, CS);
+ 935   INSN(blo, LO);
+ 936   INSN(bcc, CC);
+ 937   INSN(bmi, MI);
+ 938   INSN(bpl, PL);
+ 939   INSN(bvs, VS);
+ 940   INSN(bvc, VC);
+ 941   INSN(bhi, HI);
+</pre>
+<hr />
+<pre>
+1281   void NAME_L(operand_size sz, Register Rs, Register Rt, Register Rn) { \
+1282     lse_atomic(Rs, Rt, Rn, sz, op1, op2, false, true);                  \
+1283   }                                                                     \
+1284   void NAME_AL(operand_size sz, Register Rs, Register Rt, Register Rn) {\
+1285     lse_atomic(Rs, Rt, Rn, sz, op1, op2, true, true);                   \
+1286   }
+1287   INSN(ldadd,  ldadda,  ldaddl,  ldaddal,  0, 0b000);
+1288   INSN(ldbic,  ldbica,  ldbicl,  ldbical,  0, 0b001);
+1289   INSN(ldeor,  ldeora,  ldeorl,  ldeoral,  0, 0b010);
+1290   INSN(ldorr,  ldorra,  ldorrl,  ldorral,  0, 0b011);
+1291   INSN(ldsmax, ldsmaxa, ldsmaxl, ldsmaxal, 0, 0b100);
+1292   INSN(ldsmin, ldsmina, ldsminl, ldsminal, 0, 0b101);
+1293   INSN(ldumax, ldumaxa, ldumaxl, ldumaxal, 0, 0b110);
+1294   INSN(ldumin, ldumina, lduminl, lduminal, 0, 0b111);
+1295   INSN(swp,    swpa,    swpl,    swpal,    1, 0b000);
+1296 #undef INSN
+1297 
+1298   // Load register (literal)
+1299 #define INSN(NAME, opc, V)                                              \
+1300   void NAME(Register Rt, address dest) {                                \
+<span class="line-modified">1301     int64_t offset = (dest - pc()) &gt;&gt; 2;                                \</span>
+1302     starti;                                                             \
+1303     f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+1304       sf(offset, 23, 5);                                                \
+1305     rf(Rt, 0);                                                          \
+1306   }                                                                     \
+1307   void NAME(Register Rt, address dest, relocInfo::relocType rtype) {    \
+1308     InstructionMark im(this);                                           \
+1309     guarantee(rtype == relocInfo::internal_word_type,                   \
+1310               &quot;only internal_word_type relocs make sense here&quot;);        \
+1311     code_section()-&gt;relocate(inst_mark(), InternalAddress(dest).rspec()); \
+1312     NAME(Rt, dest);                                                     \
+1313   }                                                                     \
+1314   void NAME(Register Rt, Label &amp;L) {                                    \
+1315     wrap_label(Rt, L, &amp;Assembler::NAME);                                \
+1316   }
+1317 
+1318   INSN(ldrw, 0b00, 0);
+1319   INSN(ldr, 0b01, 0);
+1320   INSN(ldrsw, 0b10, 0);
+1321 
+1322 #undef INSN
+1323 
+1324 #define INSN(NAME, opc, V)                                              \
+1325   void NAME(FloatRegister Rt, address dest) {                           \
+<span class="line-modified">1326     int64_t offset = (dest - pc()) &gt;&gt; 2;                                \</span>
+1327     starti;                                                             \
+1328     f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+1329       sf(offset, 23, 5);                                                \
+1330     rf((Register)Rt, 0);                                                \
+1331   }
+1332 
+1333   INSN(ldrs, 0b00, 1);
+1334   INSN(ldrd, 0b01, 1);
+1335   INSN(ldrq, 0b10, 1);
+1336 
+1337 #undef INSN
+1338 
+1339 #define INSN(NAME, opc, V)                                              \
+1340   void NAME(address dest, prfop op = PLDL1KEEP) {                       \
+<span class="line-modified">1341     int64_t offset = (dest - pc()) &gt;&gt; 2;                                \</span>
+1342     starti;                                                             \
+1343     f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+1344       sf(offset, 23, 5);                                                \
+1345     f(op, 4, 0);                                                        \
+1346   }                                                                     \
+1347   void NAME(Label &amp;L, prfop op = PLDL1KEEP) {                           \
+1348     wrap_label(L, op, &amp;Assembler::NAME);                                \
+1349   }
+1350 
+1351   INSN(prfm, 0b11, 0);
+1352 
+1353 #undef INSN
+1354 
+1355   // Load/store
+1356   void ld_st1(int opc, int p1, int V, int L,
+1357               Register Rt1, Register Rt2, Address adr, bool no_allocate) {
+1358     starti;
+1359     f(opc, 31, 30), f(p1, 29, 27), f(V, 26), f(L, 22);
+1360     zrf(Rt2, 10), zrf(Rt1, 0);
+1361     if (no_allocate) {
+</pre>
+<hr />
+<pre>
+1397   INSN(stpq, 0b10, 0b101, 1, 0, false);
+1398   INSN(ldpq, 0b10, 0b101, 1, 1, false);
+1399 
+1400 #undef INSN
+1401 
+1402   // Load/store register (all modes)
+1403   void ld_st2(Register Rt, const Address &amp;adr, int size, int op, int V = 0) {
+1404     starti;
+1405 
+1406     f(V, 26); // general reg?
+1407     zrf(Rt, 0);
+1408 
+1409     // Encoding for literal loads is done here (rather than pushed
+1410     // down into Address::encode) because the encoding of this
+1411     // instruction is too different from all of the other forms to
+1412     // make it worth sharing.
+1413     if (adr.getMode() == Address::literal) {
+1414       assert(size == 0b10 || size == 0b11, &quot;bad operand size in ldr&quot;);
+1415       assert(op == 0b01, &quot;literal form can only be used with loads&quot;);
+1416       f(size &amp; 0b01, 31, 30), f(0b011, 29, 27), f(0b00, 25, 24);
+<span class="line-modified">1417       int64_t offset = (adr.target() - pc()) &gt;&gt; 2;</span>
+1418       sf(offset, 23, 5);
+1419       code_section()-&gt;relocate(pc(), adr.rspec());
+1420       return;
+1421     }
+1422 
+1423     f(size, 31, 30);
+1424     f(op, 23, 22); // str
+1425     adr.encode(current);
+1426   }
+1427 
+1428 #define INSN(NAME, size, op)                            \
+1429   void NAME(Register Rt, const Address &amp;adr) {          \
+1430     ld_st2(Rt, adr, size, op);                          \
+1431   }                                                     \
+1432 
+1433   INSN(str, 0b11, 0b00);
+1434   INSN(strw, 0b10, 0b00);
+1435   INSN(strb, 0b00, 0b00);
+1436   INSN(strh, 0b01, 0b00);
+1437 
+</pre>
+<hr />
+<pre>
+1518                                                                         \
+1519   /* These instructions have no immediate form. Provide an overload so  \
+1520      that if anyone does try to use an immediate operand -- this has    \
+1521      happened! -- we&#39;ll get a compile-time error. */                    \
+1522   void NAME(Register Rd, Register Rn, unsigned imm,                     \
+1523             enum shift_kind kind = LSL, unsigned shift = 0) {           \
+1524     assert(false, &quot; can&#39;t be used with immediate operand&quot;);             \
+1525   }
+1526 
+1527   INSN(bic, 1, 0b00, 1);
+1528   INSN(orn, 1, 0b01, 1);
+1529   INSN(eon, 1, 0b10, 1);
+1530   INSN(bics, 1, 0b11, 1);
+1531   INSN(bicw, 0, 0b00, 1);
+1532   INSN(ornw, 0, 0b01, 1);
+1533   INSN(eonw, 0, 0b10, 1);
+1534   INSN(bicsw, 0, 0b11, 1);
+1535 
+1536 #undef INSN
+1537 
+<span class="line-added">1538 #ifndef _WIN64</span>
+1539   // Aliases for short forms of orn
+1540 void mvn(Register Rd, Register Rm,
+1541             enum shift_kind kind = LSL, unsigned shift = 0) {
+1542   orn(Rd, zr, Rm, kind, shift);
+1543 }
+<span class="line-added">1544 #endif</span>
+1545 
+1546 void mvnw(Register Rd, Register Rm,
+1547             enum shift_kind kind = LSL, unsigned shift = 0) {
+1548   ornw(Rd, zr, Rm, kind, shift);
+1549 }
+1550 
+1551   // Add/subtract (shifted register)
+1552 #define INSN(NAME, size, op)                            \
+1553   void NAME(Register Rd, Register Rn, Register Rm,      \
+1554             enum shift_kind kind, unsigned shift = 0) { \
+1555     starti;                                             \
+1556     f(0, 21);                                           \
+1557     assert_cond(kind != ROR);                           \
+1558     guarantee(size == 1 || shift &lt; 32, &quot;incorrect shift&quot;);\
+1559     zrf(Rd, 0), zrf(Rn, 5), zrf(Rm, 16);                \
+1560     op_shifted_reg(0b01011, kind, shift, size, op);     \
+1561   }
+1562 
+1563   INSN(add, 1, 0b000);
+1564   INSN(sub, 1, 0b10);
+</pre>
+<hr />
+<pre>
+2670     assert((T == T8B &amp;&amp; index &lt;= 0b0111) || (T == T16B &amp;&amp; index &lt;= 0b1111), &quot;Invalid index value&quot;);
+2671     f(0, 31), f((int)T &amp; 1, 30), f(0b101110000, 29, 21);
+2672     rf(Vm, 16), f(0, 15), f(index, 14, 11);
+2673     f(0, 10), rf(Vn, 5), rf(Vd, 0);
+2674   }
+2675 
+2676   Assembler(CodeBuffer* code) : AbstractAssembler(code) {
+2677   }
+2678 
+2679   virtual RegisterOrConstant delayed_value_impl(intptr_t* delayed_value_addr,
+2680                                                 Register tmp,
+2681                                                 int offset) {
+2682     ShouldNotCallThis();
+2683     return RegisterOrConstant();
+2684   }
+2685 
+2686   // Stack overflow checking
+2687   virtual void bang_stack_with_offset(int offset);
+2688 
+2689   static bool operand_valid_for_logical_immediate(bool is32, uint64_t imm);
+<span class="line-modified">2690   static bool operand_valid_for_add_sub_immediate(int64_t imm);</span>
+2691   static bool operand_valid_for_float_immediate(double imm);
+2692 
+2693   void emit_data64(jlong data, relocInfo::relocType rtype, int format = 0);
+2694   void emit_data64(jlong data, RelocationHolder const&amp; rspec, int format = 0);
+2695 };
+2696 
+2697 inline Assembler::Membar_mask_bits operator|(Assembler::Membar_mask_bits a,
+2698                                              Assembler::Membar_mask_bits b) {
+2699   return Assembler::Membar_mask_bits(unsigned(a)|unsigned(b));
+2700 }
+2701 
+2702 Instruction_aarch64::~Instruction_aarch64() {
+2703   assem-&gt;emit();
+2704 }
+2705 
+2706 #undef starti
+2707 
+2708 // Invert a condition
+2709 inline const Assembler::Condition operator~(const Assembler::Condition cond) {
+2710   return Assembler::Condition(int(cond) ^ 1);
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="assembler_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_Defs_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\cpu\aarch64\jniFastGetField_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="interpreterRT_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="jvmciCodeInstaller_aarch64.cpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\jniFastGetField_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -71,11 +71,11 @@</span>
+    MacroAssembler* masm = new MacroAssembler(&amp;cbuf);
+    address fast_entry = __ pc();
+  
+    Label slow;
+  
+<span class="udiff-line-modified-removed">-   unsigned long offset;</span>
+<span class="udiff-line-modified-added">+   uint64_t offset;</span>
+    __ adrp(rcounter_addr,
+            SafepointSynchronize::safepoint_counter_addr(), offset);
+    Address safepoint_counter_addr(rcounter_addr, offset);
+    __ ldrw(rcounter, safepoint_counter_addr);
+    __ tbnz(rcounter, 0, slow);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -97,11 +97,11 @@</span>
+    }
+  
+    if (JvmtiExport::can_post_field_access()) {
+      // Check to see if a field access watch has been set before we
+      // take the fast path.
+<span class="udiff-line-modified-removed">-     unsigned long offset2;</span>
+<span class="udiff-line-modified-added">+     uint64_t offset2;</span>
+      __ adrp(result,
+              ExternalAddress((address) JvmtiExport::get_field_access_count_addr()),
+              offset2);
+      __ ldrw(result, Address(result, offset2));
+      __ cbnzw(result, slow);
+</pre>
+<center><a href="interpreterRT_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="jvmciCodeInstaller_aarch64.cpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

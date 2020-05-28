@@ -1,0 +1,16 @@
+diff a/src/hotspot/os/windows/osThread_windows.hpp b/src/hotspot/os/windows/osThread_windows.hpp
+--- a/src/hotspot/os/windows/osThread_windows.hpp
++++ b/src/hotspot/os/windows/osThread_windows.hpp
+@@ -25,11 +25,11 @@
+ #ifndef OS_WINDOWS_OSTHREAD_WINDOWS_HPP
+ #define OS_WINDOWS_OSTHREAD_WINDOWS_HPP
+ 
+   typedef void* HANDLE;
+  public:
+-  typedef unsigned long thread_id_t;
++  typedef uint64_t thread_id_t;
+ 
+  private:
+   // Win32-specific thread information
+   HANDLE _thread_handle;        // Win32 thread handle
+   HANDLE _interrupt_event;      // Event signalled on thread interrupt for use by

@@ -1,0 +1,15 @@
+diff a/src/hotspot/os/windows/os_windows.hpp b/src/hotspot/os/windows/os_windows.hpp
+--- a/src/hotspot/os/windows/os_windows.hpp
++++ b/src/hotspot/os/windows/os_windows.hpp
+@@ -68,10 +68,11 @@
+     return _processor_level;
+   }
+   static julong available_memory();
+   static julong physical_memory() { return _physical_memory; }
+ 
++  static int get_cacheline_size();
+   // load dll from Windows system directory or Windows directory
+   static HINSTANCE load_Windows_dll(const char* name, char *ebuf, int ebuflen);
+ 
+  private:
+   enum Ept { EPT_THREAD, EPT_PROCESS, EPT_PROCESS_DIE };

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\share\prims\jni.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\code\codeCache.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\runtime\biasedLocking.cpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\share\prims\jni.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -90,14 +90,10 @@</span>
+  #include &quot;jvmci/jvmciCompiler.hpp&quot;
+  #endif
+  
+  static jint CurrentVersion = JNI_VERSION_10;
+  
+<span class="udiff-line-removed">- #ifdef _WIN32</span>
+<span class="udiff-line-removed">- extern LONG WINAPI topLevelExceptionFilter(_EXCEPTION_POINTERS* );</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">- </span>
+  // The DT_RETURN_MARK macros create a scoped object to fire the dtrace
+  // &#39;-return&#39; probe regardless of the return path is taken out of the function.
+  // Methods that have multiple return paths use this to avoid having to
+  // instrument each return path.  Methods that use CHECK or THROW must use this
+  // since those macros can cause an immedate uninstrumented return.
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3795,11 +3791,11 @@</span>
+  }
+  
+  DT_RETURN_MARK_DECL(CreateJavaVM, jint
+                      , HOTSPOT_JNI_CREATEJAVAVM_RETURN(_ret_ref));
+  
+<span class="udiff-line-modified-removed">- static jint JNI_CreateJavaVM_inner(JavaVM **vm, void **penv, void *args) {</span>
+<span class="udiff-line-modified-added">+ _JNI_IMPORT_OR_EXPORT_ jint JNICALL JNI_CreateJavaVM(JavaVM **vm, void **penv, void *args) {</span>
+    HOTSPOT_JNI_CREATEJAVAVM_ENTRY((void **) vm, penv, args);
+  
+    jint result = JNI_ERR;
+    DT_RETURN_MARK(CreateJavaVM, jint, (const jint&amp;)result);
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3924,25 +3920,10 @@</span>
+  
+    return result;
+  
+  }
+  
+<span class="udiff-line-removed">- _JNI_IMPORT_OR_EXPORT_ jint JNICALL JNI_CreateJavaVM(JavaVM **vm, void **penv, void *args) {</span>
+<span class="udiff-line-removed">-   jint result = JNI_ERR;</span>
+<span class="udiff-line-removed">-   // On Windows, let CreateJavaVM run with SEH protection</span>
+<span class="udiff-line-removed">- #ifdef _WIN32</span>
+<span class="udiff-line-removed">-   __try {</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">-     result = JNI_CreateJavaVM_inner(vm, penv, args);</span>
+<span class="udiff-line-removed">- #ifdef _WIN32</span>
+<span class="udiff-line-removed">-   } __except(topLevelExceptionFilter((_EXCEPTION_POINTERS*)_exception_info())) {</span>
+<span class="udiff-line-removed">-     // Nothing to do.</span>
+<span class="udiff-line-removed">-   }</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">-   return result;</span>
+<span class="udiff-line-removed">- }</span>
+<span class="udiff-line-removed">- </span>
+  _JNI_IMPORT_OR_EXPORT_ jint JNICALL JNI_GetCreatedJavaVMs(JavaVM **vm_buf, jsize bufLen, jsize *numVMs) {
+    // See bug 4367188, the wrapper can sometimes cause VM crashes
+    // JNIWrapper(&quot;GetCreatedJavaVMs&quot;);
+  
+    HOTSPOT_JNI_GETCREATEDJAVAVMS_ENTRY((void **) vm_buf, bufLen, (uintptr_t *) numVMs);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3960,11 +3941,11 @@</span>
+  extern &quot;C&quot; {
+  
+  DT_RETURN_MARK_DECL(DestroyJavaVM, jint
+                      , HOTSPOT_JNI_DESTROYJAVAVM_RETURN(_ret_ref));
+  
+<span class="udiff-line-modified-removed">- static jint JNICALL jni_DestroyJavaVM_inner(JavaVM *vm) {</span>
+<span class="udiff-line-modified-added">+ jint JNICALL jni_DestroyJavaVM(JavaVM *vm) {</span>
+    HOTSPOT_JNI_DESTROYJAVAVM_ENTRY(vm);
+    jint res = JNI_ERR;
+    DT_RETURN_MARK(DestroyJavaVM, jint, (const jint&amp;)res);
+  
+    if (vm_created == 0) {
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -3996,25 +3977,10 @@</span>
+      res = JNI_ERR;
+      return res;
+    }
+  }
+  
+<span class="udiff-line-removed">- jint JNICALL jni_DestroyJavaVM(JavaVM *vm) {</span>
+<span class="udiff-line-removed">-   jint result = JNI_ERR;</span>
+<span class="udiff-line-removed">-   // On Windows, we need SEH protection</span>
+<span class="udiff-line-removed">- #ifdef _WIN32</span>
+<span class="udiff-line-removed">-   __try {</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">-     result = jni_DestroyJavaVM_inner(vm);</span>
+<span class="udiff-line-removed">- #ifdef _WIN32</span>
+<span class="udiff-line-removed">-   } __except(topLevelExceptionFilter((_EXCEPTION_POINTERS*)_exception_info())) {</span>
+<span class="udiff-line-removed">-     // Nothing to do.</span>
+<span class="udiff-line-removed">-   }</span>
+<span class="udiff-line-removed">- #endif</span>
+<span class="udiff-line-removed">-   return result;</span>
+<span class="udiff-line-removed">- }</span>
+<span class="udiff-line-removed">- </span>
+  static jint attach_current_thread(JavaVM *vm, void **penv, void *_args, bool daemon) {
+    JavaVMAttachArgs *args = (JavaVMAttachArgs *) _args;
+  
+    // Check below commented out from JDK1.2fcs as well
+    /*
+</pre>
+<center><a href="..\code\codeCache.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\runtime\biasedLocking.cpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

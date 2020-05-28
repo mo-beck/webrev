@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\runtime\Threads.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\..\..\style.css" />
+    <script type="text/javascript" src="..\..\..\..\..\..\..\..\navigation.js"></script>
+  </head>
+<body onkeypress="keypress(event);">
+<a name="0"></a>
+<hr />
+<pre>  1 /*
+  2  * Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 package sun.jvm.hotspot.runtime;
+ 26 
+ 27 import java.util.*;
+ 28 
+ 29 import sun.jvm.hotspot.debugger.*;
+ 30 import sun.jvm.hotspot.types.*;
+ 31 import sun.jvm.hotspot.runtime.solaris_sparc.SolarisSPARCJavaThreadPDAccess;
+ 32 import sun.jvm.hotspot.runtime.solaris_x86.SolarisX86JavaThreadPDAccess;
+ 33 import sun.jvm.hotspot.runtime.solaris_amd64.SolarisAMD64JavaThreadPDAccess;
+<a name="1" id="anc1"></a><span class="line-added"> 34 import sun.jvm.hotspot.runtime.win32_aarch64.Win32AARCH64JavaThreadPDAccess;</span>
+ 35 import sun.jvm.hotspot.runtime.win32_amd64.Win32AMD64JavaThreadPDAccess;
+ 36 import sun.jvm.hotspot.runtime.win32_x86.Win32X86JavaThreadPDAccess;
+ 37 import sun.jvm.hotspot.runtime.linux_x86.LinuxX86JavaThreadPDAccess;
+ 38 import sun.jvm.hotspot.runtime.linux_amd64.LinuxAMD64JavaThreadPDAccess;
+ 39 import sun.jvm.hotspot.runtime.linux_aarch64.LinuxAARCH64JavaThreadPDAccess;
+ 40 import sun.jvm.hotspot.runtime.linux_ppc64.LinuxPPC64JavaThreadPDAccess;
+ 41 import sun.jvm.hotspot.runtime.linux_sparc.LinuxSPARCJavaThreadPDAccess;
+ 42 import sun.jvm.hotspot.runtime.bsd_x86.BsdX86JavaThreadPDAccess;
+ 43 import sun.jvm.hotspot.runtime.bsd_amd64.BsdAMD64JavaThreadPDAccess;
+ 44 import sun.jvm.hotspot.utilities.*;
+ 45 
+ 46 class ThreadsList extends VMObject {
+ 47     private static AddressField  threadsField;
+ 48     private static CIntegerField lengthField;
+ 49 
+ 50     static {
+ 51         VM.registerVMInitializedObserver((o, d) -&gt; initialize(VM.getVM().getTypeDataBase()));
+ 52     }
+ 53 
+ 54     private static synchronized void initialize(TypeDataBase db) {
+ 55         Type type = db.lookupType(&quot;ThreadsList&quot;);
+ 56         lengthField = type.getCIntegerField(&quot;_length&quot;);
+ 57         threadsField = type.getAddressField(&quot;_threads&quot;);
+ 58     }
+ 59 
+ 60     public Address getJavaThreadAddressAt(int i) {
+ 61       Address threadAddr = threadsField.getValue(addr);
+ 62       Address at = threadAddr.getAddressAt(VM.getVM().getAddressSize() * i);
+ 63       return at;
+ 64     }
+ 65 
+ 66     public long length() {
+ 67         return lengthField.getValue(addr);
+ 68     }
+ 69 
+ 70     public ThreadsList(Address addr) {
+ 71         super(addr);
+ 72     }
+ 73 }
+ 74 
+ 75 public class Threads {
+ 76     private static JavaThreadFactory threadFactory;
+ 77     private static AddressField      threadListField;
+ 78     private static VirtualConstructor virtualConstructor;
+ 79     private static JavaThreadPDAccess access;
+ 80     private static ThreadsList _list;
+ 81 
+ 82     static {
+ 83         VM.registerVMInitializedObserver(new Observer() {
+ 84             public void update(Observable o, Object data) {
+ 85                 initialize(VM.getVM().getTypeDataBase());
+ 86             }
+ 87         });
+ 88     }
+ 89 
+ 90     private static synchronized void initialize(TypeDataBase db) {
+ 91         Type type = db.lookupType(&quot;ThreadsSMRSupport&quot;);
+ 92         threadListField = type.getAddressField(&quot;_java_thread_list&quot;);
+ 93 
+ 94         // Instantiate appropriate platform-specific JavaThreadFactory
+ 95         String os  = VM.getVM().getOS();
+ 96         String cpu = VM.getVM().getCPU();
+ 97 
+ 98         access = null;
+ 99         // FIXME: find the platform specific PD class by reflection?
+100         if (os.equals(&quot;solaris&quot;)) {
+101             if (cpu.equals(&quot;sparc&quot;)) {
+102                 access = new SolarisSPARCJavaThreadPDAccess();
+103             } else if (cpu.equals(&quot;x86&quot;)) {
+104                 access = new SolarisX86JavaThreadPDAccess();
+105             } else if (cpu.equals(&quot;amd64&quot;)) {
+106                 access = new SolarisAMD64JavaThreadPDAccess();
+107             }
+108         } else if (os.equals(&quot;win32&quot;)) {
+109             if (cpu.equals(&quot;x86&quot;)) {
+110                 access =  new Win32X86JavaThreadPDAccess();
+111             } else if (cpu.equals(&quot;amd64&quot;)) {
+112                 access =  new Win32AMD64JavaThreadPDAccess();
+<a name="2" id="anc2"></a><span class="line-added">113             } else if (cpu.equals(&quot;aarch64&quot;)) {</span>
+<span class="line-added">114                 access =  new Win32AARCH64JavaThreadPDAccess();</span>
+115             }
+116         } else if (os.equals(&quot;linux&quot;)) {
+117             if (cpu.equals(&quot;x86&quot;)) {
+118                 access = new LinuxX86JavaThreadPDAccess();
+119             } else if (cpu.equals(&quot;amd64&quot;)) {
+120                 access = new LinuxAMD64JavaThreadPDAccess();
+121             } else if (cpu.equals(&quot;sparc&quot;)) {
+122                 access = new LinuxSPARCJavaThreadPDAccess();
+123             } else if (cpu.equals(&quot;ppc64&quot;)) {
+124                 access = new LinuxPPC64JavaThreadPDAccess();
+125             } else if (cpu.equals(&quot;aarch64&quot;)) {
+126                 access = new LinuxAARCH64JavaThreadPDAccess();
+127             } else {
+128               try {
+129                 access = (JavaThreadPDAccess)
+130                   Class.forName(&quot;sun.jvm.hotspot.runtime.linux_&quot; +
+131                      cpu.toLowerCase() + &quot;.Linux&quot; + cpu.toUpperCase() +
+132                      &quot;JavaThreadPDAccess&quot;).newInstance();
+133               } catch (Exception e) {
+134                 throw new RuntimeException(&quot;OS/CPU combination &quot; + os + &quot;/&quot; + cpu +
+135                                            &quot; not yet supported&quot;);
+136               }
+137             }
+138         } else if (os.equals(&quot;bsd&quot;)) {
+139             if (cpu.equals(&quot;x86&quot;)) {
+140                 access = new BsdX86JavaThreadPDAccess();
+141             } else if (cpu.equals(&quot;amd64&quot;) || cpu.equals(&quot;x86_64&quot;)) {
+142                 access = new BsdAMD64JavaThreadPDAccess();
+143             }
+144         } else if (os.equals(&quot;darwin&quot;)) {
+145             if (cpu.equals(&quot;amd64&quot;) || cpu.equals(&quot;x86_64&quot;)) {
+146                 access = new BsdAMD64JavaThreadPDAccess();
+147             }
+148         }
+149 
+150         if (access == null) {
+151             throw new RuntimeException(&quot;OS/CPU combination &quot; + os + &quot;/&quot; + cpu +
+152             &quot; not yet supported&quot;);
+153         }
+154 
+155         virtualConstructor = new VirtualConstructor(db);
+156         // Add mappings for all known thread types
+157         virtualConstructor.addMapping(&quot;JavaThread&quot;, JavaThread.class);
+158         if (!VM.getVM().isCore()) {
+159             virtualConstructor.addMapping(&quot;CompilerThread&quot;, CompilerThread.class);
+160             virtualConstructor.addMapping(&quot;CodeCacheSweeperThread&quot;, CodeCacheSweeperThread.class);
+161         }
+162         virtualConstructor.addMapping(&quot;JvmtiAgentThread&quot;, JvmtiAgentThread.class);
+163         virtualConstructor.addMapping(&quot;ServiceThread&quot;, ServiceThread.class);
+164         virtualConstructor.addMapping(&quot;NotificationThread&quot;, NotificationThread.class);
+165     }
+166 
+167     public Threads() {
+168         _list = VMObjectFactory.newObject(ThreadsList.class, threadListField.getValue());
+169     }
+170 
+171     /** NOTE: this returns objects of type JavaThread, CompilerThread,
+172       JvmtiAgentThread, NotificationThread, and ServiceThread.
+173       The latter four are subclasses of the former. Most operations
+174       (fetching the top frame, etc.) are only allowed to be performed on
+175       a &quot;pure&quot; JavaThread. For this reason, {@link
+176       sun.jvm.hotspot.runtime.JavaThread#isJavaThread} has been
+177       changed from the definition in the VM (which returns true for
+178       all of these thread types) to return true for JavaThreads and
+179       false for the four subclasses. FIXME: should reconsider the
+180       inheritance hierarchy; see {@link
+181       sun.jvm.hotspot.runtime.JavaThread#isJavaThread}. */
+182     public JavaThread getJavaThreadAt(int i) {
+183         if (i &lt; _list.length()) {
+184             return createJavaThreadWrapper(_list.getJavaThreadAddressAt(i));
+185         }
+186         return null;
+187     }
+188 
+189     public int getNumberOfThreads() {
+190         return (int) _list.length();
+191     }
+192 
+193     /** Routine for instantiating appropriately-typed wrapper for a
+194       JavaThread. Currently needs to be public for OopUtilities to
+195       access it. */
+196     public JavaThread createJavaThreadWrapper(Address threadAddr) {
+197         try {
+198             JavaThread thread = (JavaThread)virtualConstructor.instantiateWrapperFor(threadAddr);
+199             thread.setThreadPDAccess(access);
+200             return thread;
+201         } catch (Exception e) {
+202             throw new RuntimeException(&quot;Unable to deduce type of thread from address &quot; + threadAddr +
+203             &quot; (expected type JavaThread, CompilerThread, ServiceThread, JvmtiAgentThread or CodeCacheSweeperThread)&quot;, e);
+204         }
+205     }
+206 
+207     /** Memory operations */
+208     public void oopsDo(AddressVisitor oopVisitor) {
+209         // FIXME: add more of VM functionality
+210         Threads threads = VM.getVM().getThreads();
+211         for (int i = 0; i &lt; threads.getNumberOfThreads(); i++) {
+212             JavaThread thread = threads.getJavaThreadAt(i);
+213             thread.oopsDo(oopVisitor);
+214         }
+215     }
+216 
+217     // refer to Threads::owning_thread_from_monitor_owner
+218     public JavaThread owningThreadFromMonitor(Address o) {
+219         if (o == null) return null;
+220         for (int i = 0; i &lt; getNumberOfThreads(); i++) {
+221             JavaThread thread = getJavaThreadAt(i);
+222             if (o.equals(thread.threadObjectAddress())) {
+223                 return thread;
+224             }
+225         }
+226 
+227         for (int i = 0; i &lt; getNumberOfThreads(); i++) {
+228             JavaThread thread = getJavaThreadAt(i);
+229             if (thread.isLockOwned(o))
+230                 return thread;
+231         }
+232         return null;
+233     }
+234 
+235     public JavaThread owningThreadFromMonitor(ObjectMonitor monitor) {
+236         return owningThreadFromMonitor(monitor.owner());
+237     }
+238 
+239     // refer to Threads::get_pending_threads
+240     // Get list of Java threads that are waiting to enter the specified monitor.
+241     public List getPendingThreads(ObjectMonitor monitor) {
+242         List pendingThreads = new ArrayList();
+243         for (int i = 0; i &lt; getNumberOfThreads(); i++) {
+244             JavaThread thread = getJavaThreadAt(i);
+245             if (thread.isCompilerThread() || thread.isCodeCacheSweeperThread()) {
+246                 continue;
+247             }
+248             ObjectMonitor pending = thread.getCurrentPendingMonitor();
+249             if (monitor.equals(pending)) {
+250                 pendingThreads.add(thread);
+251             }
+252         }
+253         return pendingThreads;
+254     }
+255 
+256     // Get list of Java threads that have called Object.wait on the specified monitor.
+257     public List getWaitingThreads(ObjectMonitor monitor) {
+258         List pendingThreads = new ArrayList();
+259         for (int i = 0; i &lt; getNumberOfThreads(); i++) {
+260             JavaThread thread = getJavaThreadAt(i);
+261             ObjectMonitor waiting = thread.getCurrentWaitingMonitor();
+262             if (monitor.equals(waiting)) {
+263                 pendingThreads.add(thread);
+264             }
+265         }
+266         return pendingThreads;
+267     }
+268 
+269     // FIXME: add other accessors
+270 }
+<a name="3" id="anc3"></a><b style="font-size: large; color: red">--- EOF ---</b>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<input id="eof" value="3" type="hidden" />
+</body>
+</html>

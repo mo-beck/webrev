@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\macroAssembler_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="macroAssembler_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="macroAssembler_aarch64_log.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\macroAssembler_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 172   }
+ 173 
+ 174   void membar(Membar_mask_bits order_constraint);
+ 175 
+ 176   using Assembler::ldr;
+ 177   using Assembler::str;
+ 178 
+ 179   void ldr(Register Rx, const Address &amp;adr);
+ 180   void ldrw(Register Rw, const Address &amp;adr);
+ 181   void str(Register Rx, const Address &amp;adr);
+ 182   void strw(Register Rx, const Address &amp;adr);
+ 183 
+ 184   // Frame creation and destruction shared between JITs.
+ 185   void build_frame(int framesize);
+ 186   void remove_frame(int framesize);
+ 187 
+ 188   virtual void _call_Unimplemented(address call_site) {
+ 189     mov(rscratch2, call_site);
+ 190   }
+ 191 
+
+
+
+ 192 #define call_Unimplemented() _call_Unimplemented((address)__PRETTY_FUNCTION__)
+
+ 193 
+ 194   // aliases defined in AARCH64 spec
+ 195 
+ 196   template&lt;class T&gt;
+ 197   inline void cmpw(Register Rd, T imm)  { subsw(zr, Rd, imm); }
+ 198 
+ 199   inline void cmp(Register Rd, unsigned char imm8)  { subs(zr, Rd, imm8); }
+<span class="line-modified"> 200   inline void cmp(Register Rd, unsigned imm) __attribute__ ((deprecated));</span>
+ 201 
+ 202   inline void cmnw(Register Rd, unsigned imm) { addsw(zr, Rd, imm); }
+ 203   inline void cmn(Register Rd, unsigned imm) { adds(zr, Rd, imm); }
+ 204 
+ 205   void cset(Register Rd, Assembler::Condition cond) {
+ 206     csinc(Rd, zr, zr, ~cond);
+ 207   }
+ 208   void csetw(Register Rd, Assembler::Condition cond) {
+ 209     csincw(Rd, zr, zr, ~cond);
+ 210   }
+ 211 
+ 212   void cneg(Register Rd, Register Rn, Assembler::Condition cond) {
+ 213     csneg(Rd, Rn, Rn, ~cond);
+ 214   }
+ 215   void cnegw(Register Rd, Register Rn, Assembler::Condition cond) {
+ 216     csnegw(Rd, Rn, Rn, ~cond);
+ 217   }
+ 218 
+ 219   inline void movw(Register Rd, Register Rn) {
+ 220     if (Rd == sp || Rn == sp) {
+</pre>
+<hr />
+<pre>
+ 436     umaddl(Rd, Rn, Rm, zr);
+ 437   }
+ 438 
+ 439 #define WRAP(INSN)                                                            \
+ 440   void INSN(Register Rd, Register Rn, Register Rm, Register Ra) {             \
+ 441     if ((VM_Version::features() &amp; VM_Version::CPU_A53MAC) &amp;&amp; Ra != zr)        \
+ 442       nop();                                                                  \
+ 443     Assembler::INSN(Rd, Rn, Rm, Ra);                                          \
+ 444   }
+ 445 
+ 446   WRAP(madd) WRAP(msub) WRAP(maddw) WRAP(msubw)
+ 447   WRAP(smaddl) WRAP(smsubl) WRAP(umaddl) WRAP(umsubl)
+ 448 #undef WRAP
+ 449 
+ 450 
+ 451   // macro assembly operations needed for aarch64
+ 452 
+ 453   // first two private routines for loading 32 bit or 64 bit constants
+ 454 private:
+ 455 
+<span class="line-modified"> 456   void mov_immediate64(Register dst, u_int64_t imm64);</span>
+<span class="line-modified"> 457   void mov_immediate32(Register dst, u_int32_t imm32);</span>
+ 458 
+ 459   int push(unsigned int bitset, Register stack);
+ 460   int pop(unsigned int bitset, Register stack);
+ 461 
+ 462   int push_fp(unsigned int bitset, Register stack);
+ 463   int pop_fp(unsigned int bitset, Register stack);
+ 464 
+ 465   void mov(Register dst, Address a);
+ 466 
+ 467 public:
+ 468   void push(RegSet regs, Register stack) { if (regs.bits()) push(regs.bits(), stack); }
+ 469   void pop(RegSet regs, Register stack) { if (regs.bits()) pop(regs.bits(), stack); }
+ 470 
+ 471   void push_fp(RegSet regs, Register stack) { if (regs.bits()) push_fp(regs.bits(), stack); }
+ 472   void pop_fp(RegSet regs, Register stack) { if (regs.bits()) pop_fp(regs.bits(), stack); }
+ 473 
+ 474   // Push and pop everything that might be clobbered by a native
+ 475   // runtime call except rscratch1 and rscratch2.  (They are always
+ 476   // scratch, so we don&#39;t have to protect them.)  Only save the lower
+ 477   // 64 bits of each vector register.
+ 478   void push_call_clobbered_registers();
+ 479   void pop_call_clobbered_registers();
+ 480 
+ 481   // now mov instructions for loading absolute addresses and 32 or
+ 482   // 64 bit integers
+ 483 
+ 484   inline void mov(Register dst, address addr)
+ 485   {
+<span class="line-modified"> 486     mov_immediate64(dst, (u_int64_t)addr);</span>
+ 487   }
+ 488 
+<span class="line-modified"> 489   inline void mov(Register dst, u_int64_t imm64)</span>
+ 490   {
+ 491     mov_immediate64(dst, imm64);
+ 492   }
+ 493 
+<span class="line-modified"> 494   inline void movw(Register dst, u_int32_t imm32)</span>
+ 495   {
+ 496     mov_immediate32(dst, imm32);
+ 497   }
+ 498 
+<span class="line-modified"> 499   inline void mov(Register dst, long l)</span>
+ 500   {
+<span class="line-modified"> 501     mov(dst, (u_int64_t)l);</span>
+ 502   }
+ 503 
+ 504   inline void mov(Register dst, int i)
+ 505   {
+<span class="line-modified"> 506     mov(dst, (long)i);</span>
+ 507   }
+ 508 
+ 509   void mov(Register dst, RegisterOrConstant src) {
+ 510     if (src.is_register())
+ 511       mov(dst, src.as_register());
+ 512     else
+<span class="line-modified"> 513       mov(dst, src.as_constant());</span>
+ 514   }
+ 515 
+ 516   void movptr(Register r, uintptr_t imm64);
+ 517 
+<span class="line-modified"> 518   void mov(FloatRegister Vd, SIMD_Arrangement T, u_int32_t imm32);</span>
+ 519 
+ 520   void mov(FloatRegister Vd, SIMD_Arrangement T, FloatRegister Vn) {
+ 521     orr(Vd, T, Vn, Vn);
+ 522   }
+ 523 
+ 524 public:
+ 525 
+ 526   // Generalized Test Bit And Branch, including a &quot;far&quot; variety which
+ 527   // spans more than 32KiB.
+<span class="line-modified"> 528   void tbr(Condition cond, Register Rt, int bitpos, Label &amp;dest, bool far = false) {</span>
+ 529     assert(cond == EQ || cond == NE, &quot;must be&quot;);
+ 530 
+<span class="line-modified"> 531     if (far)</span>
+ 532       cond = ~cond;
+ 533 
+ 534     void (Assembler::* branch)(Register Rt, int bitpos, Label &amp;L);
+ 535     if (cond == Assembler::EQ)
+ 536       branch = &amp;Assembler::tbz;
+ 537     else
+ 538       branch = &amp;Assembler::tbnz;
+ 539 
+<span class="line-modified"> 540     if (far) {</span>
+ 541       Label L;
+ 542       (this-&gt;*branch)(Rt, bitpos, L);
+ 543       b(dest);
+ 544       bind(L);
+ 545     } else {
+ 546       (this-&gt;*branch)(Rt, bitpos, dest);
+ 547     }
+ 548   }
+ 549 
+ 550   // macro instructions for accessing and updating floating point
+ 551   // status register
+ 552   //
+ 553   // FPSR : op1 == 011
+ 554   //        CRn == 0100
+ 555   //        CRm == 0100
+ 556   //        op2 == 001
+ 557 
+ 558   inline void get_fpsr(Register reg)
+ 559   {
+ 560     mrs(0b11, 0b0100, 0b0100, 0b001, reg);
+</pre>
+<hr />
+<pre>
+1151              enum shift_kind kind, unsigned shift = 0) {                \
+1152     Assembler::INSN(Rd, Rn, Rm, kind, shift);                           \
+1153   }                                                                     \
+1154                                                                         \
+1155   void INSN(Register Rd, Register Rn, Register Rm) {                    \
+1156     Assembler::INSN(Rd, Rn, Rm);                                        \
+1157   }                                                                     \
+1158                                                                         \
+1159   void INSN(Register Rd, Register Rn, Register Rm,                      \
+1160            ext::operation option, int amount = 0) {                     \
+1161     Assembler::INSN(Rd, Rn, Rm, option, amount);                        \
+1162   }
+1163 
+1164   WRAP(adds) WRAP(addsw) WRAP(subs) WRAP(subsw)
+1165 
+1166   void add(Register Rd, Register Rn, RegisterOrConstant increment);
+1167   void addw(Register Rd, Register Rn, RegisterOrConstant increment);
+1168   void sub(Register Rd, Register Rn, RegisterOrConstant decrement);
+1169   void subw(Register Rd, Register Rn, RegisterOrConstant decrement);
+1170 
+<span class="line-modified">1171   void adrp(Register reg1, const Address &amp;dest, unsigned long &amp;byte_offset);</span>
+1172 
+1173   void tableswitch(Register index, jint lowbound, jint highbound,
+1174                    Label &amp;jumptable, Label &amp;jumptable_end, int stride = 1) {
+1175     adr(rscratch1, jumptable);
+1176     subsw(rscratch2, index, lowbound);
+1177     subsw(zr, rscratch2, highbound - lowbound);
+1178     br(Assembler::HS, jumptable_end);
+1179     add(rscratch1, rscratch1, rscratch2,
+1180         ext::sxtw, exact_log2(stride * Assembler::instruction_size));
+1181     br(rscratch1);
+1182   }
+1183 
+1184   // Form an address from base + offset in Rd.  Rd may or may not
+1185   // actually be used: you must use the Address that is returned.  It
+1186   // is up to you to ensure that the shift provided matches the size
+1187   // of your data.
+<span class="line-modified">1188   Address form_address(Register Rd, Register base, long byte_offset, int shift);</span>
+1189 
+1190   // Return true iff an address is within the 48-bit AArch64 address
+1191   // space.
+1192   bool is_valid_AArch64_address(address a) {
+1193     return ((uint64_t)a &gt;&gt; 48) == 0;
+1194   }
+1195 
+1196   // Load the base of the cardtable byte map into reg.
+1197   void load_byte_map_base(Register reg);
+1198 
+1199   // Prolog generator routines to support switch between x86 code and
+1200   // generated ARM code
+1201 
+1202   // routine to generate an x86 prolog for a stub function which
+1203   // bootstraps into the generated ARM code which directly follows the
+1204   // stub
+1205   //
+1206 
+1207   public:
+1208 
+1209   void ldr_constant(Register dest, const Address &amp;const_addr) {
+1210     if (NearCpool) {
+1211       ldr(dest, const_addr);
+1212     } else {
+<span class="line-modified">1213       unsigned long offset;</span>
+1214       adrp(dest, InternalAddress(const_addr.target()), offset);
+1215       ldr(dest, Address(dest, offset));
+1216     }
+1217   }
+1218 
+1219   address read_polling_page(Register r, address page, relocInfo::relocType rtype);
+1220   address read_polling_page(Register r, relocInfo::relocType rtype);
+1221   void get_polling_page(Register dest, address page, relocInfo::relocType rtype);
+1222 
+1223   // CRC32 code for java.util.zip.CRC32::updateBytes() instrinsic.
+1224   void update_byte_crc32(Register crc, Register val, Register table);
+1225   void update_word_crc32(Register crc, Register v, Register tmp,
+1226         Register table0, Register table1, Register table2, Register table3,
+1227         bool upper = false);
+1228 
+1229   void string_compare(Register str1, Register str2,
+1230                       Register cnt1, Register cnt2, Register result,
+1231                       Register tmp1, Register tmp2, FloatRegister vtmp1,
+1232                       FloatRegister vtmp2, FloatRegister vtmp3, int ae);
+1233 
+1234   void has_negatives(Register ary1, Register len, Register result);
+1235 
+1236   void arrays_equals(Register a1, Register a2, Register result, Register cnt1,
+1237                      Register tmp1, Register tmp2, Register tmp3, int elem_size);
+1238 
+1239   void string_equals(Register a1, Register a2, Register result, Register cnt1,
+1240                      int elem_size);
+1241 
+1242   void fill_words(Register base, Register cnt, Register value);
+<span class="line-modified">1243   void zero_words(Register base, u_int64_t cnt);</span>
+1244   void zero_words(Register ptr, Register cnt);
+1245   void zero_dcache_blocks(Register base, Register cnt);
+1246 
+1247   static const int zero_words_block_size;
+1248 
+1249   void byte_array_inflate(Register src, Register dst, Register len,
+1250                           FloatRegister vtmp1, FloatRegister vtmp2,
+1251                           FloatRegister vtmp3, Register tmp4);
+1252 
+1253   void char_array_compress(Register src, Register dst, Register len,
+1254                            FloatRegister tmp1Reg, FloatRegister tmp2Reg,
+1255                            FloatRegister tmp3Reg, FloatRegister tmp4Reg,
+1256                            Register result);
+1257 
+1258   void encode_iso_array(Register src, Register dst,
+1259                         Register len, Register result,
+1260                         FloatRegister Vtmp1, FloatRegister Vtmp2,
+1261                         FloatRegister Vtmp3, FloatRegister Vtmp4);
+1262   void string_indexof(Register str1, Register str2,
+1263                       Register cnt1, Register cnt2,
+</pre>
+<hr />
+<pre>
+1305         Register tmp3);
+1306 public:
+1307   void multiply_to_len(Register x, Register xlen, Register y, Register ylen, Register z,
+1308                        Register zlen, Register tmp1, Register tmp2, Register tmp3,
+1309                        Register tmp4, Register tmp5, Register tmp6, Register tmp7);
+1310   void mul_add(Register out, Register in, Register offs, Register len, Register k);
+1311   // ISB may be needed because of a safepoint
+1312   void maybe_isb() { isb(); }
+1313 
+1314 private:
+1315   // Return the effective address r + (r1 &lt;&lt; ext) + offset.
+1316   // Uses rscratch2.
+1317   Address offsetted_address(Register r, Register r1, Address::extend ext,
+1318                             int offset, int size);
+1319 
+1320 private:
+1321   // Returns an address on the stack which is reachable with a ldr/str of size
+1322   // Uses rscratch2 if the address is not directly reachable
+1323   Address spill_address(int size, int offset, Register tmp=rscratch2);
+1324 
+<span class="line-modified">1325   bool merge_alignment_check(Register base, size_t size, long cur_offset, long prev_offset) const;</span>
+1326 
+1327   // Check whether two loads/stores can be merged into ldp/stp.
+1328   bool ldst_can_merge(Register rx, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store) const;
+1329 
+1330   // Merge current load/store with previous load/store into ldp/stp.
+1331   void merge_ldst(Register rx, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store);
+1332 
+1333   // Try to merge two loads/stores into ldp/stp. If success, returns true else false.
+1334   bool try_merge_ldst(Register rt, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store);
+1335 
+1336 public:
+1337   void spill(Register Rx, bool is64, int offset) {
+1338     if (is64) {
+1339       str(Rx, spill_address(8, offset));
+1340     } else {
+1341       strw(Rx, spill_address(4, offset));
+1342     }
+1343   }
+1344   void spill(FloatRegister Vx, SIMD_RegVariant T, int offset) {
+1345     str(Vx, T, spill_address(1 &lt;&lt; (int)T, offset));
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 172   }
+ 173 
+ 174   void membar(Membar_mask_bits order_constraint);
+ 175 
+ 176   using Assembler::ldr;
+ 177   using Assembler::str;
+ 178 
+ 179   void ldr(Register Rx, const Address &amp;adr);
+ 180   void ldrw(Register Rw, const Address &amp;adr);
+ 181   void str(Register Rx, const Address &amp;adr);
+ 182   void strw(Register Rx, const Address &amp;adr);
+ 183 
+ 184   // Frame creation and destruction shared between JITs.
+ 185   void build_frame(int framesize);
+ 186   void remove_frame(int framesize);
+ 187 
+ 188   virtual void _call_Unimplemented(address call_site) {
+ 189     mov(rscratch2, call_site);
+ 190   }
+ 191 
+<span class="line-added"> 192 #ifdef _WIN64</span>
+<span class="line-added"> 193 #define call_Unimplemented() _call_Unimplemented((address)__FUNCSIG__)</span>
+<span class="line-added"> 194 #else</span>
+ 195 #define call_Unimplemented() _call_Unimplemented((address)__PRETTY_FUNCTION__)
+<span class="line-added"> 196 #endif</span>
+ 197 
+ 198   // aliases defined in AARCH64 spec
+ 199 
+ 200   template&lt;class T&gt;
+ 201   inline void cmpw(Register Rd, T imm)  { subsw(zr, Rd, imm); }
+ 202 
+ 203   inline void cmp(Register Rd, unsigned char imm8)  { subs(zr, Rd, imm8); }
+<span class="line-modified"> 204   inline __declspec(deprecated) void cmp(Register Rd, unsigned imm);</span>
+ 205 
+ 206   inline void cmnw(Register Rd, unsigned imm) { addsw(zr, Rd, imm); }
+ 207   inline void cmn(Register Rd, unsigned imm) { adds(zr, Rd, imm); }
+ 208 
+ 209   void cset(Register Rd, Assembler::Condition cond) {
+ 210     csinc(Rd, zr, zr, ~cond);
+ 211   }
+ 212   void csetw(Register Rd, Assembler::Condition cond) {
+ 213     csincw(Rd, zr, zr, ~cond);
+ 214   }
+ 215 
+ 216   void cneg(Register Rd, Register Rn, Assembler::Condition cond) {
+ 217     csneg(Rd, Rn, Rn, ~cond);
+ 218   }
+ 219   void cnegw(Register Rd, Register Rn, Assembler::Condition cond) {
+ 220     csnegw(Rd, Rn, Rn, ~cond);
+ 221   }
+ 222 
+ 223   inline void movw(Register Rd, Register Rn) {
+ 224     if (Rd == sp || Rn == sp) {
+</pre>
+<hr />
+<pre>
+ 440     umaddl(Rd, Rn, Rm, zr);
+ 441   }
+ 442 
+ 443 #define WRAP(INSN)                                                            \
+ 444   void INSN(Register Rd, Register Rn, Register Rm, Register Ra) {             \
+ 445     if ((VM_Version::features() &amp; VM_Version::CPU_A53MAC) &amp;&amp; Ra != zr)        \
+ 446       nop();                                                                  \
+ 447     Assembler::INSN(Rd, Rn, Rm, Ra);                                          \
+ 448   }
+ 449 
+ 450   WRAP(madd) WRAP(msub) WRAP(maddw) WRAP(msubw)
+ 451   WRAP(smaddl) WRAP(smsubl) WRAP(umaddl) WRAP(umsubl)
+ 452 #undef WRAP
+ 453 
+ 454 
+ 455   // macro assembly operations needed for aarch64
+ 456 
+ 457   // first two private routines for loading 32 bit or 64 bit constants
+ 458 private:
+ 459 
+<span class="line-modified"> 460   void mov_immediate64(Register dst, uint64_t imm64);</span>
+<span class="line-modified"> 461   void mov_immediate32(Register dst, uint32_t imm32);</span>
+ 462 
+ 463   int push(unsigned int bitset, Register stack);
+ 464   int pop(unsigned int bitset, Register stack);
+ 465 
+ 466   int push_fp(unsigned int bitset, Register stack);
+ 467   int pop_fp(unsigned int bitset, Register stack);
+ 468 
+ 469   void mov(Register dst, Address a);
+ 470 
+ 471 public:
+ 472   void push(RegSet regs, Register stack) { if (regs.bits()) push(regs.bits(), stack); }
+ 473   void pop(RegSet regs, Register stack) { if (regs.bits()) pop(regs.bits(), stack); }
+ 474 
+ 475   void push_fp(RegSet regs, Register stack) { if (regs.bits()) push_fp(regs.bits(), stack); }
+ 476   void pop_fp(RegSet regs, Register stack) { if (regs.bits()) pop_fp(regs.bits(), stack); }
+ 477 
+ 478   // Push and pop everything that might be clobbered by a native
+ 479   // runtime call except rscratch1 and rscratch2.  (They are always
+ 480   // scratch, so we don&#39;t have to protect them.)  Only save the lower
+ 481   // 64 bits of each vector register.
+ 482   void push_call_clobbered_registers();
+ 483   void pop_call_clobbered_registers();
+ 484 
+ 485   // now mov instructions for loading absolute addresses and 32 or
+ 486   // 64 bit integers
+ 487 
+ 488   inline void mov(Register dst, address addr)
+ 489   {
+<span class="line-modified"> 490     mov_immediate64(dst, (uint64_t)addr);</span>
+ 491   }
+ 492 
+<span class="line-modified"> 493   inline void mov(Register dst, uint64_t imm64)</span>
+ 494   {
+ 495     mov_immediate64(dst, imm64);
+ 496   }
+ 497 
+<span class="line-modified"> 498   inline void movw(Register dst, uint32_t imm32)</span>
+ 499   {
+ 500     mov_immediate32(dst, imm32);
+ 501   }
+ 502 
+<span class="line-modified"> 503   inline void mov(Register dst, int64_t l)</span>
+ 504   {
+<span class="line-modified"> 505     mov(dst, (uint64_t)l);</span>
+ 506   }
+ 507 
+ 508   inline void mov(Register dst, int i)
+ 509   {
+<span class="line-modified"> 510     mov(dst, (int64_t)i);</span>
+ 511   }
+ 512 
+ 513   void mov(Register dst, RegisterOrConstant src) {
+ 514     if (src.is_register())
+ 515       mov(dst, src.as_register());
+ 516     else
+<span class="line-modified"> 517       mov(dst, (uint64_t)src.as_constant());</span>
+ 518   }
+ 519 
+ 520   void movptr(Register r, uintptr_t imm64);
+ 521 
+<span class="line-modified"> 522   void mov(FloatRegister Vd, SIMD_Arrangement T, uint32_t imm32);</span>
+ 523 
+ 524   void mov(FloatRegister Vd, SIMD_Arrangement T, FloatRegister Vn) {
+ 525     orr(Vd, T, Vn, Vn);
+ 526   }
+ 527 
+ 528 public:
+ 529 
+ 530   // Generalized Test Bit And Branch, including a &quot;far&quot; variety which
+ 531   // spans more than 32KiB.
+<span class="line-modified"> 532   void tbr(Condition cond, Register Rt, int bitpos, Label &amp;dest, bool isfar = false) {</span>
+ 533     assert(cond == EQ || cond == NE, &quot;must be&quot;);
+ 534 
+<span class="line-modified"> 535     if (isfar)</span>
+ 536       cond = ~cond;
+ 537 
+ 538     void (Assembler::* branch)(Register Rt, int bitpos, Label &amp;L);
+ 539     if (cond == Assembler::EQ)
+ 540       branch = &amp;Assembler::tbz;
+ 541     else
+ 542       branch = &amp;Assembler::tbnz;
+ 543 
+<span class="line-modified"> 544     if (isfar) {</span>
+ 545       Label L;
+ 546       (this-&gt;*branch)(Rt, bitpos, L);
+ 547       b(dest);
+ 548       bind(L);
+ 549     } else {
+ 550       (this-&gt;*branch)(Rt, bitpos, dest);
+ 551     }
+ 552   }
+ 553 
+ 554   // macro instructions for accessing and updating floating point
+ 555   // status register
+ 556   //
+ 557   // FPSR : op1 == 011
+ 558   //        CRn == 0100
+ 559   //        CRm == 0100
+ 560   //        op2 == 001
+ 561 
+ 562   inline void get_fpsr(Register reg)
+ 563   {
+ 564     mrs(0b11, 0b0100, 0b0100, 0b001, reg);
+</pre>
+<hr />
+<pre>
+1155              enum shift_kind kind, unsigned shift = 0) {                \
+1156     Assembler::INSN(Rd, Rn, Rm, kind, shift);                           \
+1157   }                                                                     \
+1158                                                                         \
+1159   void INSN(Register Rd, Register Rn, Register Rm) {                    \
+1160     Assembler::INSN(Rd, Rn, Rm);                                        \
+1161   }                                                                     \
+1162                                                                         \
+1163   void INSN(Register Rd, Register Rn, Register Rm,                      \
+1164            ext::operation option, int amount = 0) {                     \
+1165     Assembler::INSN(Rd, Rn, Rm, option, amount);                        \
+1166   }
+1167 
+1168   WRAP(adds) WRAP(addsw) WRAP(subs) WRAP(subsw)
+1169 
+1170   void add(Register Rd, Register Rn, RegisterOrConstant increment);
+1171   void addw(Register Rd, Register Rn, RegisterOrConstant increment);
+1172   void sub(Register Rd, Register Rn, RegisterOrConstant decrement);
+1173   void subw(Register Rd, Register Rn, RegisterOrConstant decrement);
+1174 
+<span class="line-modified">1175   void adrp(Register reg1, const Address &amp;dest, uint64_t &amp;byte_offset);</span>
+1176 
+1177   void tableswitch(Register index, jint lowbound, jint highbound,
+1178                    Label &amp;jumptable, Label &amp;jumptable_end, int stride = 1) {
+1179     adr(rscratch1, jumptable);
+1180     subsw(rscratch2, index, lowbound);
+1181     subsw(zr, rscratch2, highbound - lowbound);
+1182     br(Assembler::HS, jumptable_end);
+1183     add(rscratch1, rscratch1, rscratch2,
+1184         ext::sxtw, exact_log2(stride * Assembler::instruction_size));
+1185     br(rscratch1);
+1186   }
+1187 
+1188   // Form an address from base + offset in Rd.  Rd may or may not
+1189   // actually be used: you must use the Address that is returned.  It
+1190   // is up to you to ensure that the shift provided matches the size
+1191   // of your data.
+<span class="line-modified">1192   Address form_address(Register Rd, Register base, int64_t byte_offset, int shift);</span>
+1193 
+1194   // Return true iff an address is within the 48-bit AArch64 address
+1195   // space.
+1196   bool is_valid_AArch64_address(address a) {
+1197     return ((uint64_t)a &gt;&gt; 48) == 0;
+1198   }
+1199 
+1200   // Load the base of the cardtable byte map into reg.
+1201   void load_byte_map_base(Register reg);
+1202 
+1203   // Prolog generator routines to support switch between x86 code and
+1204   // generated ARM code
+1205 
+1206   // routine to generate an x86 prolog for a stub function which
+1207   // bootstraps into the generated ARM code which directly follows the
+1208   // stub
+1209   //
+1210 
+1211   public:
+1212 
+1213   void ldr_constant(Register dest, const Address &amp;const_addr) {
+1214     if (NearCpool) {
+1215       ldr(dest, const_addr);
+1216     } else {
+<span class="line-modified">1217       uint64_t offset;</span>
+1218       adrp(dest, InternalAddress(const_addr.target()), offset);
+1219       ldr(dest, Address(dest, offset));
+1220     }
+1221   }
+1222 
+1223   address read_polling_page(Register r, address page, relocInfo::relocType rtype);
+1224   address read_polling_page(Register r, relocInfo::relocType rtype);
+1225   void get_polling_page(Register dest, address page, relocInfo::relocType rtype);
+1226 
+1227   // CRC32 code for java.util.zip.CRC32::updateBytes() instrinsic.
+1228   void update_byte_crc32(Register crc, Register val, Register table);
+1229   void update_word_crc32(Register crc, Register v, Register tmp,
+1230         Register table0, Register table1, Register table2, Register table3,
+1231         bool upper = false);
+1232 
+1233   void string_compare(Register str1, Register str2,
+1234                       Register cnt1, Register cnt2, Register result,
+1235                       Register tmp1, Register tmp2, FloatRegister vtmp1,
+1236                       FloatRegister vtmp2, FloatRegister vtmp3, int ae);
+1237 
+1238   void has_negatives(Register ary1, Register len, Register result);
+1239 
+1240   void arrays_equals(Register a1, Register a2, Register result, Register cnt1,
+1241                      Register tmp1, Register tmp2, Register tmp3, int elem_size);
+1242 
+1243   void string_equals(Register a1, Register a2, Register result, Register cnt1,
+1244                      int elem_size);
+1245 
+1246   void fill_words(Register base, Register cnt, Register value);
+<span class="line-modified">1247   void zero_words(Register base, uint64_t cnt);</span>
+1248   void zero_words(Register ptr, Register cnt);
+1249   void zero_dcache_blocks(Register base, Register cnt);
+1250 
+1251   static const int zero_words_block_size;
+1252 
+1253   void byte_array_inflate(Register src, Register dst, Register len,
+1254                           FloatRegister vtmp1, FloatRegister vtmp2,
+1255                           FloatRegister vtmp3, Register tmp4);
+1256 
+1257   void char_array_compress(Register src, Register dst, Register len,
+1258                            FloatRegister tmp1Reg, FloatRegister tmp2Reg,
+1259                            FloatRegister tmp3Reg, FloatRegister tmp4Reg,
+1260                            Register result);
+1261 
+1262   void encode_iso_array(Register src, Register dst,
+1263                         Register len, Register result,
+1264                         FloatRegister Vtmp1, FloatRegister Vtmp2,
+1265                         FloatRegister Vtmp3, FloatRegister Vtmp4);
+1266   void string_indexof(Register str1, Register str2,
+1267                       Register cnt1, Register cnt2,
+</pre>
+<hr />
+<pre>
+1309         Register tmp3);
+1310 public:
+1311   void multiply_to_len(Register x, Register xlen, Register y, Register ylen, Register z,
+1312                        Register zlen, Register tmp1, Register tmp2, Register tmp3,
+1313                        Register tmp4, Register tmp5, Register tmp6, Register tmp7);
+1314   void mul_add(Register out, Register in, Register offs, Register len, Register k);
+1315   // ISB may be needed because of a safepoint
+1316   void maybe_isb() { isb(); }
+1317 
+1318 private:
+1319   // Return the effective address r + (r1 &lt;&lt; ext) + offset.
+1320   // Uses rscratch2.
+1321   Address offsetted_address(Register r, Register r1, Address::extend ext,
+1322                             int offset, int size);
+1323 
+1324 private:
+1325   // Returns an address on the stack which is reachable with a ldr/str of size
+1326   // Uses rscratch2 if the address is not directly reachable
+1327   Address spill_address(int size, int offset, Register tmp=rscratch2);
+1328 
+<span class="line-modified">1329   bool merge_alignment_check(Register base, size_t size, int64_t cur_offset, int64_t prev_offset) const;</span>
+1330 
+1331   // Check whether two loads/stores can be merged into ldp/stp.
+1332   bool ldst_can_merge(Register rx, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store) const;
+1333 
+1334   // Merge current load/store with previous load/store into ldp/stp.
+1335   void merge_ldst(Register rx, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store);
+1336 
+1337   // Try to merge two loads/stores into ldp/stp. If success, returns true else false.
+1338   bool try_merge_ldst(Register rt, const Address &amp;adr, size_t cur_size_in_bytes, bool is_store);
+1339 
+1340 public:
+1341   void spill(Register Rx, bool is64, int offset) {
+1342     if (is64) {
+1343       str(Rx, spill_address(8, offset));
+1344     } else {
+1345       strw(Rx, spill_address(4, offset));
+1346     }
+1347   }
+1348   void spill(FloatRegister Vx, SIMD_RegVariant T, int offset) {
+1349     str(Vx, T, spill_address(1 &lt;&lt; (int)T, offset));
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="macroAssembler_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="macroAssembler_aarch64_log.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

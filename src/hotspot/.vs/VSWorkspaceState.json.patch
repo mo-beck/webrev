@@ -1,0 +1,20 @@
+diff a/src/hotspot/.vs/VSWorkspaceState.json b/src/hotspot/.vs/VSWorkspaceState.json
+--- /dev/null
++++ b/src/hotspot/.vs/VSWorkspaceState.json
+@@ -0,0 +1,16 @@
++{
++  "ExpandedNodes": [
++    "",
++    "\\cpu",
++    "\\cpu\\x86",
++    "\\os_cpu",
++    "\\share",
++    "\\share\\memory",
++    "\\share\\metaprogramming",
++    "\\share\\opto",
++    "\\share\\runtime",
++    "\\share\\services"
++  ],
++  "SelectedNode": "\\cpu\\x86\\methodHandles_x86.hpp",
++  "PreviewInSolutionExplorer": false
++}

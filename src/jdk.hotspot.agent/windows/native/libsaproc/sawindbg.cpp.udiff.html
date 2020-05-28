@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\jdk.hotspot.agent\windows\native\libsaproc\sawindbg.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\..\..\share\classes\sun\jvm\hotspot\runtime\Threads.java.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\..\..\utils\hsdis-llvm\hsdis-demo.c.udiff.html" target="_top">next &gt;</a></center>    <h2>src\jdk.hotspot.agent\windows\native\libsaproc\sawindbg.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -34,10 +34,13 @@</span>
+    #include &quot;sun_jvm_hotspot_debugger_x86_X86ThreadContext.h&quot;
+    #define NPRGREG sun_jvm_hotspot_debugger_x86_X86ThreadContext_NPRGREG
+  #elif _M_AMD64
+    #include &quot;sun_jvm_hotspot_debugger_amd64_AMD64ThreadContext.h&quot;
+    #define NPRGREG sun_jvm_hotspot_debugger_amd64_AMD64ThreadContext_NPRGREG
+<span class="udiff-line-added">+ #elif _M_ARM64</span>
+<span class="udiff-line-added">+   #include &quot;sun_jvm_hotspot_debugger_aarch64_AARCH64ThreadContext.h&quot;</span>
+<span class="udiff-line-added">+   #define NPRGREG sun_jvm_hotspot_debugger_aarch64_AARCH64ThreadContext_NPRGREG</span>
+  #else
+    #error &quot;SA windbg back-end is not supported for your cpu!&quot;
+  #endif
+  
+  #include &lt;limits.h&gt;
+</pre>
+<center><a href="..\..\..\share\classes\sun\jvm\hotspot\runtime\Threads.java.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\..\..\utils\hsdis-llvm\hsdis-demo.c.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

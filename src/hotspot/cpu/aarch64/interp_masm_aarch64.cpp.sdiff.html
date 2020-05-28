@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\interp_masm_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="immediate_aarch64.hpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="interpreterRT_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\interp_masm_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 151 
+ 152     // Call Interpreter::remove_activation_early_entry() to get the address of the
+ 153     // same-named entrypoint in the generated interpreter code.
+ 154     ldr(rscratch1, Address(rthread, JavaThread::jvmti_thread_state_offset()));
+ 155     ldrw(rscratch1, Address(rscratch1, JvmtiThreadState::earlyret_tos_offset()));
+ 156     call_VM_leaf(CAST_FROM_FN_PTR(address, Interpreter::remove_activation_early_entry), rscratch1);
+ 157     br(r0);
+ 158     bind(L);
+ 159   }
+ 160 }
+ 161 
+ 162 void InterpreterMacroAssembler::get_unsigned_2_byte_index_at_bcp(
+ 163   Register reg,
+ 164   int bcp_offset) {
+ 165   assert(bcp_offset &gt;= 0, &quot;bcp is still pointing to start of bytecode&quot;);
+ 166   ldrh(reg, Address(rbcp, bcp_offset));
+ 167   rev16(reg, reg);
+ 168 }
+ 169 
+ 170 void InterpreterMacroAssembler::get_dispatch() {
+<span class="line-modified"> 171   unsigned long offset;</span>
+ 172   adrp(rdispatch, ExternalAddress((address)Interpreter::dispatch_table()), offset);
+ 173   lea(rdispatch, Address(rdispatch, offset));
+ 174 }
+ 175 
+ 176 void InterpreterMacroAssembler::get_cache_index_at_bcp(Register index,
+ 177                                                        int bcp_offset,
+ 178                                                        size_t index_size) {
+ 179   assert(bcp_offset &gt; 0, &quot;bcp is still pointing to start of bytecode&quot;);
+ 180   if (index_size == sizeof(u2)) {
+ 181     load_unsigned_short(index, Address(rbcp, bcp_offset));
+ 182   } else if (index_size == sizeof(u4)) {
+ 183     // assert(EnableInvokeDynamic, &quot;giant index used only for JSR 292&quot;);
+ 184     ldrw(index, Address(rbcp, bcp_offset));
+ 185     // Check if the secondary index definition is still ~x, otherwise
+ 186     // we have to change the following assembler code to calculate the
+ 187     // plain index.
+ 188     assert(ConstantPool::decode_invokedynamic_index(~123) == 123, &quot;else change next line&quot;);
+ 189     eonw(index, index, zr);  // convert to plain index
+ 190   } else if (index_size == sizeof(u1)) {
+ 191     load_unsigned_byte(index, Address(rbcp, bcp_offset));
+</pre>
+<hr />
+<pre>
+ 265 }
+ 266 
+ 267 // Load object from cpool-&gt;resolved_references(index)
+ 268 void InterpreterMacroAssembler::load_resolved_reference_at_index(
+ 269                                            Register result, Register index, Register tmp) {
+ 270   assert_different_registers(result, index);
+ 271 
+ 272   get_constant_pool(result);
+ 273   // load pointer for resolved_references[] objArray
+ 274   ldr(result, Address(result, ConstantPool::cache_offset_in_bytes()));
+ 275   ldr(result, Address(result, ConstantPoolCache::resolved_references_offset_in_bytes()));
+ 276   resolve_oop_handle(result, tmp);
+ 277   // Add in the index
+ 278   add(index, index, arrayOopDesc::base_offset_in_bytes(T_OBJECT) &gt;&gt; LogBytesPerHeapOop);
+ 279   load_heap_oop(result, Address(result, index, Address::uxtw(LogBytesPerHeapOop)));
+ 280 }
+ 281 
+ 282 void InterpreterMacroAssembler::load_resolved_klass_at_offset(
+ 283                              Register cpool, Register index, Register klass, Register temp) {
+ 284   add(temp, cpool, index, LSL, LogBytesPerWord);
+
+
+
+
+ 285   ldrh(temp, Address(temp, sizeof(ConstantPool))); // temp = resolved_klass_index
+
+ 286   ldr(klass, Address(cpool,  ConstantPool::resolved_klasses_offset_in_bytes())); // klass = cpool-&gt;_resolved_klasses
+ 287   add(klass, klass, temp, LSL, LogBytesPerWord);
+ 288   ldr(klass, Address(klass, Array&lt;Klass*&gt;::base_offset_in_bytes()));
+ 289 }
+ 290 
+ 291 void InterpreterMacroAssembler::load_resolved_method_at_index(int byte_no,
+ 292                                                               Register method,
+ 293                                                               Register cache) {
+ 294   const int method_offset = in_bytes(
+ 295     ConstantPoolCache::base_offset() +
+ 296       ((byte_no == TemplateTable::f2_byte)
+ 297        ? ConstantPoolCacheEntry::f2_offset()
+ 298        : ConstantPoolCacheEntry::f1_offset()));
+ 299 
+ 300   ldr(method, Address(cache, method_offset)); // get f1 Method*
+ 301 }
+ 302 
+ 303 // Generate a subtype check: branch to ok_is_subtype if sub_klass is a
+ 304 // subtype of super_klass.
+ 305 //
+</pre>
+<hr />
+<pre>
+ 749                   rscratch2, rscratch1, tmp);
+ 750       b(done);
+ 751       bind(fail);
+ 752     } else {
+ 753       cmpxchg_obj_header(swap_reg, lock_reg, obj_reg, rscratch1, done, /*fallthrough*/NULL);
+ 754     }
+ 755 
+ 756     // Test if the oopMark is an obvious stack pointer, i.e.,
+ 757     //  1) (mark &amp; 7) == 0, and
+ 758     //  2) rsp &lt;= mark &lt; mark + os::pagesize()
+ 759     //
+ 760     // These 3 tests can be done by evaluating the following
+ 761     // expression: ((mark - rsp) &amp; (7 - os::vm_page_size())),
+ 762     // assuming both stack pointer and pagesize have their
+ 763     // least significant 3 bits clear.
+ 764     // NOTE: the oopMark is in swap_reg %r0 as the result of cmpxchg
+ 765     // NOTE2: aarch64 does not like to subtract sp from rn so take a
+ 766     // copy
+ 767     mov(rscratch1, sp);
+ 768     sub(swap_reg, swap_reg, rscratch1);
+<span class="line-modified"> 769     ands(swap_reg, swap_reg, (unsigned long)(7 - os::vm_page_size()));</span>
+ 770 
+ 771     // Save the test result, for recursive case, the result is zero
+ 772     str(swap_reg, Address(lock_reg, mark_offset));
+ 773 
+ 774     if (PrintBiasedLockingStatistics) {
+ 775       br(Assembler::NE, slow_case);
+ 776       atomic_incw(Address((address)BiasedLocking::fast_path_entry_count_addr()),
+ 777                   rscratch2, rscratch1, tmp);
+ 778     }
+ 779     br(Assembler::EQ, done);
+ 780 
+ 781     bind(slow_case);
+ 782 
+ 783     // Call the runtime routine for slow case
+ 784     call_VM(noreg,
+ 785             CAST_FROM_FN_PTR(address, InterpreterRuntime::monitorenter),
+ 786             lock_reg);
+ 787 
+ 788     bind(done);
+ 789   }
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 151 
+ 152     // Call Interpreter::remove_activation_early_entry() to get the address of the
+ 153     // same-named entrypoint in the generated interpreter code.
+ 154     ldr(rscratch1, Address(rthread, JavaThread::jvmti_thread_state_offset()));
+ 155     ldrw(rscratch1, Address(rscratch1, JvmtiThreadState::earlyret_tos_offset()));
+ 156     call_VM_leaf(CAST_FROM_FN_PTR(address, Interpreter::remove_activation_early_entry), rscratch1);
+ 157     br(r0);
+ 158     bind(L);
+ 159   }
+ 160 }
+ 161 
+ 162 void InterpreterMacroAssembler::get_unsigned_2_byte_index_at_bcp(
+ 163   Register reg,
+ 164   int bcp_offset) {
+ 165   assert(bcp_offset &gt;= 0, &quot;bcp is still pointing to start of bytecode&quot;);
+ 166   ldrh(reg, Address(rbcp, bcp_offset));
+ 167   rev16(reg, reg);
+ 168 }
+ 169 
+ 170 void InterpreterMacroAssembler::get_dispatch() {
+<span class="line-modified"> 171   uint64_t offset;</span>
+ 172   adrp(rdispatch, ExternalAddress((address)Interpreter::dispatch_table()), offset);
+ 173   lea(rdispatch, Address(rdispatch, offset));
+ 174 }
+ 175 
+ 176 void InterpreterMacroAssembler::get_cache_index_at_bcp(Register index,
+ 177                                                        int bcp_offset,
+ 178                                                        size_t index_size) {
+ 179   assert(bcp_offset &gt; 0, &quot;bcp is still pointing to start of bytecode&quot;);
+ 180   if (index_size == sizeof(u2)) {
+ 181     load_unsigned_short(index, Address(rbcp, bcp_offset));
+ 182   } else if (index_size == sizeof(u4)) {
+ 183     // assert(EnableInvokeDynamic, &quot;giant index used only for JSR 292&quot;);
+ 184     ldrw(index, Address(rbcp, bcp_offset));
+ 185     // Check if the secondary index definition is still ~x, otherwise
+ 186     // we have to change the following assembler code to calculate the
+ 187     // plain index.
+ 188     assert(ConstantPool::decode_invokedynamic_index(~123) == 123, &quot;else change next line&quot;);
+ 189     eonw(index, index, zr);  // convert to plain index
+ 190   } else if (index_size == sizeof(u1)) {
+ 191     load_unsigned_byte(index, Address(rbcp, bcp_offset));
+</pre>
+<hr />
+<pre>
+ 265 }
+ 266 
+ 267 // Load object from cpool-&gt;resolved_references(index)
+ 268 void InterpreterMacroAssembler::load_resolved_reference_at_index(
+ 269                                            Register result, Register index, Register tmp) {
+ 270   assert_different_registers(result, index);
+ 271 
+ 272   get_constant_pool(result);
+ 273   // load pointer for resolved_references[] objArray
+ 274   ldr(result, Address(result, ConstantPool::cache_offset_in_bytes()));
+ 275   ldr(result, Address(result, ConstantPoolCache::resolved_references_offset_in_bytes()));
+ 276   resolve_oop_handle(result, tmp);
+ 277   // Add in the index
+ 278   add(index, index, arrayOopDesc::base_offset_in_bytes(T_OBJECT) &gt;&gt; LogBytesPerHeapOop);
+ 279   load_heap_oop(result, Address(result, index, Address::uxtw(LogBytesPerHeapOop)));
+ 280 }
+ 281 
+ 282 void InterpreterMacroAssembler::load_resolved_klass_at_offset(
+ 283                              Register cpool, Register index, Register klass, Register temp) {
+ 284   add(temp, cpool, index, LSL, LogBytesPerWord);
+<span class="line-added"> 285 #ifdef _WIN64</span>
+<span class="line-added"> 286   Address a1(temp, (int)sizeof(ConstantPool));</span>
+<span class="line-added"> 287   ldrh(temp, a1); // temp = resolved_klass_index</span>
+<span class="line-added"> 288 #else</span>
+ 289   ldrh(temp, Address(temp, sizeof(ConstantPool))); // temp = resolved_klass_index
+<span class="line-added"> 290 #endif</span>
+ 291   ldr(klass, Address(cpool,  ConstantPool::resolved_klasses_offset_in_bytes())); // klass = cpool-&gt;_resolved_klasses
+ 292   add(klass, klass, temp, LSL, LogBytesPerWord);
+ 293   ldr(klass, Address(klass, Array&lt;Klass*&gt;::base_offset_in_bytes()));
+ 294 }
+ 295 
+ 296 void InterpreterMacroAssembler::load_resolved_method_at_index(int byte_no,
+ 297                                                               Register method,
+ 298                                                               Register cache) {
+ 299   const int method_offset = in_bytes(
+ 300     ConstantPoolCache::base_offset() +
+ 301       ((byte_no == TemplateTable::f2_byte)
+ 302        ? ConstantPoolCacheEntry::f2_offset()
+ 303        : ConstantPoolCacheEntry::f1_offset()));
+ 304 
+ 305   ldr(method, Address(cache, method_offset)); // get f1 Method*
+ 306 }
+ 307 
+ 308 // Generate a subtype check: branch to ok_is_subtype if sub_klass is a
+ 309 // subtype of super_klass.
+ 310 //
+</pre>
+<hr />
+<pre>
+ 754                   rscratch2, rscratch1, tmp);
+ 755       b(done);
+ 756       bind(fail);
+ 757     } else {
+ 758       cmpxchg_obj_header(swap_reg, lock_reg, obj_reg, rscratch1, done, /*fallthrough*/NULL);
+ 759     }
+ 760 
+ 761     // Test if the oopMark is an obvious stack pointer, i.e.,
+ 762     //  1) (mark &amp; 7) == 0, and
+ 763     //  2) rsp &lt;= mark &lt; mark + os::pagesize()
+ 764     //
+ 765     // These 3 tests can be done by evaluating the following
+ 766     // expression: ((mark - rsp) &amp; (7 - os::vm_page_size())),
+ 767     // assuming both stack pointer and pagesize have their
+ 768     // least significant 3 bits clear.
+ 769     // NOTE: the oopMark is in swap_reg %r0 as the result of cmpxchg
+ 770     // NOTE2: aarch64 does not like to subtract sp from rn so take a
+ 771     // copy
+ 772     mov(rscratch1, sp);
+ 773     sub(swap_reg, swap_reg, rscratch1);
+<span class="line-modified"> 774     ands(swap_reg, swap_reg, (uint64_t)(7 - os::vm_page_size()));</span>
+ 775 
+ 776     // Save the test result, for recursive case, the result is zero
+ 777     str(swap_reg, Address(lock_reg, mark_offset));
+ 778 
+ 779     if (PrintBiasedLockingStatistics) {
+ 780       br(Assembler::NE, slow_case);
+ 781       atomic_incw(Address((address)BiasedLocking::fast_path_entry_count_addr()),
+ 782                   rscratch2, rscratch1, tmp);
+ 783     }
+ 784     br(Assembler::EQ, done);
+ 785 
+ 786     bind(slow_case);
+ 787 
+ 788     // Call the runtime routine for slow case
+ 789     call_VM(noreg,
+ 790             CAST_FROM_FN_PTR(address, InterpreterRuntime::monitorenter),
+ 791             lock_reg);
+ 792 
+ 793     bind(done);
+ 794   }
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="immediate_aarch64.hpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="interpreterRT_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

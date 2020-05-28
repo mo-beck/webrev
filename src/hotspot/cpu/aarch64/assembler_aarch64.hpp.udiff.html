@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\cpu\aarch64\assembler_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="assembler_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_Defs_aarch64.hpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\assembler_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -197,11 +197,11 @@</span>
+    static inline int32_t sextract(uint32_t val, int msb, int lsb) {
+      uint32_t uval = extract(val, msb, lsb);
+      return extend(uval, msb - lsb);
+    }
+  
+<span class="udiff-line-modified-removed">-   static void patch(address a, int msb, int lsb, unsigned long val) {</span>
+<span class="udiff-line-modified-added">+   static void patch(address a, int msb, int lsb, uint64_t val) {</span>
+      int nbits = msb - lsb + 1;
+      guarantee(val &lt; (1U &lt;&lt; nbits), &quot;Field too big for insn&quot;);
+      assert_cond(msb &gt;= lsb);
+      unsigned mask = (1U &lt;&lt; nbits) - 1;
+      val &lt;&lt;= lsb;
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -210,13 +210,13 @@</span>
+      target &amp;= ~mask;
+      target |= val;
+      *(unsigned *)a = target;
+    }
+  
+<span class="udiff-line-modified-removed">-   static void spatch(address a, int msb, int lsb, long val) {</span>
+<span class="udiff-line-modified-added">+   static void spatch(address a, int msb, int lsb, int64_t val) {</span>
+      int nbits = msb - lsb + 1;
+<span class="udiff-line-modified-removed">-     long chk = val &gt;&gt; (nbits - 1);</span>
+<span class="udiff-line-modified-added">+     int64_t chk = val &gt;&gt; (nbits - 1);</span>
+      guarantee (chk == -1 || chk == 0, &quot;Field too big for insn&quot;);
+      unsigned uval = val;
+      unsigned mask = (1U &lt;&lt; nbits) - 1;
+      uval &amp;= mask;
+      uval &lt;&lt;= lsb;
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -243,13 +243,13 @@</span>
+  
+    void f(unsigned val, int bit) {
+      f(val, bit, bit);
+    }
+  
+<span class="udiff-line-modified-removed">-   void sf(long val, int msb, int lsb) {</span>
+<span class="udiff-line-modified-added">+   void sf(int64_t val, int msb, int lsb) {</span>
+      int nbits = msb - lsb + 1;
+<span class="udiff-line-modified-removed">-     long chk = val &gt;&gt; (nbits - 1);</span>
+<span class="udiff-line-modified-added">+     int64_t chk = val &gt;&gt; (nbits - 1);</span>
+      guarantee (chk == -1 || chk == 0, &quot;Field too big for insn&quot;);
+      unsigned uval = val;
+      unsigned mask = (1U &lt;&lt; nbits) - 1;
+      uval &amp;= mask;
+      f(uval, lsb + nbits - 1, lsb);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -355,11 +355,11 @@</span>
+    };
+  
+   private:
+    Register _base;
+    Register _index;
+<span class="udiff-line-modified-removed">-   long _offset;</span>
+<span class="udiff-line-modified-added">+   int64_t _offset;</span>
+    enum mode _mode;
+    extend _ext;
+  
+    RelocationHolder _rspec;
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -378,13 +378,13 @@</span>
+      : _mode(no_mode) { }
+    Address(Register r)
+      : _base(r), _index(noreg), _offset(0), _mode(base_plus_offset), _target(0) { }
+    Address(Register r, int o)
+      : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+<span class="udiff-line-modified-removed">-   Address(Register r, long o)</span>
+<span class="udiff-line-modified-added">+   Address(Register r, int64_t o)</span>
+      : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+<span class="udiff-line-modified-removed">-   Address(Register r, unsigned long o)</span>
+<span class="udiff-line-modified-added">+   Address(Register r, uint64_t o)</span>
+      : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(0) { }
+  #ifdef ASSERT
+    Address(Register r, ByteSize disp)
+      : _base(r), _index(noreg), _offset(in_bytes(disp)), _mode(base_plus_offset), _target(0) { }
+  #endif
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -415,16 +415,16 @@</span>
+        _offset = index.as_constant() &lt;&lt; ext.shift();
+      }
+    }
+  
+    Register base() const {
+<span class="udiff-line-modified-removed">-     guarantee((_mode == base_plus_offset | _mode == base_plus_offset_reg</span>
+<span class="udiff-line-modified-removed">-                | _mode == post | _mode == post_reg),</span>
+<span class="udiff-line-modified-added">+     guarantee(((_mode == base_plus_offset) | (_mode == base_plus_offset_reg)</span>
+<span class="udiff-line-modified-added">+                | (_mode == post) | (_mode == post_reg)),</span>
+                &quot;wrong mode&quot;);
+      return _base;
+    }
+<span class="udiff-line-modified-removed">-   long offset() const {</span>
+<span class="udiff-line-modified-added">+   int64_t offset() const {</span>
+      return _offset;
+    }
+    Register index() const {
+      return _index;
+    }
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -552,11 +552,11 @@</span>
+                &quot;Bad addressing mode for non-temporal op&quot;);
+    }
+  
+    void lea(MacroAssembler *, Register) const;
+  
+<span class="udiff-line-modified-removed">-   static bool offset_ok_for_immed(long offset, int shift) {</span>
+<span class="udiff-line-modified-added">+   static bool offset_ok_for_immed(int64_t offset, int shift) {</span>
+      unsigned mask = (1 &lt;&lt; shift) - 1;
+      if (offset &lt; 0 || offset &amp; mask) {
+        return (uabs(offset) &lt; (1 &lt;&lt; (20 - 12))); // Unscaled offset
+      } else {
+        return ((offset &gt;&gt; shift) &lt; (1 &lt;&lt; (21 - 10 + 1))); // Scaled, unsigned offset
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -614,15 +614,20 @@</span>
+  } prfop;
+  
+  class Assembler : public AbstractAssembler {
+  
+  #ifndef PRODUCT
+<span class="udiff-line-modified-removed">-   static const unsigned long asm_bp;</span>
+<span class="udiff-line-modified-added">+   static const uint64_t asm_bp;</span>
+  
+    void emit_long(jint x) {
+<span class="udiff-line-modified-removed">-     if ((unsigned long)pc() == asm_bp)</span>
+<span class="udiff-line-modified-added">+     if ((uint64_t)pc() == asm_bp) {</span>
+<span class="udiff-line-added">+ #ifdef _WIN64</span>
+<span class="udiff-line-added">+       __nop();</span>
+<span class="udiff-line-added">+ #else</span>
+        asm volatile (&quot;nop&quot;);
+<span class="udiff-line-added">+ #endif</span>
+<span class="udiff-line-added">+     }</span>
+      AbstractAssembler::emit_int32(x);
+    }
+  #else
+    void emit_long(jint x) {
+      AbstractAssembler::emit_int32(x);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -658,21 +663,23 @@</span>
+  
+    Address post(Register base, Register idx) {
+      return Address(Post(base, idx));
+    }
+  
+<span class="udiff-line-added">+   static address locate_next_instruction(address inst);</span>
+<span class="udiff-line-added">+ </span>
+    Instruction_aarch64* current;
+  
+    void set_current(Instruction_aarch64* i) { current = i; }
+  
+    void f(unsigned val, int msb, int lsb) {
+      current-&gt;f(val, msb, lsb);
+    }
+    void f(unsigned val, int msb) {
+      current-&gt;f(val, msb, msb);
+    }
+<span class="udiff-line-modified-removed">-   void sf(long val, int msb, int lsb) {</span>
+<span class="udiff-line-modified-added">+   void sf(int64_t val, int msb, int lsb) {</span>
+      current-&gt;sf(val, msb, lsb);
+    }
+    void rf(Register reg, int lsb) {
+      current-&gt;rf(reg, lsb);
+    }
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -717,12 +724,11 @@</span>
+      wrap_label(Rd, L, &amp;Assembler::Assembler::adr);
+    }
+    void _adrp(Register Rd, Label &amp;L) {
+      wrap_label(Rd, L, &amp;Assembler::_adrp);
+    }
+<span class="udiff-line-modified-removed">- </span>
+<span class="udiff-line-removed">-   void adrp(Register Rd, const Address &amp;dest, unsigned long &amp;offset);</span>
+<span class="udiff-line-modified-added">+   void adrp(Register Rd, const Address &amp;dest, uint64_t &amp;offset);</span>
+  
+  #undef INSN
+  
+    void add_sub_immediate(Register Rd, Register Rn, unsigned uimm, int op,
+                           int negated_op);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -844,21 +850,21 @@</span>
+  
+    // The maximum range of a branch is fixed for the AArch64
+    // architecture.  In debug mode we shrink it in order to test
+    // trampolines, but not so small that branches in the interpreter
+    // are out of range.
+<span class="udiff-line-modified-removed">-   static const unsigned long branch_range = NOT_DEBUG(128 * M) DEBUG_ONLY(2 * M);</span>
+<span class="udiff-line-modified-added">+   static const uint64_t branch_range = NOT_DEBUG(128 * M) DEBUG_ONLY(2 * M);</span>
+  
+    static bool reachable_from_branch_at(address branch, address target) {
+      return uabs(target - branch) &lt; branch_range;
+    }
+  
+    // Unconditional branch (immediate)
+  #define INSN(NAME, opcode)                                              \
+    void NAME(address dest) {                                             \
+      starti;                                                             \
+<span class="udiff-line-modified-removed">-     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+<span class="udiff-line-modified-added">+     int64_t offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+      DEBUG_ONLY(assert(reachable_from_branch_at(pc(), dest), &quot;debug only&quot;)); \
+      f(opcode, 31), f(0b00101, 30, 26), sf(offset, 25, 0);               \
+    }                                                                     \
+    void NAME(Label &amp;L) {                                                 \
+      wrap_label(L, &amp;Assembler::NAME);                                    \
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -871,11 +877,11 @@</span>
+  #undef INSN
+  
+    // Compare &amp; branch (immediate)
+  #define INSN(NAME, opcode)                              \
+    void NAME(Register Rt, address dest) {                \
+<span class="udiff-line-modified-removed">-     long offset = (dest - pc()) &gt;&gt; 2;                   \</span>
+<span class="udiff-line-modified-added">+     int64_t offset = (dest - pc()) &gt;&gt; 2;                \</span>
+      starti;                                             \
+      f(opcode, 31, 24), sf(offset, 23, 5), rf(Rt, 0);    \
+    }                                                     \
+    void NAME(Register Rt, Label &amp;L) {                    \
+      wrap_label(Rt, L, &amp;Assembler::NAME);                \
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -889,11 +895,11 @@</span>
+  #undef INSN
+  
+    // Test &amp; branch (immediate)
+  #define INSN(NAME, opcode)                                              \
+    void NAME(Register Rt, int bitpos, address dest) {                    \
+<span class="udiff-line-modified-removed">-     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+<span class="udiff-line-modified-added">+     int64_t offset = (dest - pc()) &gt;&gt; 2;                                \</span>
+      int b5 = bitpos &gt;&gt; 5;                                               \
+      bitpos &amp;= 0x1f;                                                     \
+      starti;                                                             \
+      f(b5, 31), f(opcode, 30, 24), f(bitpos, 23, 19), sf(offset, 18, 5); \
+      rf(Rt, 0);                                                          \
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -910,11 +916,11 @@</span>
+    // Conditional branch (immediate)
+    enum Condition
+      {EQ, NE, HS, CS=HS, LO, CC=LO, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL, NV};
+  
+    void br(Condition  cond, address dest) {
+<span class="udiff-line-modified-removed">-     long offset = (dest - pc()) &gt;&gt; 2;</span>
+<span class="udiff-line-modified-added">+     int64_t offset = (dest - pc()) &gt;&gt; 2;</span>
+      starti;
+      f(0b0101010, 31, 25), f(0, 24), sf(offset, 23, 5), f(0, 4), f(cond, 3, 0);
+    }
+  
+  #define INSN(NAME, cond)                        \
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -1290,11 +1296,11 @@</span>
+  #undef INSN
+  
+    // Load register (literal)
+  #define INSN(NAME, opc, V)                                              \
+    void NAME(Register Rt, address dest) {                                \
+<span class="udiff-line-modified-removed">-     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+<span class="udiff-line-modified-added">+     int64_t offset = (dest - pc()) &gt;&gt; 2;                                \</span>
+      starti;                                                             \
+      f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+        sf(offset, 23, 5);                                                \
+      rf(Rt, 0);                                                          \
+    }                                                                     \
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -1315,11 +1321,11 @@</span>
+  
+  #undef INSN
+  
+  #define INSN(NAME, opc, V)                                              \
+    void NAME(FloatRegister Rt, address dest) {                           \
+<span class="udiff-line-modified-removed">-     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+<span class="udiff-line-modified-added">+     int64_t offset = (dest - pc()) &gt;&gt; 2;                                \</span>
+      starti;                                                             \
+      f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+        sf(offset, 23, 5);                                                \
+      rf((Register)Rt, 0);                                                \
+    }
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -1330,11 +1336,11 @@</span>
+  
+  #undef INSN
+  
+  #define INSN(NAME, opc, V)                                              \
+    void NAME(address dest, prfop op = PLDL1KEEP) {                       \
+<span class="udiff-line-modified-removed">-     long offset = (dest - pc()) &gt;&gt; 2;                                   \</span>
+<span class="udiff-line-modified-added">+     int64_t offset = (dest - pc()) &gt;&gt; 2;                                \</span>
+      starti;                                                             \
+      f(opc, 31, 30), f(0b011, 29, 27), f(V, 26), f(0b00, 25, 24),        \
+        sf(offset, 23, 5);                                                \
+      f(op, 4, 0);                                                        \
+    }                                                                     \
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -1406,11 +1412,11 @@</span>
+      // make it worth sharing.
+      if (adr.getMode() == Address::literal) {
+        assert(size == 0b10 || size == 0b11, &quot;bad operand size in ldr&quot;);
+        assert(op == 0b01, &quot;literal form can only be used with loads&quot;);
+        f(size &amp; 0b01, 31, 30), f(0b011, 29, 27), f(0b00, 25, 24);
+<span class="udiff-line-modified-removed">-       long offset = (adr.target() - pc()) &gt;&gt; 2;</span>
+<span class="udiff-line-modified-added">+       int64_t offset = (adr.target() - pc()) &gt;&gt; 2;</span>
+        sf(offset, 23, 5);
+        code_section()-&gt;relocate(pc(), adr.rspec());
+        return;
+      }
+  
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -1527,15 +1533,17 @@</span>
+    INSN(eonw, 0, 0b10, 1);
+    INSN(bicsw, 0, 0b11, 1);
+  
+  #undef INSN
+  
+<span class="udiff-line-added">+ #ifndef _WIN64</span>
+    // Aliases for short forms of orn
+  void mvn(Register Rd, Register Rm,
+              enum shift_kind kind = LSL, unsigned shift = 0) {
+    orn(Rd, zr, Rm, kind, shift);
+  }
+<span class="udiff-line-added">+ #endif</span>
+  
+  void mvnw(Register Rd, Register Rm,
+              enum shift_kind kind = LSL, unsigned shift = 0) {
+    ornw(Rd, zr, Rm, kind, shift);
+  }
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -2677,11 +2685,11 @@</span>
+  
+    // Stack overflow checking
+    virtual void bang_stack_with_offset(int offset);
+  
+    static bool operand_valid_for_logical_immediate(bool is32, uint64_t imm);
+<span class="udiff-line-modified-removed">-   static bool operand_valid_for_add_sub_immediate(long imm);</span>
+<span class="udiff-line-modified-added">+   static bool operand_valid_for_add_sub_immediate(int64_t imm);</span>
+    static bool operand_valid_for_float_immediate(double imm);
+  
+    void emit_data64(jlong data, relocInfo::relocType rtype, int format = 0);
+    void emit_data64(jlong data, RelocationHolder const&amp; rspec, int format = 0);
+  };
+</pre>
+<center><a href="assembler_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_Defs_aarch64.hpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

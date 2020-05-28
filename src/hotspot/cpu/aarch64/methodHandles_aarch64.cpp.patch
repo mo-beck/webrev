@@ -1,0 +1,20 @@
+diff a/src/hotspot/cpu/aarch64/methodHandles_aarch64.cpp b/src/hotspot/cpu/aarch64/methodHandles_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/methodHandles_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/methodHandles_aarch64.cpp
+@@ -75,11 +75,16 @@
+   __ push(RegSet::of(temp, temp2), sp);
+   __ load_klass(temp, obj);
+   __ cmpptr(temp, ExternalAddress((address) klass_addr));
+   __ br(Assembler::EQ, L_ok);
+   intptr_t super_check_offset = klass->super_check_offset();
++#ifdef _WIN64
++  Address a1(temp, (uint64_t) super_check_offset);
++  __ ldr(temp, a1);
++#else
+   __ ldr(temp, Address(temp, super_check_offset));
++#endif
+   __ cmpptr(temp, ExternalAddress((address) klass_addr));
+   __ br(Assembler::EQ, L_ok);
+   __ pop(RegSet::of(temp, temp2), sp);
+   __ bind(L_bad);
+   __ stop(error_message);

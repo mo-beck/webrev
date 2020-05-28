@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\os_cpu\solaris_x86\os_solaris_x86.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\solaris_sparc\os_solaris_sparc.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\windows_aarch64\vm_version_windows_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\os_cpu\solaris_x86\os_solaris_x86.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 48,10 ***</span>
+  
+    static jlong rdtsc();
+  
+    static bool is_allocatable(size_t bytes);
+  
+<span class="line-removed">-   // Used to register dynamic code cache area with the OS</span>
+<span class="line-removed">-   // Note: Currently only used in 64 bit Windows implementations</span>
+<span class="line-removed">-   static bool register_code_area(char *low, char *high) { return true; }</span>
+<span class="line-removed">- </span>
+  #endif // OS_CPU_SOLARIS_X86_OS_SOLARIS_X86_HPP
+<span class="line-new-header">--- 48,6 ---</span>
+</pre>
+<center><a href="..\solaris_sparc\os_solaris_sparc.hpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="..\windows_aarch64\vm_version_windows_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

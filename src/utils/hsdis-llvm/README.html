@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\utils\hsdis-llvm\README</title>
+    <link rel="stylesheet" href="..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 Copyright (c) 2008, 2019, Oracle and/or its affiliates. All rights reserved.
+  2 DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  3   
+  4 The Universal Permissive License (UPL), Version 1.0
+  5 
+  6 Subject to the condition set forth below, permission is hereby granted to
+  7 any person obtaining a copy of this software, associated documentation
+  8 and/or data (collectively the &quot;Software&quot;), free of charge and under any
+  9 and all copyright rights in the Software, and any and all patent rights
+ 10 owned or freely licensable by each licensor hereunder covering either (i)
+ 11 the unmodified Software as contributed to or provided by such licensor,
+ 12 or (ii) the Larger Works (as defined below), to deal in both
+ 13 
+ 14 (a) the Software, and
+ 15 
+ 16 (b) any piece of software and/or hardware listed in the lrgrwrks.txt file
+ 17 if one is included with the Software (each a &quot;Larger Work&quot; to which the
+ 18 Software is contributed by such licensors),
+ 19 
+ 20 without restriction, including without limitation the rights to copy,
+ 21 create derivative works of, display, perform, and distribute the Software
+ 22 and make, use, sell, offer for sale, import, export, have made, and have
+ 23 sold the Software and the Larger Work(s), and to sublicense the foregoing
+ 24 rights on either these or other terms.
+ 25 
+ 26 This license is subject to the following condition:
+ 27 
+ 28 The above copyright notice and either this complete permission notice or
+ 29 at a minimum a reference to the UPL must be included in all copies or
+ 30 substantial portions of the Software.
+ 31 
+ 32 THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ 33 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ 34 MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+ 35 NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ 36 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ 37 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+ 38 USE OR OTHER DEALINGS IN THE SOFTWARE.
+ 39 
+ 40 Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 41 or visit www.oracle.com if you need additional information or have any
+ 42 questions.
+ 43 
+ 44 ________________________________________________________________________
+ 45 
+ 46 &#39;hsdis&#39;:  A HotSpot plugin for disassembling dynamically generated code.
+ 47 
+ 48 The files in this directory (Makefile, hsdis.[ch], hsdis-demo.c)
+ 49 are built independently of the HotSpot JVM.
+ 50 
+ 51 To use the plugin with a JVM, you need a new version that can load it.
+ 52 If the product mode of your JVM does not accept -XX:+PrintAssembly,
+ 53 you do not have a version that is new enough.
+ 54 
+ 55 * Building
+ 56 
+ 57 To cross-compile LLVM on Windows-x86_64 for Windows-Arm64
+ 58 
+ 59 ```
+ 60 PS&gt; cd llvm-src
+ 61 PS&gt; mkdir build
+ 62 PS&gt; cd build
+ 63 PS&gt; &amp; &quot;C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Auxiliary\Build\vcvarsamd64_arm64.bat&quot;
+ 64 PS&gt; &amp; &#39;C:\Program Files\CMake\bin\cmake.exe&#39; .. -Thost=x64 -G &quot;Visual Studio 15 2017&quot; -A arm64 \
+ 65   -DCMAKE_INSTALL_PREFIX=&quot;C:\LLVM-9-arm64&quot; -DCMAKE_PREFIX_PATH=&quot;C:\LLVM-9-arm64&quot; \
+ 66   -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_LIBXML2=OFF -DLLVM_USE_CRT_RELEASE=MT -DLLVM_TARGETS_TO_BUILD=AArch64 \
+ 67   -DLLVM_TABLEGEN=&quot;C:\LLVM-9-x86_64\bin\llvm-tblgen.exe&quot; -DCMAKE_SYSTEM_VERSION=&quot;10.0.16299.0&quot; -DLLVM_TOOL_LLVM_SHLIB_BUILD=OFF
+ 68 ```
+ 69 
+ 70 To cross-compile hsdis on Windows-x86_64 for Windows-Arm64
+ 71 
+ 72 ```
+ 73 PS&gt; &amp; &quot;C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Auxiliary\Build\vcvarsamd64_arm64.bat&quot;
+ 74 PS&gt; &amp; &quot;C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Tools\MSVC\14.16.27023\bin\Hostx64\arm64\cl.exe&quot; \
+ 75   -I&quot;C:\LLVM-9-arm64\include&quot; -I&quot;C:\Program Files (x86)\Windows Kits\10\Include\10.0.16299.0\ucrt&quot; \
+ 76   -I&quot;C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Tools\MSVC\14.16.27023\include&quot; -D_CRT_SECURE_NO_DEPRECATE \
+ 77   -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_NONSTDC_NO_WARNINGS -D_SCL_SECURE_NO_DEPRECATE \
+ 78   -D_SCL_SECURE_NO_WARNINGS -DUNICODE -D_UNICODE -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS \
+ 79   -DLIBARCH_aarch64 C:\git\jdk~arm64\src\utils\hsdis-llvm\hsdis.c /LD /link -LIBPATH:&quot;C:\LLVM-9-arm64\lib&quot; \
+ 80   -LIBPATH:&quot;C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\VC\Tools\MSVC\14.16.27023\lib\arm64&quot; \
+ 81   -LIBPATH:&quot;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.17763.0\ucrt\arm64&quot; \
+ 82   -LIBPATH:&quot;C:\Program Files (x86)\Windows Kits\10\Lib\10.0.17763.0\um\arm64&quot; /NODEFAULTLIB:libcmt.lib \
+ 83   C:\LLVM-9-arm64\lib\LLVMAArch64Disassembler.lib C:\LLVM-9-arm64\lib\LLVMMCDisassembler.lib \
+ 84   C:\LLVM-9-arm64\lib\LLVMAArch64CodeGen.lib C:\LLVM-9-arm64\lib\LLVMGlobalISel.lib C:\LLVM-9-arm64\lib\LLVMSelectionDAG.lib \
+ 85   C:\LLVM-9-arm64\lib\LLVMAArch64AsmParser.lib C:\LLVM-9-arm64\lib\LLVMAArch64Desc.lib C:\LLVM-9-arm64\lib\LLVMAArch64Utils.lib \
+ 86   C:\LLVM-9-arm64\lib\LLVMAArch64Info.lib C:\LLVM-9-arm64\lib\LLVMAsmPrinter.lib C:\LLVM-9-arm64\lib\LLVMDebugInfoDWARF.lib \
+ 87   C:\LLVM-9-arm64\lib\LLVMCodeGen.lib C:\LLVM-9-arm64\lib\LLVMTarget.lib C:\LLVM-9-arm64\lib\LLVMScalarOpts.lib \
+ 88   C:\LLVM-9-arm64\lib\LLVMInstCombine.lib C:\LLVM-9-arm64\lib\LLVMAggressiveInstCombine.lib \
+ 89   C:\LLVM-9-arm64\lib\LLVMTransformUtils.lib C:\LLVM-9-arm64\lib\LLVMBitWriter.lib C:\LLVM-9-arm64\lib\LLVMAnalysis.lib \
+ 90   C:\LLVM-9-arm64\lib\LLVMProfileData.lib C:\LLVM-9-arm64\lib\LLVMObject.lib C:\LLVM-9-arm64\lib\LLVMMCParser.lib \
+ 91   C:\LLVM-9-arm64\lib\LLVMMC.lib C:\LLVM-9-arm64\lib\LLVMDebugInfoCodeView.lib C:\LLVM-9-arm64\lib\LLVMDebugInfoMSF.lib \
+ 92   C:\LLVM-9-arm64\lib\LLVMBitReader.lib C:\LLVM-9-arm64\lib\LLVMCore.lib C:\LLVM-9-arm64\lib\LLVMRemarks.lib \
+ 93   C:\LLVM-9-arm64\lib\LLVMBinaryFormat.lib C:\LLVM-9-arm64\lib\LLVMBitstreamReader.lib C:\LLVM-9-arm64\lib\LLVMSupport.lib \
+ 94   C:\LLVM-9-arm64\lib\LLVMDemangle.lib psapi.lib shell32.lib ole32.lib uuid.lib advapi32.lib msvcrt.lib
+ 95 ```
+ 96 
+ 97 * Installing
+ 98 
+ 99 Products are named like build/$OS-$LIBARCH/hsdis-$LIBARCH.so. You can
+100 install them next to your libjvm.so inside your JRE/JDK or alternatively
+101 put it anywhere on your LD_LIBRARY_PATH. The search path in the JVM is:
+102 
+103 1. &lt;home&gt;/lib/&lt;vm&gt;/libhsdis-&lt;arch&gt;.so
+104 2. &lt;home&gt;/lib/&lt;vm&gt;/hsdis-&lt;arch&gt;.so
+105 3. &lt;home&gt;/lib/hsdis-&lt;arch&gt;.so
+106 4. hsdis-&lt;arch&gt;.so  (using LD_LIBRARY_PATH)
+107 
+108 Now test:
+109 
+110   export LD_LIBRARY_PATH .../hsdis/build/$OS-$LIBARCH:$LD_LIBRARY_PATH
+111   dargs=&#39;-XX:+UnlockDiagnosticVMOptions -XX:+PrintAssembly&#39;
+112   dargs=$dargs&#39; -XX:PrintAssemblyOptions=hsdis-print-bytes&#39;
+113   java $dargs -Xbatch CompileCommand=print,*String.hashCode HelloWorld
+114 
+115 If the product mode of the JVM does not accept -XX:+PrintAssembly,
+116 you do not have a version new enough to use the hsdis plugin.
+117 
+118 * Wiki
+119 
+120 More information can be found in the OpenJDK HotSpot Wiki [1].
+121 
+122 
+123 Resources:
+124 
+125 [1] https://wiki.openjdk.java.net/display/HotSpot/PrintAssembly
+126 [2] http://sourceware.org/bugzilla/show_bug.cgi?id=15345
+    </pre>
+  </body>
+</html>

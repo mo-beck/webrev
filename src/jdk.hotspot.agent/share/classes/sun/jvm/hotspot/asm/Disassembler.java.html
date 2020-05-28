@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\asm\Disassembler.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 package sun.jvm.hotspot.asm;
+ 26 
+ 27 import java.io.PrintStream;
+ 28 import java.util.Observer;
+ 29 import java.util.Observable;
+ 30 import sun.jvm.hotspot.code.CodeBlob;
+ 31 import sun.jvm.hotspot.code.NMethod;
+ 32 import sun.jvm.hotspot.debugger.Address;
+ 33 import sun.jvm.hotspot.runtime.VM;
+ 34 
+ 35 public class Disassembler {
+ 36    private static String options = &quot;&quot;;
+ 37    private static long decode_function;
+ 38 
+ 39    protected long startPc;
+ 40    protected byte[] code;
+ 41    private CodeBlob blob;
+ 42    private NMethod nmethod;
+ 43 
+ 44    public static void decode(InstructionVisitor visitor, CodeBlob blob) {
+ 45       decode(visitor, blob, blob.codeBegin(), blob.codeEnd());
+ 46    }
+ 47 
+ 48    public static void decode(InstructionVisitor visitor, CodeBlob blob, Address begin, Address end) {
+ 49       int codeSize = (int)end.minus(begin);
+ 50       long startPc = VM.getAddressValue(begin);
+ 51       byte[] code = new byte[codeSize];
+ 52       for (int i = 0; i &lt; code.length; i++)
+ 53          code[i] = begin.getJByteAt(i);
+ 54       Disassembler dis = new Disassembler(startPc, code);
+ 55       dis.decode(visitor);
+ 56    }
+ 57 
+ 58    private Disassembler(long startPc, byte[] code) {
+ 59       this.startPc = startPc;
+ 60       this.code = code;
+ 61 
+ 62       // Lazily load hsdis
+ 63       if (decode_function == 0) {
+ 64          StringBuilder path = new StringBuilder(System.getProperty(&quot;java.home&quot;));
+ 65          String sep = System.getProperty(&quot;file.separator&quot;);
+ 66          String os = System.getProperty(&quot;os.name&quot;);
+ 67          String libname = &quot;hsdis&quot;;
+ 68          String arch = System.getProperty(&quot;os.arch&quot;);
+ 69          if (os.lastIndexOf(&quot;Windows&quot;, 0) != -1) {
+ 70             if (arch.equals(&quot;x86&quot;)) {
+ 71                libname +=  &quot;-i386&quot;;
+ 72             } else if (arch.equals(&quot;amd64&quot;)) {
+ 73                libname +=  &quot;-amd64&quot;;
+ 74             } else if (arch.equals(&quot;aarch64&quot;)) {
+ 75                libname +=  &quot;-arm64&quot;;
+ 76             } else {
+ 77                libname +=  &quot;-&quot; + arch;
+ 78             }
+ 79             path.append(sep + &quot;bin&quot; + sep);
+ 80             libname += &quot;.dll&quot;;
+ 81          } else if (os.lastIndexOf(&quot;SunOS&quot;, 0) != -1) {
+ 82             if (arch.equals(&quot;x86&quot;) || arch.equals(&quot;i386&quot;)) {
+ 83                path.append(sep + &quot;lib&quot; + sep + &quot;i386&quot; + sep);
+ 84                libname +=  &quot;-i386&quot; + &quot;.so&quot;;
+ 85             } else if (arch.equals(&quot;amd64&quot;)) {
+ 86                path.append(sep + &quot;lib&quot; + sep + &quot;amd64&quot; + sep);
+ 87                libname +=  &quot;-amd64&quot; + &quot;.so&quot;;
+ 88             } else {
+ 89                path.append(sep + &quot;lib&quot; + sep + arch + sep);
+ 90                libname +=  &quot;-&quot; + arch + &quot;.so&quot;;
+ 91             }
+ 92          } else if (os.lastIndexOf(&quot;Linux&quot;, 0) != -1) {
+ 93             if (arch.equals(&quot;x86&quot;) || arch.equals(&quot;i386&quot;)) {
+ 94                path.append(sep + &quot;lib&quot; + sep + &quot;i386&quot; + sep);
+ 95                libname += &quot;-i386.so&quot;;
+ 96             } else if (arch.equals(&quot;amd64&quot;) || arch.equals(&quot;x86_64&quot;)) {
+ 97                path.append(sep + &quot;lib&quot; + sep + &quot;amd64&quot; + sep);
+ 98                libname +=  &quot;-amd64.so&quot;;
+ 99             } else {
+100                path.append(sep + &quot;lib&quot; + sep + arch + sep);
+101                libname +=  &quot;-&quot; + arch + &quot;.so&quot;;
+102             }
+103          } else if (os.lastIndexOf(&quot;Mac OS X&quot;, 0) != -1) {
+104             path.append(sep + &quot;lib&quot; + sep);
+105             libname += &quot;-amd64&quot; + &quot;.dylib&quot;;       // x86_64 =&gt; amd64
+106          } else {
+107             path.append(sep + &quot;lib&quot; + sep + &quot;arch&quot; + sep);
+108             libname +=  &quot;-&quot; + arch + &quot;.so&quot;;
+109          }
+110          decode_function = load_library(path.toString(), libname);
+111       }
+112    }
+113 
+114    private static native long load_library(String installed_jrepath, String hsdis_library_name);
+115 
+116    private native void decode(InstructionVisitor visitor, long pc, byte[] code,
+117                               String options, long decode_function);
+118 
+119    private void decode(InstructionVisitor visitor) {
+120       visitor.prologue();
+121       decode(visitor, startPc, code, options, decode_function);
+122       visitor.epilogue();
+123    }
+124 
+125    private boolean match(String event, String tag) {
+126       if (!event.startsWith(tag))
+127          return false;
+128       int taglen = tag.length();
+129       if (taglen == event.length()) return true;
+130       char delim = event.charAt(taglen);
+131       return delim == &#39; &#39; || delim == &#39;/&#39; || delim == &#39;=&#39;;
+132    }
+133 
+134    // This is called from the native code to process various markers
+135    // in the dissassembly.
+136    private long handleEvent(InstructionVisitor visitor, String event, long arg) {
+137       if (match(event, &quot;insn&quot;)) {
+138          try {
+139             visitor.beginInstruction(arg);
+140          } catch (Throwable e) {
+141             e.printStackTrace();
+142          }
+143       } else if (match(event, &quot;/insn&quot;)) {
+144          try {
+145             visitor.endInstruction(arg);
+146          } catch (Throwable e) {
+147             e.printStackTrace();
+148          }
+149       } else if (match(event, &quot;addr&quot;)) {
+150          if (arg != 0) {
+151             visitor.printAddress(arg);
+152          }
+153          return arg;
+154       } else if (match(event, &quot;mach&quot;)) {
+155          // output().printf(&quot;[Disassembling for mach=&#39;%s&#39;]\n&quot;, arg);
+156       } else {
+157          // ignore unrecognized markup
+158       }
+159       return 0;
+160    }
+161 
+162    // This called from the native code to perform printing
+163    private  void rawPrint(InstructionVisitor visitor, String s) {
+164       visitor.print(s);
+165    }
+166 }
+    </pre>
+  </body>
+</html>

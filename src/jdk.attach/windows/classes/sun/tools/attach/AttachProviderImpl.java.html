@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\jdk.attach\windows\classes\sun\tools\attach\AttachProviderImpl.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 2005, 2011, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.  Oracle designates this
+  8  * particular file as subject to the &quot;Classpath&quot; exception as provided
+  9  * by Oracle in the LICENSE file that accompanied this code.
+ 10  *
+ 11  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 12  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 13  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 14  * version 2 for more details (a copy is included in the LICENSE file that
+ 15  * accompanied this code).
+ 16  *
+ 17  * You should have received a copy of the GNU General Public License version
+ 18  * 2 along with this work; if not, write to the Free Software Foundation,
+ 19  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 20  *
+ 21  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 22  * or visit www.oracle.com if you need additional information or have any
+ 23  * questions.
+ 24  */
+ 25 package sun.tools.attach;
+ 26 
+ 27 import com.sun.tools.attach.VirtualMachine;
+ 28 import com.sun.tools.attach.VirtualMachineDescriptor;
+ 29 import com.sun.tools.attach.AttachNotSupportedException;
+ 30 
+ 31 import java.util.ArrayList;
+ 32 import java.util.List;
+ 33 import java.io.IOException;
+ 34 import java.net.InetAddress;
+ 35 import java.net.UnknownHostException;
+ 36 
+ 37 public class AttachProviderImpl extends HotSpotAttachProvider {
+ 38 
+ 39     public AttachProviderImpl() {
+ 40         String os = System.getProperty(&quot;os.name&quot;);
+ 41         if (os.startsWith(&quot;Windows 9&quot;) || os.equals(&quot;Windows Me&quot;)) {
+ 42             throw new RuntimeException(
+ 43                 &quot;This provider is not supported on this version of Windows&quot;);
+ 44         }
+ 45         String arch = System.getProperty(&quot;os.arch&quot;);
+ 46         if (!arch.equals(&quot;x86&quot;) &amp;&amp; !arch.equals(&quot;amd64&quot;) &amp;&amp; !arch.equals(&quot;aarch64&quot;)) {
+ 47             throw new RuntimeException(
+ 48                 &quot;This provider is not supported on this processor architecture&quot;);
+ 49         }
+ 50     }
+ 51 
+ 52     public String name() {
+ 53         return &quot;sun&quot;;
+ 54     }
+ 55 
+ 56     public String type() {
+ 57         return &quot;windows&quot;;
+ 58     }
+ 59 
+ 60     public VirtualMachine attachVirtualMachine(String vmid)
+ 61         throws AttachNotSupportedException, IOException
+ 62     {
+ 63         checkAttachPermission();
+ 64 
+ 65         // AttachNotSupportedException will be thrown if the target VM can be determined
+ 66         // to be not attachable.
+ 67         testAttachable(vmid);
+ 68 
+ 69         return new VirtualMachineImpl(this, vmid);
+ 70     }
+ 71 
+ 72     public List&lt;VirtualMachineDescriptor&gt; listVirtualMachines() {
+ 73         // If the temporary file system is secure then we use the default
+ 74         // implementation, otherwise we create a list of Windows processes.
+ 75         if (isTempPathSecure()) {
+ 76             return super.listVirtualMachines();
+ 77         } else {
+ 78             return listJavaProcesses();
+ 79         }
+ 80     }
+ 81 
+ 82     /**
+ 83      * Returns true if the temporary file system supports security
+ 84      */
+ 85     private static boolean isTempPathSecure() {
+ 86         if (!wasTempPathChecked) {
+ 87             synchronized (AttachProviderImpl.class) {
+ 88                 if (!wasTempPathChecked) {
+ 89                     // get the value of TMP/TEMP, ignoring UNC, and paths that
+ 90                     // aren&#39;t absolute
+ 91                     String temp = tempPath();
+ 92                     if ((temp != null) &amp;&amp; (temp.length() &gt;= 3) &amp;&amp;
+ 93                         (temp.charAt(1) == &#39;:&#39;) &amp;&amp; (temp.charAt(2) == &#39;\\&#39;))
+ 94                     {
+ 95                         // check if the volume supports security
+ 96                         long flags = volumeFlags(temp.substring(0, 3));
+ 97                         isTempPathSecure = ((flags &amp; FS_PERSISTENT_ACLS) != 0);
+ 98                     }
+ 99                     wasTempPathChecked = true;
+100                 }
+101             }
+102         }
+103 
+104         return isTempPathSecure;
+105     }
+106 
+107     // flag to indicate persistent ACLs are supported
+108     private static final long FS_PERSISTENT_ACLS = 0x8L;
+109 
+110     // indicates if we&#39;ve checked the temporary file system
+111     private static volatile boolean wasTempPathChecked;
+112 
+113     // indicates if the temporary file system is secure (only valid when
+114     // wasTempPathChecked is true)
+115     private static boolean isTempPathSecure;
+116 
+117     // returns the value of TMP/TEMP
+118     private static native String tempPath();
+119 
+120     // returns the flags for the given volume
+121     private static native long volumeFlags(String volume);
+122 
+123 
+124     /**
+125      * Returns a list of virtual machine descriptors derived from an enumeration
+126      * of the process list.
+127      */
+128     private List&lt;VirtualMachineDescriptor&gt; listJavaProcesses() {
+129         ArrayList&lt;VirtualMachineDescriptor&gt; list =
+130             new ArrayList&lt;VirtualMachineDescriptor&gt;();
+131 
+132         // Use localhost in the display name
+133         String host = &quot;localhost&quot;;
+134         try {
+135             host = InetAddress.getLocalHost().getHostName();
+136         } catch (UnknownHostException uhe) {
+137             // ignore
+138         }
+139 
+140         // Enumerate all processes.
+141         // For those processes that have loaded a library named &quot;jvm.dll&quot;
+142         // then we attempt to attach. If we succeed then we have a 6.0+ VM.
+143         int processes[] = new int[1024];
+144         int count = enumProcesses(processes, processes.length);
+145         for (int i=0; i&lt;count; i++) {
+146             if (isLibraryLoadedByProcess(&quot;jvm.dll&quot;, processes[i])) {
+147                 String pid = Integer.toString(processes[i]);
+148                 try {
+149                     new VirtualMachineImpl(this, pid).detach();
+150 
+151                     // FIXME - for now we don&#39;t have an appropriate display
+152                     // name so we use pid@hostname
+153                     String name = pid + &quot;@&quot; + host;
+154 
+155                     list.add(new HotSpotVirtualMachineDescriptor(this, pid, name));
+156                 } catch (AttachNotSupportedException x) {
+157                 } catch (IOException ioe) {
+158                 }
+159             }
+160         }
+161 
+162         return list;
+163     }
+164 
+165     // enumerates processes using psapi&#39;s EnumProcesses
+166     private static native int enumProcesses(int[] processes, int max);
+167 
+168     // indicates if a library of a given name has been loaded by a process
+169     private static native boolean isLibraryLoadedByProcess(String library,
+170                                                            int processId);
+171 
+172 
+173     // native functions in this library
+174     static {
+175         System.loadLibrary(&quot;attach&quot;);
+176     }
+177 
+178 }
+    </pre>
+  </body>
+</html>

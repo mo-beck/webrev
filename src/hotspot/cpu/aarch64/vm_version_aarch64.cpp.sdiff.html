@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\vm_version_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="templateTable_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\vm_version_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 15  *
+ 16  * You should have received a copy of the GNU General Public License version
+ 17  * 2 along with this work; if not, write to the Free Software Foundation,
+ 18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 19  *
+ 20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 21  * or visit www.oracle.com if you need additional information or have any
+ 22  * questions.
+ 23  *
+ 24  */
+ 25 
+ 26 #include &quot;precompiled.hpp&quot;
+ 27 #include &quot;asm/macroAssembler.hpp&quot;
+ 28 #include &quot;asm/macroAssembler.inline.hpp&quot;
+ 29 #include &quot;memory/resourceArea.hpp&quot;
+ 30 #include &quot;runtime/java.hpp&quot;
+ 31 #include &quot;runtime/os.hpp&quot;
+ 32 #include &quot;runtime/stubCodeGenerator.hpp&quot;
+ 33 #include &quot;runtime/vm_version.hpp&quot;
+ 34 #include &quot;utilities/macros.hpp&quot;
+
+ 35 
+ 36 #include OS_HEADER_INLINE(os)
+ 37 
+<span class="line-modified"> 38 #include &lt;sys/auxv.h&gt;</span>
+
+ 39 #include &lt;asm/hwcap.h&gt;
+<span class="line-removed"> 40 </span>
+<span class="line-removed"> 41 #ifndef HWCAP_AES</span>
+<span class="line-removed"> 42 #define HWCAP_AES   (1&lt;&lt;3)</span>
+<span class="line-removed"> 43 #endif</span>
+<span class="line-removed"> 44 </span>
+<span class="line-removed"> 45 #ifndef HWCAP_PMULL</span>
+<span class="line-removed"> 46 #define HWCAP_PMULL (1&lt;&lt;4)</span>
+<span class="line-removed"> 47 #endif</span>
+<span class="line-removed"> 48 </span>
+<span class="line-removed"> 49 #ifndef HWCAP_SHA1</span>
+<span class="line-removed"> 50 #define HWCAP_SHA1  (1&lt;&lt;5)</span>
+<span class="line-removed"> 51 #endif</span>
+<span class="line-removed"> 52 </span>
+<span class="line-removed"> 53 #ifndef HWCAP_SHA2</span>
+<span class="line-removed"> 54 #define HWCAP_SHA2  (1&lt;&lt;6)</span>
+<span class="line-removed"> 55 #endif</span>
+<span class="line-removed"> 56 </span>
+<span class="line-removed"> 57 #ifndef HWCAP_CRC32</span>
+<span class="line-removed"> 58 #define HWCAP_CRC32 (1&lt;&lt;7)</span>
+<span class="line-removed"> 59 #endif</span>
+<span class="line-removed"> 60 </span>
+<span class="line-removed"> 61 #ifndef HWCAP_ATOMICS</span>
+<span class="line-removed"> 62 #define HWCAP_ATOMICS (1&lt;&lt;8)</span>
+ 63 #endif
+ 64 
+ 65 int VM_Version::_cpu;
+ 66 int VM_Version::_model;
+ 67 int VM_Version::_model2;
+ 68 int VM_Version::_variant;
+ 69 int VM_Version::_revision;
+ 70 int VM_Version::_stepping;
+ 71 bool VM_Version::_dcpop;
+ 72 VM_Version::PsrInfo VM_Version::_psr_info   = { 0, };
+ 73 
+ 74 static BufferBlob* stub_blob;
+ 75 static const int stub_size = 550;
+ 76 
+ 77 extern &quot;C&quot; {
+ 78   typedef void (*getPsrInfo_stub_t)(void*);
+ 79 }
+ 80 static getPsrInfo_stub_t getPsrInfo_stub = NULL;
+ 81 
+ 82 
+ 83 class VM_Version_StubGenerator: public StubCodeGenerator {
+ 84  public:
+ 85 
+ 86   VM_Version_StubGenerator(CodeBuffer *c) : StubCodeGenerator(c) {}
+ 87 
+ 88   address generate_getPsrInfo() {
+ 89     StubCodeMark mark(this, &quot;VM_Version&quot;, &quot;getPsrInfo_stub&quot;);
+ 90 #   define __ _masm-&gt;
+ 91     address start = __ pc();
+ 92 
+ 93     // void getPsrInfo(VM_Version::PsrInfo* psr_info);
+ 94 
+ 95     address entry = __ pc();
+ 96 
+ 97     __ enter();
+ 98 
+ 99     __ get_dczid_el0(rscratch1);
+100     __ strw(rscratch1, Address(c_rarg0, in_bytes(VM_Version::dczid_el0_offset())));
+101 
+
+102     __ get_ctr_el0(rscratch1);
+103     __ strw(rscratch1, Address(c_rarg0, in_bytes(VM_Version::ctr_el0_offset())));
+
+104 
+105     __ leave();
+106     __ ret(lr);
+107 
+108 #   undef __
+109 
+110     return start;
+111   }
+112 };
+113 
+114 
+115 void VM_Version::get_processor_features() {
+116   _supports_cx8 = true;
+117   _supports_atomic_getset4 = true;
+118   _supports_atomic_getadd4 = true;
+119   _supports_atomic_getset8 = true;
+120   _supports_atomic_getadd8 = true;
+121 
+122   getPsrInfo_stub(&amp;_psr_info);
+123 
+</pre>
+<hr />
+<pre>
+144     if (PrefetchCopyIntervalInBytes &gt;= 32768)
+145       PrefetchCopyIntervalInBytes = 32760;
+146   }
+147 
+148   if (AllocatePrefetchDistance !=-1 &amp;&amp; (AllocatePrefetchDistance &amp; 7)) {
+149     warning(&quot;AllocatePrefetchDistance must be multiple of 8&quot;);
+150     AllocatePrefetchDistance &amp;= ~7;
+151   }
+152 
+153   if (AllocatePrefetchStepSize &amp; 7) {
+154     warning(&quot;AllocatePrefetchStepSize must be multiple of 8&quot;);
+155     AllocatePrefetchStepSize &amp;= ~7;
+156   }
+157 
+158   if (SoftwarePrefetchHintDistance != -1 &amp;&amp;
+159        (SoftwarePrefetchHintDistance &amp; 7)) {
+160     warning(&quot;SoftwarePrefetchHintDistance must be -1, or a multiple of 8&quot;);
+161     SoftwarePrefetchHintDistance &amp;= ~7;
+162   }
+163 
+<span class="line-modified">164   unsigned long auxv = getauxval(AT_HWCAP);</span>
+
+
+
+
+
+
+
+
+
+
+165 
+166   char buf[512];
+167 
+<span class="line-removed">168   _features = auxv;</span>
+<span class="line-removed">169 </span>
+170   int cpu_lines = 0;
+
+171   if (FILE *f = fopen(&quot;/proc/cpuinfo&quot;, &quot;r&quot;)) {
+172     // need a large buffer as the flags line may include lots of text
+173     char buf[1024], *p;
+174     while (fgets(buf, sizeof (buf), f) != NULL) {
+175       if ((p = strchr(buf, &#39;:&#39;)) != NULL) {
+176         long v = strtol(p+1, NULL, 0);
+177         if (strncmp(buf, &quot;CPU implementer&quot;, sizeof &quot;CPU implementer&quot; - 1) == 0) {
+178           _cpu = v;
+179           cpu_lines++;
+180         } else if (strncmp(buf, &quot;CPU variant&quot;, sizeof &quot;CPU variant&quot; - 1) == 0) {
+181           _variant = v;
+182         } else if (strncmp(buf, &quot;CPU part&quot;, sizeof &quot;CPU part&quot; - 1) == 0) {
+183           if (_model != v)  _model2 = _model;
+184           _model = v;
+185         } else if (strncmp(buf, &quot;CPU revision&quot;, sizeof &quot;CPU revision&quot; - 1) == 0) {
+186           _revision = v;
+187         } else if (strncmp(buf, &quot;flags&quot;, sizeof(&quot;flags&quot;) - 1) == 0) {
+188           if (strstr(p+1, &quot;dcpop&quot;)) {
+189             _dcpop = true;
+190           }
+191         }
+192       }
+193     }
+194     fclose(f);
+195   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+196 
+197   if (os::supports_map_sync()) {
+198     // if dcpop is available publish data cache line flush size via
+199     // generic field, otherwise let if default to zero thereby
+200     // disabling writeback
+201     if (_dcpop) {
+202       _data_cache_line_flush_size = dcache_line;
+203     }
+204   }
+205 
+206   // Enable vendor specific features
+207 
+208   // Ampere eMAG
+209   if (_cpu == CPU_AMCC &amp;&amp; (_model == 0) &amp;&amp; (_variant == 0x3)) {
+210     if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+211       FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+212     }
+213     if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+214       FLAG_SET_DEFAULT(UseSIMDForMemoryOps, true);
+215     }
+</pre>
+<hr />
+<pre>
+218     }
+219   }
+220 
+221   // ThunderX
+222   if (_cpu == CPU_CAVIUM &amp;&amp; (_model == 0xA1)) {
+223     if (_variant == 0) _features |= CPU_DMB_ATOMICS;
+224     if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+225       FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+226     }
+227     if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+228       FLAG_SET_DEFAULT(UseSIMDForMemoryOps, (_variant &gt; 0));
+229     }
+230     if (FLAG_IS_DEFAULT(UseSIMDForArrayEquals)) {
+231       FLAG_SET_DEFAULT(UseSIMDForArrayEquals, false);
+232     }
+233   }
+234 
+235   // ThunderX2
+236   if ((_cpu == CPU_CAVIUM &amp;&amp; (_model == 0xAF)) ||
+237       (_cpu == CPU_BROADCOM &amp;&amp; (_model == 0x516))) {
+
+238     if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+239       FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+240     }
+241     if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+242       FLAG_SET_DEFAULT(UseSIMDForMemoryOps, true);
+243     }
+244   }
+245 
+246   // HiSilicon TSV110
+247   if (_cpu == CPU_HISILICON &amp;&amp; _model == 0xd01) {
+248     if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+249       FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+250     }
+251     if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+252       FLAG_SET_DEFAULT(UseSIMDForMemoryOps, true);
+253     }
+254   }
+255 
+256   // Cortex A53
+257   if (_cpu == CPU_ARM &amp;&amp; (_model == 0xd03 || _model2 == 0xd03)) {
+</pre>
+<hr />
+<pre>
+263 
+264   // Cortex A73
+265   if (_cpu == CPU_ARM &amp;&amp; (_model == 0xd09 || _model2 == 0xd09)) {
+266     if (FLAG_IS_DEFAULT(SoftwarePrefetchHintDistance)) {
+267       FLAG_SET_DEFAULT(SoftwarePrefetchHintDistance, -1);
+268     }
+269     // A73 is faster with short-and-easy-for-speculative-execution-loop
+270     if (FLAG_IS_DEFAULT(UseSimpleArrayEquals)) {
+271       FLAG_SET_DEFAULT(UseSimpleArrayEquals, true);
+272     }
+273   }
+274 
+275   if (_cpu == CPU_ARM &amp;&amp; (_model == 0xd07 || _model2 == 0xd07)) _features |= CPU_STXR_PREFETCH;
+276   // If an olde style /proc/cpuinfo (cpu_lines == 1) then if _model is an A57 (0xd07)
+277   // we assume the worst and assume we could be on a big little system and have
+278   // undisclosed A53 cores which we could be swapped to at any stage
+279   if (_cpu == CPU_ARM &amp;&amp; cpu_lines == 1 &amp;&amp; _model == 0xd07) _features |= CPU_A53MAC;
+280 
+281   sprintf(buf, &quot;0x%02x:0x%x:0x%03x:%d&quot;, _cpu, _variant, _model, _revision);
+282   if (_model2) sprintf(buf+strlen(buf), &quot;(0x%03x)&quot;, _model2);
+<span class="line-modified">283   if (auxv &amp; HWCAP_ASIMD) strcat(buf, &quot;, simd&quot;);</span>
+<span class="line-modified">284   if (auxv &amp; HWCAP_CRC32) strcat(buf, &quot;, crc&quot;);</span>
+<span class="line-modified">285   if (auxv &amp; HWCAP_AES)   strcat(buf, &quot;, aes&quot;);</span>
+<span class="line-modified">286   if (auxv &amp; HWCAP_SHA1)  strcat(buf, &quot;, sha1&quot;);</span>
+<span class="line-modified">287   if (auxv &amp; HWCAP_SHA2)  strcat(buf, &quot;, sha256&quot;);</span>
+<span class="line-modified">288   if (auxv &amp; HWCAP_ATOMICS) strcat(buf, &quot;, lse&quot;);</span>
+
+289 
+290   _features_string = os::strdup(buf);
+291 
+292   if (FLAG_IS_DEFAULT(UseCRC32)) {
+<span class="line-modified">293     UseCRC32 = (auxv &amp; HWCAP_CRC32) != 0;</span>
+294   }
+295 
+<span class="line-modified">296   if (UseCRC32 &amp;&amp; (auxv &amp; HWCAP_CRC32) == 0) {</span>
+297     warning(&quot;UseCRC32 specified, but not supported on this CPU&quot;);
+298     FLAG_SET_DEFAULT(UseCRC32, false);
+299   }
+300 
+301   if (FLAG_IS_DEFAULT(UseAdler32Intrinsics)) {
+302     FLAG_SET_DEFAULT(UseAdler32Intrinsics, true);
+303   }
+304 
+305   if (UseVectorizedMismatchIntrinsic) {
+306     warning(&quot;UseVectorizedMismatchIntrinsic specified, but not available on this CPU.&quot;);
+307     FLAG_SET_DEFAULT(UseVectorizedMismatchIntrinsic, false);
+308   }
+309 
+<span class="line-modified">310   if (auxv &amp; HWCAP_ATOMICS) {</span>
+311     if (FLAG_IS_DEFAULT(UseLSE))
+312       FLAG_SET_DEFAULT(UseLSE, true);
+313   } else {
+314     if (UseLSE) {
+315       warning(&quot;UseLSE specified, but not supported on this CPU&quot;);
+316       FLAG_SET_DEFAULT(UseLSE, false);
+317     }
+318   }
+319 
+<span class="line-modified">320   if (auxv &amp; HWCAP_AES) {</span>
+321     UseAES = UseAES || FLAG_IS_DEFAULT(UseAES);
+322     UseAESIntrinsics =
+323         UseAESIntrinsics || (UseAES &amp;&amp; FLAG_IS_DEFAULT(UseAESIntrinsics));
+324     if (UseAESIntrinsics &amp;&amp; !UseAES) {
+325       warning(&quot;UseAESIntrinsics enabled, but UseAES not, enabling&quot;);
+326       UseAES = true;
+327     }
+328   } else {
+329     if (UseAES) {
+330       warning(&quot;UseAES specified, but not supported on this CPU&quot;);
+331       FLAG_SET_DEFAULT(UseAES, false);
+332     }
+333     if (UseAESIntrinsics) {
+334       warning(&quot;UseAESIntrinsics specified, but not supported on this CPU&quot;);
+335       FLAG_SET_DEFAULT(UseAESIntrinsics, false);
+336     }
+337   }
+338 
+339   if (UseAESCTRIntrinsics) {
+340     warning(&quot;AES/CTR intrinsics are not available on this CPU&quot;);
+341     FLAG_SET_DEFAULT(UseAESCTRIntrinsics, false);
+342   }
+343 
+344   if (FLAG_IS_DEFAULT(UseCRC32Intrinsics)) {
+345     UseCRC32Intrinsics = true;
+346   }
+347 
+<span class="line-modified">348   if (auxv &amp; HWCAP_CRC32) {</span>
+349     if (FLAG_IS_DEFAULT(UseCRC32CIntrinsics)) {
+350       FLAG_SET_DEFAULT(UseCRC32CIntrinsics, true);
+351     }
+352   } else if (UseCRC32CIntrinsics) {
+353     warning(&quot;CRC32C is not available on the CPU&quot;);
+354     FLAG_SET_DEFAULT(UseCRC32CIntrinsics, false);
+355   }
+356 
+357   if (FLAG_IS_DEFAULT(UseFMA)) {
+358     FLAG_SET_DEFAULT(UseFMA, true);
+359   }
+360 
+<span class="line-modified">361   if (auxv &amp; (HWCAP_SHA1 | HWCAP_SHA2)) {</span>
+362     if (FLAG_IS_DEFAULT(UseSHA)) {
+363       FLAG_SET_DEFAULT(UseSHA, true);
+364     }
+365   } else if (UseSHA) {
+366     warning(&quot;SHA instructions are not available on this CPU&quot;);
+367     FLAG_SET_DEFAULT(UseSHA, false);
+368   }
+369 
+<span class="line-modified">370   if (UseSHA &amp;&amp; (auxv &amp; HWCAP_SHA1)) {</span>
+371     if (FLAG_IS_DEFAULT(UseSHA1Intrinsics)) {
+372       FLAG_SET_DEFAULT(UseSHA1Intrinsics, true);
+373     }
+374   } else if (UseSHA1Intrinsics) {
+375     warning(&quot;Intrinsics for SHA-1 crypto hash functions not available on this CPU.&quot;);
+376     FLAG_SET_DEFAULT(UseSHA1Intrinsics, false);
+377   }
+378 
+<span class="line-modified">379   if (UseSHA &amp;&amp; (auxv &amp; HWCAP_SHA2)) {</span>
+380     if (FLAG_IS_DEFAULT(UseSHA256Intrinsics)) {
+381       FLAG_SET_DEFAULT(UseSHA256Intrinsics, true);
+382     }
+383   } else if (UseSHA256Intrinsics) {
+384     warning(&quot;Intrinsics for SHA-224 and SHA-256 crypto hash functions not available on this CPU.&quot;);
+385     FLAG_SET_DEFAULT(UseSHA256Intrinsics, false);
+386   }
+387 
+388   if (UseSHA512Intrinsics) {
+389     warning(&quot;Intrinsics for SHA-384 and SHA-512 crypto hash functions not available on this CPU.&quot;);
+390     FLAG_SET_DEFAULT(UseSHA512Intrinsics, false);
+391   }
+392 
+393   if (!(UseSHA1Intrinsics || UseSHA256Intrinsics || UseSHA512Intrinsics)) {
+394     FLAG_SET_DEFAULT(UseSHA, false);
+395   }
+396 
+<span class="line-modified">397   if (auxv &amp; HWCAP_PMULL) {</span>
+398     if (FLAG_IS_DEFAULT(UseGHASHIntrinsics)) {
+399       FLAG_SET_DEFAULT(UseGHASHIntrinsics, true);
+400     }
+401   } else if (UseGHASHIntrinsics) {
+402     warning(&quot;GHASH intrinsics are not available on this CPU&quot;);
+403     FLAG_SET_DEFAULT(UseGHASHIntrinsics, false);
+404   }
+405 
+406   if (is_zva_enabled()) {
+407     if (FLAG_IS_DEFAULT(UseBlockZeroing)) {
+408       FLAG_SET_DEFAULT(UseBlockZeroing, true);
+409     }
+410     if (FLAG_IS_DEFAULT(BlockZeroingLowLimit)) {
+411       FLAG_SET_DEFAULT(BlockZeroingLowLimit, 4 * VM_Version::zva_length());
+412     }
+413   } else if (UseBlockZeroing) {
+414     warning(&quot;DC ZVA is not available on this CPU&quot;);
+415     FLAG_SET_DEFAULT(UseBlockZeroing, false);
+416   }
+417 
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 15  *
+ 16  * You should have received a copy of the GNU General Public License version
+ 17  * 2 along with this work; if not, write to the Free Software Foundation,
+ 18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 19  *
+ 20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 21  * or visit www.oracle.com if you need additional information or have any
+ 22  * questions.
+ 23  *
+ 24  */
+ 25 
+ 26 #include &quot;precompiled.hpp&quot;
+ 27 #include &quot;asm/macroAssembler.hpp&quot;
+ 28 #include &quot;asm/macroAssembler.inline.hpp&quot;
+ 29 #include &quot;memory/resourceArea.hpp&quot;
+ 30 #include &quot;runtime/java.hpp&quot;
+ 31 #include &quot;runtime/os.hpp&quot;
+ 32 #include &quot;runtime/stubCodeGenerator.hpp&quot;
+ 33 #include &quot;runtime/vm_version.hpp&quot;
+ 34 #include &quot;utilities/macros.hpp&quot;
+<span class="line-added"> 35 #include &quot;vm_version_aarch64.hpp&quot;</span>
+ 36 
+ 37 #include OS_HEADER_INLINE(os)
+ 38 
+<span class="line-modified"> 39 #ifndef _WIN64</span>
+<span class="line-added"> 40 #include &lt;sys/_features.h&gt;</span>
+ 41 #include &lt;asm/hwcap.h&gt;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 42 #endif
+ 43 
+ 44 int VM_Version::_cpu;
+ 45 int VM_Version::_model;
+ 46 int VM_Version::_model2;
+ 47 int VM_Version::_variant;
+ 48 int VM_Version::_revision;
+ 49 int VM_Version::_stepping;
+ 50 bool VM_Version::_dcpop;
+ 51 VM_Version::PsrInfo VM_Version::_psr_info   = { 0, };
+ 52 
+ 53 static BufferBlob* stub_blob;
+ 54 static const int stub_size = 550;
+ 55 
+ 56 extern &quot;C&quot; {
+ 57   typedef void (*getPsrInfo_stub_t)(void*);
+ 58 }
+ 59 static getPsrInfo_stub_t getPsrInfo_stub = NULL;
+ 60 
+ 61 
+ 62 class VM_Version_StubGenerator: public StubCodeGenerator {
+ 63  public:
+ 64 
+ 65   VM_Version_StubGenerator(CodeBuffer *c) : StubCodeGenerator(c) {}
+ 66 
+ 67   address generate_getPsrInfo() {
+ 68     StubCodeMark mark(this, &quot;VM_Version&quot;, &quot;getPsrInfo_stub&quot;);
+ 69 #   define __ _masm-&gt;
+ 70     address start = __ pc();
+ 71 
+ 72     // void getPsrInfo(VM_Version::PsrInfo* psr_info);
+ 73 
+ 74     address entry = __ pc();
+ 75 
+ 76     __ enter();
+ 77 
+ 78     __ get_dczid_el0(rscratch1);
+ 79     __ strw(rscratch1, Address(c_rarg0, in_bytes(VM_Version::dczid_el0_offset())));
+ 80 
+<span class="line-added"> 81 #ifndef _WIN64</span>
+ 82     __ get_ctr_el0(rscratch1);
+ 83     __ strw(rscratch1, Address(c_rarg0, in_bytes(VM_Version::ctr_el0_offset())));
+<span class="line-added"> 84 #endif</span>
+ 85 
+ 86     __ leave();
+ 87     __ ret(lr);
+ 88 
+ 89 #   undef __
+ 90 
+ 91     return start;
+ 92   }
+ 93 };
+ 94 
+ 95 
+ 96 void VM_Version::get_processor_features() {
+ 97   _supports_cx8 = true;
+ 98   _supports_atomic_getset4 = true;
+ 99   _supports_atomic_getadd4 = true;
+100   _supports_atomic_getset8 = true;
+101   _supports_atomic_getadd8 = true;
+102 
+103   getPsrInfo_stub(&amp;_psr_info);
+104 
+</pre>
+<hr />
+<pre>
+125     if (PrefetchCopyIntervalInBytes &gt;= 32768)
+126       PrefetchCopyIntervalInBytes = 32760;
+127   }
+128 
+129   if (AllocatePrefetchDistance !=-1 &amp;&amp; (AllocatePrefetchDistance &amp; 7)) {
+130     warning(&quot;AllocatePrefetchDistance must be multiple of 8&quot;);
+131     AllocatePrefetchDistance &amp;= ~7;
+132   }
+133 
+134   if (AllocatePrefetchStepSize &amp; 7) {
+135     warning(&quot;AllocatePrefetchStepSize must be multiple of 8&quot;);
+136     AllocatePrefetchStepSize &amp;= ~7;
+137   }
+138 
+139   if (SoftwarePrefetchHintDistance != -1 &amp;&amp;
+140        (SoftwarePrefetchHintDistance &amp; 7)) {
+141     warning(&quot;SoftwarePrefetchHintDistance must be -1, or a multiple of 8&quot;);
+142     SoftwarePrefetchHintDistance &amp;= ~7;
+143   }
+144 
+<span class="line-modified">145 #ifndef _WIN64</span>
+<span class="line-added">146   _features = getauxval(AT_HWCAP);</span>
+<span class="line-added">147 #else</span>
+<span class="line-added">148   if (IsProcessorFeaturePresent(PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE))   _features |= CPU_CRC32;</span>
+<span class="line-added">149   if (IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE))  _features |= CPU_AES | CPU_SHA1 | CPU_SHA2;</span>
+<span class="line-added">150 #ifdef PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE</span>
+<span class="line-added">151   if (IsProcessorFeaturePresent(PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE)) _features |= CPU_DMB_ATOMICS;</span>
+<span class="line-added">152 #endif</span>
+<span class="line-added">153   if (IsProcessorFeaturePresent(PF_ARM_VFP_32_REGISTERS_AVAILABLE))        _features |= CPU_ASIMD;</span>
+<span class="line-added">154   // No check for CPU_PMULL</span>
+<span class="line-added">155 #endif // _WIN64</span>
+156 
+157   char buf[512];
+158 
+
+
+159   int cpu_lines = 0;
+<span class="line-added">160 #ifndef _WIN64</span>
+161   if (FILE *f = fopen(&quot;/proc/cpuinfo&quot;, &quot;r&quot;)) {
+162     // need a large buffer as the flags line may include lots of text
+163     char buf[1024], *p;
+164     while (fgets(buf, sizeof (buf), f) != NULL) {
+165       if ((p = strchr(buf, &#39;:&#39;)) != NULL) {
+166         long v = strtol(p+1, NULL, 0);
+167         if (strncmp(buf, &quot;CPU implementer&quot;, sizeof &quot;CPU implementer&quot; - 1) == 0) {
+168           _cpu = v;
+169           cpu_lines++;
+170         } else if (strncmp(buf, &quot;CPU variant&quot;, sizeof &quot;CPU variant&quot; - 1) == 0) {
+171           _variant = v;
+172         } else if (strncmp(buf, &quot;CPU part&quot;, sizeof &quot;CPU part&quot; - 1) == 0) {
+173           if (_model != v)  _model2 = _model;
+174           _model = v;
+175         } else if (strncmp(buf, &quot;CPU revision&quot;, sizeof &quot;CPU revision&quot; - 1) == 0) {
+176           _revision = v;
+177         } else if (strncmp(buf, &quot;flags&quot;, sizeof(&quot;flags&quot;) - 1) == 0) {
+178           if (strstr(p+1, &quot;dcpop&quot;)) {
+179             _dcpop = true;
+180           }
+181         }
+182       }
+183     }
+184     fclose(f);
+185   }
+<span class="line-added">186 #else</span>
+<span class="line-added">187   {</span>
+<span class="line-added">188     char* buf = ::getenv(&quot;PROCESSOR_IDENTIFIER&quot;);</span>
+<span class="line-added">189     if (buf &amp;&amp; strstr(buf, &quot;Ampere(TM)&quot;) != NULL) {</span>
+<span class="line-added">190       _cpu = CPU_AMCC;</span>
+<span class="line-added">191       cpu_lines++;</span>
+<span class="line-added">192     } else if (buf &amp;&amp; strstr(buf, &quot;Cavium Inc.&quot;) != NULL) {</span>
+<span class="line-added">193       _cpu = CPU_CAVIUM;</span>
+<span class="line-added">194       cpu_lines++;</span>
+<span class="line-added">195     } else {</span>
+<span class="line-added">196       log_info(os)(&quot;VM_Version: unknown CPU model&quot;);</span>
+<span class="line-added">197     }</span>
+<span class="line-added">198 </span>
+<span class="line-added">199     if (_cpu) {</span>
+<span class="line-added">200       SYSTEM_INFO si;</span>
+<span class="line-added">201       GetSystemInfo(&amp;si);</span>
+<span class="line-added">202       _model = si.wProcessorLevel;</span>
+<span class="line-added">203       _variant = si.wProcessorRevision / 0xFF;</span>
+<span class="line-added">204       _revision = si.wProcessorRevision &amp; 0xFF;</span>
+<span class="line-added">205     }</span>
+<span class="line-added">206   }</span>
+<span class="line-added">207 #endif // _WIN64</span>
+208 
+209   if (os::supports_map_sync()) {
+210     // if dcpop is available publish data cache line flush size via
+211     // generic field, otherwise let if default to zero thereby
+212     // disabling writeback
+213     if (_dcpop) {
+214       _data_cache_line_flush_size = dcache_line;
+215     }
+216   }
+217 
+218   // Enable vendor specific features
+219 
+220   // Ampere eMAG
+221   if (_cpu == CPU_AMCC &amp;&amp; (_model == 0) &amp;&amp; (_variant == 0x3)) {
+222     if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+223       FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+224     }
+225     if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+226       FLAG_SET_DEFAULT(UseSIMDForMemoryOps, true);
+227     }
+</pre>
+<hr />
+<pre>
+230     }
+231   }
+232 
+233   // ThunderX
+234   if (_cpu == CPU_CAVIUM &amp;&amp; (_model == 0xA1)) {
+235     if (_variant == 0) _features |= CPU_DMB_ATOMICS;
+236     if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+237       FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+238     }
+239     if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+240       FLAG_SET_DEFAULT(UseSIMDForMemoryOps, (_variant &gt; 0));
+241     }
+242     if (FLAG_IS_DEFAULT(UseSIMDForArrayEquals)) {
+243       FLAG_SET_DEFAULT(UseSIMDForArrayEquals, false);
+244     }
+245   }
+246 
+247   // ThunderX2
+248   if ((_cpu == CPU_CAVIUM &amp;&amp; (_model == 0xAF)) ||
+249       (_cpu == CPU_BROADCOM &amp;&amp; (_model == 0x516))) {
+<span class="line-added">250     _features |= CPU_DMB_ATOMICS;</span>
+251     if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+252       FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+253     }
+254     if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+255       FLAG_SET_DEFAULT(UseSIMDForMemoryOps, true);
+256     }
+257   }
+258 
+259   // HiSilicon TSV110
+260   if (_cpu == CPU_HISILICON &amp;&amp; _model == 0xd01) {
+261     if (FLAG_IS_DEFAULT(AvoidUnalignedAccesses)) {
+262       FLAG_SET_DEFAULT(AvoidUnalignedAccesses, true);
+263     }
+264     if (FLAG_IS_DEFAULT(UseSIMDForMemoryOps)) {
+265       FLAG_SET_DEFAULT(UseSIMDForMemoryOps, true);
+266     }
+267   }
+268 
+269   // Cortex A53
+270   if (_cpu == CPU_ARM &amp;&amp; (_model == 0xd03 || _model2 == 0xd03)) {
+</pre>
+<hr />
+<pre>
+276 
+277   // Cortex A73
+278   if (_cpu == CPU_ARM &amp;&amp; (_model == 0xd09 || _model2 == 0xd09)) {
+279     if (FLAG_IS_DEFAULT(SoftwarePrefetchHintDistance)) {
+280       FLAG_SET_DEFAULT(SoftwarePrefetchHintDistance, -1);
+281     }
+282     // A73 is faster with short-and-easy-for-speculative-execution-loop
+283     if (FLAG_IS_DEFAULT(UseSimpleArrayEquals)) {
+284       FLAG_SET_DEFAULT(UseSimpleArrayEquals, true);
+285     }
+286   }
+287 
+288   if (_cpu == CPU_ARM &amp;&amp; (_model == 0xd07 || _model2 == 0xd07)) _features |= CPU_STXR_PREFETCH;
+289   // If an olde style /proc/cpuinfo (cpu_lines == 1) then if _model is an A57 (0xd07)
+290   // we assume the worst and assume we could be on a big little system and have
+291   // undisclosed A53 cores which we could be swapped to at any stage
+292   if (_cpu == CPU_ARM &amp;&amp; cpu_lines == 1 &amp;&amp; _model == 0xd07) _features |= CPU_A53MAC;
+293 
+294   sprintf(buf, &quot;0x%02x:0x%x:0x%03x:%d&quot;, _cpu, _variant, _model, _revision);
+295   if (_model2) sprintf(buf+strlen(buf), &quot;(0x%03x)&quot;, _model2);
+<span class="line-modified">296   if (_features &amp; CPU_ASIMD) strcat(buf, &quot;, simd&quot;);</span>
+<span class="line-modified">297   if (_features &amp; CPU_CRC32) strcat(buf, &quot;, crc&quot;);</span>
+<span class="line-modified">298   if (_features &amp; CPU_AES)   strcat(buf, &quot;, aes&quot;);</span>
+<span class="line-modified">299   if (_features &amp; CPU_SHA1)  strcat(buf, &quot;, sha1&quot;);</span>
+<span class="line-modified">300   if (_features &amp; CPU_SHA2)  strcat(buf, &quot;, sha256&quot;);</span>
+<span class="line-modified">301   if (_features &amp; CPU_LSE)   strcat(buf, &quot;, lse&quot;);</span>
+<span class="line-added">302   if (_features &amp; CPU_DMB_ATOMICS) strcat(buf, &quot;, atomics&quot;);</span>
+303 
+304   _features_string = os::strdup(buf);
+305 
+306   if (FLAG_IS_DEFAULT(UseCRC32)) {
+<span class="line-modified">307     UseCRC32 = (_features &amp; CPU_CRC32) != 0;</span>
+308   }
+309 
+<span class="line-modified">310   if (UseCRC32 &amp;&amp; (_features &amp; CPU_CRC32) == 0) {</span>
+311     warning(&quot;UseCRC32 specified, but not supported on this CPU&quot;);
+312     FLAG_SET_DEFAULT(UseCRC32, false);
+313   }
+314 
+315   if (FLAG_IS_DEFAULT(UseAdler32Intrinsics)) {
+316     FLAG_SET_DEFAULT(UseAdler32Intrinsics, true);
+317   }
+318 
+319   if (UseVectorizedMismatchIntrinsic) {
+320     warning(&quot;UseVectorizedMismatchIntrinsic specified, but not available on this CPU.&quot;);
+321     FLAG_SET_DEFAULT(UseVectorizedMismatchIntrinsic, false);
+322   }
+323 
+<span class="line-modified">324   if (_features &amp; CPU_LSE) {</span>
+325     if (FLAG_IS_DEFAULT(UseLSE))
+326       FLAG_SET_DEFAULT(UseLSE, true);
+327   } else {
+328     if (UseLSE) {
+329       warning(&quot;UseLSE specified, but not supported on this CPU&quot;);
+330       FLAG_SET_DEFAULT(UseLSE, false);
+331     }
+332   }
+333 
+<span class="line-modified">334   if (_features &amp; CPU_AES) {</span>
+335     UseAES = UseAES || FLAG_IS_DEFAULT(UseAES);
+336     UseAESIntrinsics =
+337         UseAESIntrinsics || (UseAES &amp;&amp; FLAG_IS_DEFAULT(UseAESIntrinsics));
+338     if (UseAESIntrinsics &amp;&amp; !UseAES) {
+339       warning(&quot;UseAESIntrinsics enabled, but UseAES not, enabling&quot;);
+340       UseAES = true;
+341     }
+342   } else {
+343     if (UseAES) {
+344       warning(&quot;UseAES specified, but not supported on this CPU&quot;);
+345       FLAG_SET_DEFAULT(UseAES, false);
+346     }
+347     if (UseAESIntrinsics) {
+348       warning(&quot;UseAESIntrinsics specified, but not supported on this CPU&quot;);
+349       FLAG_SET_DEFAULT(UseAESIntrinsics, false);
+350     }
+351   }
+352 
+353   if (UseAESCTRIntrinsics) {
+354     warning(&quot;AES/CTR intrinsics are not available on this CPU&quot;);
+355     FLAG_SET_DEFAULT(UseAESCTRIntrinsics, false);
+356   }
+357 
+358   if (FLAG_IS_DEFAULT(UseCRC32Intrinsics)) {
+359     UseCRC32Intrinsics = true;
+360   }
+361 
+<span class="line-modified">362   if (_features &amp; CPU_CRC32) {</span>
+363     if (FLAG_IS_DEFAULT(UseCRC32CIntrinsics)) {
+364       FLAG_SET_DEFAULT(UseCRC32CIntrinsics, true);
+365     }
+366   } else if (UseCRC32CIntrinsics) {
+367     warning(&quot;CRC32C is not available on the CPU&quot;);
+368     FLAG_SET_DEFAULT(UseCRC32CIntrinsics, false);
+369   }
+370 
+371   if (FLAG_IS_DEFAULT(UseFMA)) {
+372     FLAG_SET_DEFAULT(UseFMA, true);
+373   }
+374 
+<span class="line-modified">375   if (_features &amp; (CPU_SHA1 | CPU_SHA2)) {</span>
+376     if (FLAG_IS_DEFAULT(UseSHA)) {
+377       FLAG_SET_DEFAULT(UseSHA, true);
+378     }
+379   } else if (UseSHA) {
+380     warning(&quot;SHA instructions are not available on this CPU&quot;);
+381     FLAG_SET_DEFAULT(UseSHA, false);
+382   }
+383 
+<span class="line-modified">384   if (UseSHA &amp;&amp; (_features &amp; CPU_SHA1)) {</span>
+385     if (FLAG_IS_DEFAULT(UseSHA1Intrinsics)) {
+386       FLAG_SET_DEFAULT(UseSHA1Intrinsics, true);
+387     }
+388   } else if (UseSHA1Intrinsics) {
+389     warning(&quot;Intrinsics for SHA-1 crypto hash functions not available on this CPU.&quot;);
+390     FLAG_SET_DEFAULT(UseSHA1Intrinsics, false);
+391   }
+392 
+<span class="line-modified">393   if (UseSHA &amp;&amp; (_features &amp; CPU_SHA2)) {</span>
+394     if (FLAG_IS_DEFAULT(UseSHA256Intrinsics)) {
+395       FLAG_SET_DEFAULT(UseSHA256Intrinsics, true);
+396     }
+397   } else if (UseSHA256Intrinsics) {
+398     warning(&quot;Intrinsics for SHA-224 and SHA-256 crypto hash functions not available on this CPU.&quot;);
+399     FLAG_SET_DEFAULT(UseSHA256Intrinsics, false);
+400   }
+401 
+402   if (UseSHA512Intrinsics) {
+403     warning(&quot;Intrinsics for SHA-384 and SHA-512 crypto hash functions not available on this CPU.&quot;);
+404     FLAG_SET_DEFAULT(UseSHA512Intrinsics, false);
+405   }
+406 
+407   if (!(UseSHA1Intrinsics || UseSHA256Intrinsics || UseSHA512Intrinsics)) {
+408     FLAG_SET_DEFAULT(UseSHA, false);
+409   }
+410 
+<span class="line-modified">411   if (_features &amp; CPU_PMULL) {</span>
+412     if (FLAG_IS_DEFAULT(UseGHASHIntrinsics)) {
+413       FLAG_SET_DEFAULT(UseGHASHIntrinsics, true);
+414     }
+415   } else if (UseGHASHIntrinsics) {
+416     warning(&quot;GHASH intrinsics are not available on this CPU&quot;);
+417     FLAG_SET_DEFAULT(UseGHASHIntrinsics, false);
+418   }
+419 
+420   if (is_zva_enabled()) {
+421     if (FLAG_IS_DEFAULT(UseBlockZeroing)) {
+422       FLAG_SET_DEFAULT(UseBlockZeroing, true);
+423     }
+424     if (FLAG_IS_DEFAULT(BlockZeroingLowLimit)) {
+425       FLAG_SET_DEFAULT(BlockZeroingLowLimit, 4 * VM_Version::zva_length());
+426     }
+427   } else if (UseBlockZeroing) {
+428     warning(&quot;DC ZVA is not available on this CPU&quot;);
+429     FLAG_SET_DEFAULT(UseBlockZeroing, false);
+430   }
+431 
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="templateTable_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

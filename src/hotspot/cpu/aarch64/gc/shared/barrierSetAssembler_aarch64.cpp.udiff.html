@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\cpu\aarch64\gc\shared\barrierSetAssembler_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\..\frame_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\icache_aarch64.hpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\gc\shared\barrierSetAssembler_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -171,20 +171,20 @@</span>
+      Register end = t1;
+      Register heap_end = rscratch2;
+      Label retry;
+      __ bind(retry);
+      {
+<span class="udiff-line-modified-removed">-       unsigned long offset;</span>
+<span class="udiff-line-modified-added">+       uint64_t offset;</span>
+        __ adrp(rscratch1, ExternalAddress((address) Universe::heap()-&gt;end_addr()), offset);
+        __ ldr(heap_end, Address(rscratch1, offset));
+      }
+  
+      ExternalAddress heap_top((address) Universe::heap()-&gt;top_addr());
+  
+      // Get the current top of the heap
+      {
+<span class="udiff-line-modified-removed">-       unsigned long offset;</span>
+<span class="udiff-line-modified-added">+       uint64_t offset;</span>
+        __ adrp(rscratch1, heap_top, offset);
+        // Use add() here after ARDP, rather than lea().
+        // lea() does not generate anything if its offset is zero.
+        // However, relocs expect to find either an ADD or a load/store
+        // insn after an ADRP.  add() always generates an ADD insn, even
+</pre>
+<center><a href="..\..\frame_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\icache_aarch64.hpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

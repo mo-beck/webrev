@@ -1,0 +1,7 @@
+diff a/src/hotspot/.vs/ProjectSettings.json b/src/hotspot/.vs/ProjectSettings.json
+--- /dev/null
++++ b/src/hotspot/.vs/ProjectSettings.json
+@@ -0,0 +1,3 @@
++{
++  "CurrentProjectSetting": "No Configurations"
++}

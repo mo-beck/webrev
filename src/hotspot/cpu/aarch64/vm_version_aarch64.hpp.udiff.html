@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\cpu\aarch64\vm_version_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="vm_version_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version_ext_aarch64.cpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\vm_version_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -27,10 +27,11 @@</span>
+  #define CPU_AARCH64_VM_VERSION_AARCH64_HPP
+  
+  #include &quot;runtime/abstract_vm_version.hpp&quot;
+  #include &quot;runtime/globals_extension.hpp&quot;
+  #include &quot;utilities/sizes.hpp&quot;
+<span class="udiff-line-added">+ #include &quot;runtime/java.hpp&quot;</span>
+  
+  class VM_Version : public Abstract_VM_Version {
+    friend class JVMCIVMStructs;
+  
+  protected:
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -41,11 +42,13 @@</span>
+    static int _revision;
+    static int _stepping;
+    static bool _dcpop;
+    struct PsrInfo {
+      uint32_t dczid_el0;
+<span class="udiff-line-added">+ #ifndef _WIN64</span>
+      uint32_t ctr_el0;
+<span class="udiff-line-added">+ #endif</span>
+    };
+    static PsrInfo _psr_info;
+    static void get_processor_features();
+  
+  public:
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -105,12 +108,15 @@</span>
+    static int cpu_model()                      { return _model; }
+    static int cpu_model2()                     { return _model2; }
+    static int cpu_variant()                    { return _variant; }
+    static int cpu_revision()                   { return _revision; }
+    static bool supports_dcpop()                { return _dcpop; }
+<span class="udiff-line-added">+ </span>
+    static ByteSize dczid_el0_offset() { return byte_offset_of(PsrInfo, dczid_el0); }
+<span class="udiff-line-added">+ #ifndef _WIN64</span>
+    static ByteSize ctr_el0_offset()   { return byte_offset_of(PsrInfo, ctr_el0); }
+<span class="udiff-line-added">+ #endif</span>
+    static bool is_zva_enabled() {
+      // Check the DZP bit (bit 4) of dczid_el0 is zero
+      // and block size (bit 0~3) is not zero.
+      return ((_psr_info.dczid_el0 &amp; 0x10) == 0 &amp;&amp;
+              (_psr_info.dczid_el0 &amp; 0xf) != 0);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -118,14 +124,22 @@</span>
+    static int zva_length() {
+      assert(is_zva_enabled(), &quot;ZVA not available&quot;);
+      return 4 &lt;&lt; (_psr_info.dczid_el0 &amp; 0xf);
+    }
+    static int icache_line_size() {
+<span class="udiff-line-added">+ #ifndef _WIN64</span>
+      return (1 &lt;&lt; (_psr_info.ctr_el0 &amp; 0x0f)) * 4;
+<span class="udiff-line-added">+ #else</span>
+<span class="udiff-line-added">+     return os::win32::get_cacheline_size();</span>
+<span class="udiff-line-added">+ #endif</span>
+    }
+    static int dcache_line_size() {
+<span class="udiff-line-added">+ #ifndef _WIN64</span>
+      return (1 &lt;&lt; ((_psr_info.ctr_el0 &gt;&gt; 16) &amp; 0x0f)) * 4;
+<span class="udiff-line-added">+ #else</span>
+<span class="udiff-line-added">+     return os::win32::get_cacheline_size();</span>
+<span class="udiff-line-added">+ #endif</span>
+    }
+    static bool supports_fast_class_init_checks() { return true; }
+  };
+  
+  #endif // CPU_AARCH64_VM_VERSION_AARCH64_HPP
+</pre>
+<center><a href="vm_version_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="vm_version_ext_aarch64.cpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,29 @@
+diff a/src/hotspot/cpu/aarch64/sharedRuntime_aarch64.cpp b/src/hotspot/cpu/aarch64/sharedRuntime_aarch64.cpp
+--- a/src/hotspot/cpu/aarch64/sharedRuntime_aarch64.cpp
++++ b/src/hotspot/cpu/aarch64/sharedRuntime_aarch64.cpp
+@@ -1704,11 +1704,11 @@
+   Label native_return;
+   __ set_last_Java_frame(sp, noreg, native_return, rscratch1);
+ 
+   Label dtrace_method_entry, dtrace_method_entry_done;
+   {
+-    unsigned long offset;
++    uint64_t offset;
+     __ adrp(rscratch1, ExternalAddress((address)&DTraceMethodProbes), offset);
+     __ ldrb(rscratch1, Address(rscratch1, offset));
+     __ cbnzw(rscratch1, dtrace_method_entry);
+     __ bind(dtrace_method_entry_done);
+   }
+@@ -1944,11 +1944,11 @@
+     __ bind(done);
+   }
+ 
+   Label dtrace_method_exit, dtrace_method_exit_done;
+   {
+-    unsigned long offset;
++    uint64_t offset;
+     __ adrp(rscratch1, ExternalAddress((address)&DTraceMethodProbes), offset);
+     __ ldrb(rscratch1, Address(rscratch1, offset));
+     __ cbnzw(rscratch1, dtrace_method_exit);
+     __ bind(dtrace_method_exit_done);
+   }

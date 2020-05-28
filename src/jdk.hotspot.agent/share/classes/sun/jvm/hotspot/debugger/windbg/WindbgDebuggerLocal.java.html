@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\debugger\windbg\WindbgDebuggerLocal.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 2002, 2018, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 package sun.jvm.hotspot.debugger.windbg;
+ 26 
+ 27 import java.io.*;
+ 28 import java.net.*;
+ 29 import java.util.*;
+ 30 import sun.jvm.hotspot.debugger.*;
+ 31 import sun.jvm.hotspot.debugger.aarch64.*;
+ 32 import sun.jvm.hotspot.debugger.amd64.*;
+ 33 import sun.jvm.hotspot.debugger.x86.*;
+ 34 import sun.jvm.hotspot.debugger.windbg.aarch64.*;
+ 35 import sun.jvm.hotspot.debugger.windbg.amd64.*;
+ 36 import sun.jvm.hotspot.debugger.windbg.x86.*;
+ 37 import sun.jvm.hotspot.debugger.win32.coff.*;
+ 38 import sun.jvm.hotspot.debugger.cdbg.*;
+ 39 import sun.jvm.hotspot.debugger.cdbg.basic.BasicDebugEvent;
+ 40 import sun.jvm.hotspot.utilities.*;
+ 41 import sun.jvm.hotspot.utilities.memo.*;
+ 42 import sun.jvm.hotspot.runtime.*;
+ 43 
+ 44 /** &lt;P&gt; An implementation of the JVMDebugger interface which talks to
+ 45     windbg and symbol table management is done in Java. &lt;/P&gt;
+ 46 
+ 47     &lt;P&gt; &lt;B&gt;NOTE&lt;/B&gt; that since we have the notion of fetching &quot;Java
+ 48     primitive types&quot; from the remote process (which might have
+ 49     different sizes than we expect) we have a bootstrapping
+ 50     problem. We need to know the sizes of these types before we can
+ 51     fetch them. The current implementation solves this problem by
+ 52     requiring that it be configured with these type sizes before they
+ 53     can be fetched. The readJ(Type) routines here will throw a
+ 54     RuntimeException if they are called before the debugger is
+ 55     configured with the Java primitive type sizes. &lt;/P&gt; */
+ 56 
+ 57 public class WindbgDebuggerLocal extends DebuggerBase implements WindbgDebugger {
+ 58   private PageCache cache;
+ 59   private boolean   attached;
+ 60   private boolean   isCore;
+ 61 
+ 62   // Symbol lookup support
+ 63   // This is a map of library names to DLLs
+ 64   private Map nameToDllMap;
+ 65 
+ 66   // C/C++ debugging support
+ 67   private List/*&lt;LoadObject&gt;*/ loadObjects;
+ 68   private CDebugger cdbg;
+ 69 
+ 70   // thread access
+ 71   private Map threadIntegerRegisterSet;
+ 72   private List threadList;
+ 73 
+ 74   // windbg native interface pointers
+ 75 
+ 76   private long ptrIDebugClient;
+ 77   private long ptrIDebugControl;
+ 78   private long ptrIDebugDataSpaces;
+ 79   private long ptrIDebugOutputCallbacks;
+ 80   private long ptrIDebugAdvanced;
+ 81   private long ptrIDebugSymbols;
+ 82   private long ptrIDebugSystemObjects;
+ 83 
+ 84   private WindbgThreadFactory threadFactory;
+ 85 
+ 86   //--------------------------------------------------------------------------------
+ 87   // Implementation of Debugger interface
+ 88   //
+ 89 
+ 90   /** &lt;P&gt; machDesc may not be null. &lt;/P&gt;
+ 91 
+ 92       &lt;P&gt; useCache should be set to true if debugging is being done
+ 93       locally, and to false if the debugger is being created for the
+ 94       purpose of supporting remote debugging. &lt;/P&gt; */
+ 95   public WindbgDebuggerLocal(MachineDescription machDesc,
+ 96                             boolean useCache) throws DebuggerException {
+ 97     this.machDesc = machDesc;
+ 98     utils = new DebuggerUtilities(machDesc.getAddressSize(), machDesc.isBigEndian()) {
+ 99            public void checkAlignment(long address, long alignment) {
+100              // Need to override default checkAlignment because we need to
+101              // relax alignment constraints on Windows/x86
+102              if ( (address % alignment != 0)
+103                 &amp;&amp;(alignment != 8 || address % 4 != 0)) {
+104                 throw new UnalignedAddressException(
+105                         &quot;Trying to read at address: &quot;
+106                       + addressValueToString(address)
+107                       + &quot; with alignment: &quot; + alignment,
+108                         address);
+109              }
+110            }
+111         };
+112 
+113     String cpu = PlatformInfo.getCPU();
+114     if (cpu.equals(&quot;x86&quot;)) {
+115        threadFactory = new WindbgX86ThreadFactory(this);
+116     } else if (cpu.equals(&quot;amd64&quot;)) {
+117       threadFactory = new WindbgAMD64ThreadFactory(this);
+118     } else if (cpu.equals(&quot;aarch64&quot;)) {
+119       threadFactory = new WindbgAARCH64ThreadFactory(this);
+120     }
+121 
+122     if (useCache) {
+123       // Cache portion of the remote process&#39;s address space.
+124       // Fetching data over the socket connection to dbx is slow.
+125       // Might be faster if we were using a binary protocol to talk to
+126       // dbx, but would have to test. For now, this cache works best
+127       // if it covers the entire heap of the remote process. FIXME: at
+128       // least should make this tunable from the outside, i.e., via
+129       // the UI. This is a cache of 4096 4K pages, or 16 MB. The page
+130       // size must be adjusted to be the hardware&#39;s page size.
+131       // (FIXME: should pick this up from the debugger.)
+132       initCache(4096, 4096);
+133     }
+134     // FIXME: add instantiation of thread factory
+135 
+136   }
+137 
+138   /** From the Debugger interface via JVMDebugger */
+139   public boolean hasProcessList() throws DebuggerException {
+140     return false;
+141   }
+142 
+143   /** From the Debugger interface via JVMDebugger */
+144   public List getProcessList() throws DebuggerException {
+145     return null;
+146   }
+147 
+148 
+149   /** From the Debugger interface via JVMDebugger */
+150   public synchronized void attach(int processID) throws DebuggerException {
+151     attachInit();
+152     attach0(processID);
+153     attached = true;
+154     isCore = false;
+155   }
+156 
+157   /** From the Debugger interface via JVMDebugger */
+158   public synchronized void attach(String executableName, String coreFileName) throws DebuggerException {
+159     attachInit();
+160     attach0(executableName, coreFileName);
+161     attached = true;
+162     isCore = true;
+163   }
+164 
+165   public List getLoadObjectList() {
+166     requireAttach();
+167     return loadObjects;
+168   }
+169 
+170   /** From the Debugger interface via JVMDebugger */
+171   public synchronized boolean detach() {
+172     if ( ! attached)
+173        return false;
+174 
+175     // Close all open DLLs
+176     if (nameToDllMap != null) {
+177       for (Iterator iter = nameToDllMap.values().iterator(); iter.hasNext(); ) {
+178         DLL dll = (DLL) iter.next();
+179         dll.close();
+180       }
+181       nameToDllMap = null;
+182       loadObjects = null;
+183     }
+184 
+185     cdbg = null;
+186     clearCache();
+187 
+188     threadIntegerRegisterSet = null;
+189     threadList = null;
+190     try {
+191        detach0();
+192     } finally {
+193        attached = false;
+194        resetNativePointers();
+195     }
+196     return true;
+197   }
+198 
+199 
+200   /** From the Debugger interface via JVMDebugger */
+201   public Address parseAddress(String addressString) throws NumberFormatException {
+202     return newAddress(utils.scanAddress(addressString));
+203   }
+204 
+205   /** From the Debugger interface via JVMDebugger */
+206   public String getOS() {
+207     return PlatformInfo.getOS();
+208   }
+209 
+210   /** From the Debugger interface via JVMDebugger */
+211   public String getCPU() {
+212     return PlatformInfo.getCPU();
+213   }
+214 
+215   public boolean hasConsole() throws DebuggerException {
+216     return true;
+217   }
+218 
+219   public synchronized String consoleExecuteCommand(String cmd) throws DebuggerException {
+220     requireAttach();
+221     if (! attached) {
+222        throw new DebuggerException(&quot;debugger not yet attached to a Dr. Watson dump!&quot;);
+223     }
+224 
+225     return consoleExecuteCommand0(cmd);
+226   }
+227 
+228   public String getConsolePrompt() throws DebuggerException {
+229     return &quot;(windbg)&quot;;
+230   }
+231 
+232   public CDebugger getCDebugger() throws DebuggerException {
+233     if (cdbg == null) {
+234       cdbg = new WindbgCDebugger(this);
+235     }
+236     return cdbg;
+237   }
+238 
+239   /** From the SymbolLookup interface via Debugger and JVMDebugger */
+240   public synchronized Address lookup(String objectName, String symbol) {
+241     requireAttach();
+242     return newAddress(lookupByName(objectName, symbol));
+243   }
+244 
+245   /** From the SymbolLookup interface via Debugger and JVMDebugger */
+246   public synchronized OopHandle lookupOop(String objectName, String symbol) {
+247     Address addr = lookup(objectName, symbol);
+248     if (addr == null) {
+249       return null;
+250     }
+251     return addr.addOffsetToAsOopHandle(0);
+252   }
+253 
+254   public synchronized ClosestSymbol lookup(long address) {
+255     return lookupByAddress0(address);
+256   }
+257 
+258   /** From the Debugger interface */
+259   public MachineDescription getMachineDescription() {
+260     return machDesc;
+261   }
+262 
+263   //--------------------------------------------------------------------------------
+264   // Implementation of ThreadAccess interface
+265   //
+266 
+267 
+268   /** From the ThreadAccess interface via Debugger and JVMDebugger */
+269   public ThreadProxy getThreadForIdentifierAddress(Address addr) {
+270     return threadFactory.createThreadWrapper(addr);
+271   }
+272 
+273   public ThreadProxy getThreadForThreadId(long handle) {
+274     // with windbg we can&#39;t make out using handle
+275     throw new DebuggerException(&quot;Unimplemented!&quot;);
+276   }
+277 
+278   public long getThreadIdFromSysId(long sysId) throws DebuggerException {
+279     requireAttach();
+280     return getThreadIdFromSysId0(sysId);
+281   }
+282 
+283   //----------------------------------------------------------------------
+284   // Overridden from DebuggerBase because we need to relax alignment
+285   // constraints on x86
+286 
+287   public long readJLong(long address)
+288     throws UnmappedAddressException, UnalignedAddressException {
+289     checkJavaConfigured();
+290     // FIXME: allow this to be configurable. Undesirable to add a
+291     // dependency on the runtime package here, though, since this
+292     // package should be strictly underneath it.
+293     //    utils.checkAlignment(address, jlongSize);
+294     utils.checkAlignment(address, jintSize);
+295     byte[] data = readBytes(address, jlongSize);
+296     return utils.dataToJLong(data, jlongSize);
+297   }
+298 
+299   //--------------------------------------------------------------------------------
+300   // Internal routines (for implementation of WindbgAddress).
+301   // These must not be called until the MachineDescription has been set up.
+302   //
+303 
+304   /** From the WindbgDebugger interface */
+305   public String addressValueToString(long address) {
+306     return utils.addressValueToString(address);
+307   }
+308 
+309   /** From the WindbgDebugger interface */
+310   public WindbgAddress readAddress(long address)
+311     throws UnmappedAddressException, UnalignedAddressException {
+312     return (WindbgAddress) newAddress(readAddressValue(address));
+313   }
+314 
+315   public WindbgAddress readCompOopAddress(long address)
+316     throws UnmappedAddressException, UnalignedAddressException {
+317     return (WindbgAddress) newAddress(readCompOopAddressValue(address));
+318   }
+319 
+320   public WindbgAddress readCompKlassAddress(long address)
+321     throws UnmappedAddressException, UnalignedAddressException {
+322     return (WindbgAddress) newAddress(readCompKlassAddressValue(address));
+323   }
+324 
+325   /** From the WindbgDebugger interface */
+326   public WindbgOopHandle readOopHandle(long address)
+327     throws UnmappedAddressException, UnalignedAddressException, NotInHeapException {
+328     long value = readAddressValue(address);
+329     return (value == 0 ? null : new WindbgOopHandle(this, value));
+330   }
+331   public WindbgOopHandle readCompOopHandle(long address)
+332     throws UnmappedAddressException, UnalignedAddressException, NotInHeapException {
+333     long value = readCompOopAddressValue(address);
+334     return (value == 0 ? null : new WindbgOopHandle(this, value));
+335   }
+336 
+337   /** From the WindbgDebugger interface */
+338   public int getAddressSize() {
+339     return (int) machDesc.getAddressSize();
+340   }
+341 
+342   //--------------------------------------------------------------------------------
+343   // Thread context access
+344   //
+345 
+346   private synchronized void setThreadIntegerRegisterSet(long threadId,
+347                                                long[] regs) {
+348     threadIntegerRegisterSet.put(new Long(threadId), regs);
+349   }
+350 
+351   private synchronized void addThread(long sysId) {
+352     threadList.add(threadFactory.createThreadWrapper(sysId));
+353   }
+354 
+355   public synchronized long[] getThreadIntegerRegisterSet(long threadId)
+356     throws DebuggerException {
+357     requireAttach();
+358     return (long[]) threadIntegerRegisterSet.get(new Long(threadId));
+359   }
+360 
+361   public synchronized List getThreadList() throws DebuggerException {
+362     requireAttach();
+363     return threadList;
+364   }
+365 
+366   private String findFullPath(String file) {
+367     File f = new File(file);
+368     if (f.exists()) {
+369        return file;
+370     } else {
+371        // remove path part, if any.
+372        file = f.getName();
+373        StringTokenizer st = new StringTokenizer(imagePath, File.pathSeparator);
+374        while (st.hasMoreTokens()) {
+375           f = new File(st.nextToken(), file);
+376           if (f.exists()) {
+377              return f.getPath();
+378           }
+379        }
+380     }
+381     return null;
+382   }
+383 
+384   private synchronized void addLoadObject(String file, long size, long base) {
+385     String path = findFullPath(file);
+386     if (path != null) {
+387        DLL dll = null;
+388        if (useNativeLookup) {
+389           dll = new DLL(this, path, size,newAddress(base)) {
+390                  public ClosestSymbol  closestSymbolToPC(Address pcAsAddr) {
+391                    long pc = getAddressValue(pcAsAddr);
+392                    ClosestSymbol sym = lookupByAddress0(pc);
+393                    if (sym == null) {
+394                      return super.closestSymbolToPC(pcAsAddr);
+395                    } else {
+396                      return sym;
+397                    }
+398                  }
+399               };
+400        } else {
+401          dll = new DLL(this, path, size, newAddress(base));
+402        }
+403        loadObjects.add(dll);
+404        nameToDllMap.put(new File(file).getName(), dll);
+405     }
+406   }
+407 
+408   //--------------------------------------------------------------------------------
+409   // Address access
+410   //
+411 
+412   /** From the Debugger interface */
+413   public long getAddressValue(Address addr) {
+414     if (addr == null) return 0;
+415     return ((WindbgAddress) addr).getValue();
+416   }
+417 
+418   /** From the WindbgDebugger interface */
+419   public Address newAddress(long value) {
+420     if (value == 0) return null;
+421     return new WindbgAddress(this, value);
+422   }
+423 
+424   //--------------------------------------------------------------------------------
+425   // Internals only below this point
+426   //
+427 
+428   // attach/detach helpers
+429   private void checkAttached() {
+430     if (attached) {
+431        String msg = (isCore)? &quot;already attached to a Dr. Watson dump!&quot; :
+432                               &quot;already attached to a process!&quot;;
+433        throw new DebuggerException(msg);
+434     }
+435   }
+436 
+437   private void requireAttach() {
+438     if (!attached) {
+439        throw new RuntimeException(&quot;not attached to a process or Dr Watson dump&quot;);
+440     }
+441   }
+442 
+443   private void attachInit() {
+444     checkAttached();
+445     loadObjects = new ArrayList();
+446     nameToDllMap = new HashMap();
+447     threadIntegerRegisterSet = new HashMap();
+448     threadList = new ArrayList();
+449   }
+450 
+451   private void resetNativePointers() {
+452     ptrIDebugClient          = 0L;
+453     ptrIDebugControl         = 0L;
+454     ptrIDebugDataSpaces      = 0L;
+455     ptrIDebugOutputCallbacks = 0L;
+456     ptrIDebugAdvanced        = 0L;
+457     ptrIDebugSymbols         = 0L;
+458     ptrIDebugSystemObjects   = 0L;
+459   }
+460 
+461   synchronized long lookupByName(String objectName, String symbol) {
+462     long res = 0L;
+463     if (useNativeLookup) {
+464       res = lookupByName0(objectName, symbol);
+465       if (res != 0L) {
+466         return res;
+467       } // else fallthru...
+468     }
+469 
+470     DLL dll = (DLL) nameToDllMap.get(objectName);
+471     // The DLL can be null because we use this to search through known
+472     // DLLs in HotSpotTypeDataBase (for example)
+473     if (dll != null) {
+474       WindbgAddress addr = (WindbgAddress) dll.lookupSymbol(symbol);
+475       if (addr != null) {
+476         return addr.getValue();
+477       }
+478     }
+479     return 0L;
+480   }
+481 
+482   /** This reads bytes from the remote process. */
+483   public synchronized ReadResult readBytesFromProcess(long address, long numBytes)
+484     throws UnmappedAddressException, DebuggerException {
+485     requireAttach();
+486     byte[] res = readBytesFromProcess0(address, numBytes);
+487     if(res != null)
+488        return new ReadResult(res);
+489     else
+490        return new ReadResult(address);
+491   }
+492 
+493 
+494   private DLL findDLLByName(String fullPathName) {
+495     for (Iterator iter = loadObjects.iterator(); iter.hasNext(); ) {
+496       DLL dll = (DLL) iter.next();
+497       if (dll.getName().equals(fullPathName)) {
+498         return dll;
+499       }
+500     }
+501     return null;
+502   }
+503 
+504   public void writeBytesToProcess(long address, long numBytes, byte[] data)
+505     throws UnmappedAddressException, DebuggerException {
+506     // FIXME
+507     throw new DebuggerException(&quot;Unimplemented&quot;);
+508   }
+509 
+510   private static String  imagePath;
+511   private static String  symbolPath;
+512   private static boolean useNativeLookup;
+513 
+514     static {
+515 
+516      /*
+517       * saproc.dll depends on dbgeng.dll which itself depends on
+518       * dbghelp.dll. We have to make sure that the dbgeng.dll and
+519       * dbghelp.dll that we load are compatible with each other. We
+520       * load both of those libraries from the same directory based
+521       * on the theory that co-located libraries are compatible.
+522       *
+523       * On Windows 2000 and earlier, dbgeng.dll and dbghelp.dll were
+524       * not included as part of the standard system directory. On
+525       * systems newer than Windows 2000, dbgeng.dll and dbghelp.dll
+526       * are included in the standard system directory. However, the
+527       * versions included in the standard system directory may not
+528       * be able to handle symbol information for the newer compilers.
+529       *
+530       * We search for and explicitly load the libraries using the
+531       * following directory search order:
+532       *
+533       * - java.home/bin (same as $JAVA_HOME/jre/bin)
+534       * - dir named by DEBUGGINGTOOLSFORWINDOWS environment variable
+535       * - various &quot;Debugging Tools For Windows&quot; program directories
+536       * - the system directory ($SYSROOT/system32)
+537       *
+538       * If SA is invoked with -Dsun.jvm.hotspot.loadLibrary.DEBUG=1,
+539       * then debug messages about library loading are printed to
+540       * System.err.
+541       */
+542 
+543     String dbgengPath   = null;
+544     String dbghelpPath  = null;
+545     String saprocPath = null;
+546     List   searchList   = new ArrayList();
+547 
+548     boolean loadLibraryDEBUG =
+549         System.getProperty(&quot;sun.jvm.hotspot.loadLibrary.DEBUG&quot;) != null;
+550 
+551     {
+552       // First place to search is co-located with saproc.dll in
+553       // $JAVA_HOME/jre/bin (java.home property is set to $JAVA_HOME/jre):
+554       searchList.add(System.getProperty(&quot;java.home&quot;) + File.separator + &quot;bin&quot;);
+555       saprocPath = (String) searchList.get(0) + File.separator +
+556           &quot;saproc.dll&quot;;
+557 
+558       // second place to search is specified by an environment variable:
+559       String DTFWHome = System.getenv(&quot;DEBUGGINGTOOLSFORWINDOWS&quot;);
+560       if (DTFWHome != null) {
+561         searchList.add(DTFWHome);
+562       }
+563 
+564       // The third place to search is the install directory for the
+565       // &quot;Debugging Tools For Windows&quot; package; so far there are three
+566       // name variations that we know of:
+567       String sysRoot = System.getenv(&quot;SYSTEMROOT&quot;);
+568       DTFWHome = sysRoot + File.separator + &quot;..&quot; + File.separator +
+569           &quot;Program Files&quot; + File.separator + &quot;Debugging Tools For Windows&quot;;
+570       searchList.add(DTFWHome);
+571 
+572       // Only add the search path for the current CPU architecture:
+573       String cpu = PlatformInfo.getCPU();
+574       if (cpu.equals(&quot;x86&quot;)) {
+575           searchList.add(DTFWHome + &quot; (x86)&quot;);
+576       } else if (cpu.equals(&quot;amd64&quot;)) {
+577           searchList.add(DTFWHome + &quot; (x64)&quot;);
+578       }
+579       // The last place to search is the system directory:
+580       searchList.add(sysRoot + File.separator + &quot;system32&quot;);
+581     }
+582 
+583     for (int i = 0; i &lt; searchList.size(); i++) {
+584       File dir = new File((String) searchList.get(i));
+585       if (!dir.exists()) {
+586         if (loadLibraryDEBUG) {
+587           System.err.println(&quot;DEBUG: &#39;&quot; + searchList.get(i) +
+588               &quot;&#39;: directory does not exist.&quot;);
+589         }
+590         // this search directory doesn&#39;t exist so skip it
+591         continue;
+592       }
+593 
+594       dbgengPath = (String) searchList.get(i) + File.separator + &quot;dbgeng.dll&quot;;
+595       dbghelpPath = (String) searchList.get(i) + File.separator + &quot;dbghelp.dll&quot;;
+596 
+597       File feng = new File(dbgengPath);
+598       File fhelp = new File(dbghelpPath);
+599       if (feng.exists() &amp;&amp; fhelp.exists()) {
+600         // both files exist so we have a match
+601         break;
+602       }
+603 
+604       // At least one of the files does not exist; no warning if both
+605       // don&#39;t exist. If just one doesn&#39;t exist then we don&#39;t check
+606       // loadLibraryDEBUG because we have a mis-configured system.
+607       if (feng.exists()) {
+608         System.err.println(&quot;WARNING: found &#39;&quot; + dbgengPath +
+609             &quot;&#39; but did not find &#39;&quot; + dbghelpPath + &quot;&#39;; ignoring &#39;&quot; +
+610             dbgengPath + &quot;&#39;.&quot;);
+611       } else if (fhelp.exists()) {
+612         System.err.println(&quot;WARNING: found &#39;&quot; + dbghelpPath +
+613             &quot;&#39; but did not find &#39;&quot; + dbgengPath + &quot;&#39;; ignoring &#39;&quot; +
+614             dbghelpPath + &quot;&#39;.&quot;);
+615       } else if (loadLibraryDEBUG) {
+616         System.err.println(&quot;DEBUG: searched &#39;&quot; + searchList.get(i) +
+617           &quot;&#39;: dbgeng.dll and dbghelp.dll were not found.&quot;);
+618       }
+619       dbgengPath = null;
+620       dbghelpPath = null;
+621     }
+622 
+623     if (dbgengPath == null || dbghelpPath == null) {
+624       // at least one of the files wasn&#39;t found anywhere we searched
+625       String mesg = null;
+626 
+627       if (dbgengPath == null &amp;&amp; dbghelpPath == null) {
+628         mesg = &quot;dbgeng.dll and dbghelp.dll cannot be found. &quot;;
+629       } else if (dbgengPath == null) {
+630         mesg = &quot;dbgeng.dll cannot be found (dbghelp.dll was found). &quot;;
+631       } else {
+632         mesg = &quot;dbghelp.dll cannot be found (dbgeng.dll was found). &quot;;
+633       }
+634       throw new UnsatisfiedLinkError(mesg +
+635           &quot;Please search microsoft.com for &#39;Debugging Tools For Windows&#39;, &quot; +
+636           &quot;and either download it to the default location, or download it &quot; +
+637           &quot;to a custom location and set environment variable &quot; +
+638           &quot;&#39;DEBUGGINGTOOLSFORWINDOWS&#39; to the pathname of that location.&quot;);
+639     }
+640 
+641     // NOTE: The order of loads is important! If we load dbgeng.dll
+642     // first, then the dependency - dbghelp.dll - will be loaded
+643     // from usual DLL search thereby defeating the purpose!
+644     if (loadLibraryDEBUG) {
+645       System.err.println(&quot;DEBUG: loading &#39;&quot; + dbghelpPath + &quot;&#39;.&quot;);
+646     }
+647     System.load(dbghelpPath);
+648     if (loadLibraryDEBUG) {
+649       System.err.println(&quot;DEBUG: loading &#39;&quot; + dbgengPath + &quot;&#39;.&quot;);
+650     }
+651     System.load(dbgengPath);
+652 
+653     // Now, load saproc.dll
+654     if (loadLibraryDEBUG) {
+655       System.err.println(&quot;DEBUG: loading &#39;&quot; + saprocPath + &quot;&#39;.&quot;);
+656     }
+657     System.load(saprocPath);
+658 
+659     // where do I find &#39;.exe&#39;, &#39;.dll&#39; files?
+660     imagePath = System.getProperty(&quot;sun.jvm.hotspot.debugger.windbg.imagePath&quot;);
+661     if (imagePath == null) {
+662       imagePath = System.getenv(&quot;PATH&quot;);
+663     }
+664 
+665     // where do I find &#39;.pdb&#39;, &#39;.dbg&#39; files?
+666     symbolPath = System.getProperty(&quot;sun.jvm.hotspot.debugger.windbg.symbolPath&quot;);
+667 
+668     // mostly, debug files would be find where .dll&#39;s, .exe&#39;s are found.
+669     if (symbolPath == null) {
+670       symbolPath = imagePath;
+671     }
+672 
+673     // should we parse DLL symbol table in Java code or use
+674     // Windbg&#39;s native lookup facility? By default, we use
+675     // native lookup so that we can take advantage of &#39;.pdb&#39;
+676     // files, if available.
+677     useNativeLookup = true;
+678     String str = System.getProperty(&quot;sun.jvm.hotspot.debugger.windbg.disableNativeLookup&quot;);
+679     if (str != null) {
+680       useNativeLookup = false;
+681     }
+682 
+683     initIDs();
+684   }
+685 
+686   // native methods
+687   private static native void initIDs();
+688   private native void attach0(String executableName, String coreFileName);
+689   private native void attach0(int processID);
+690   private native void detach0();
+691   private native byte[] readBytesFromProcess0(long address, long numBytes)
+692     throws UnmappedAddressException, DebuggerException;
+693   private native long getThreadIdFromSysId0(long sysId);
+694   private native String consoleExecuteCommand0(String cmd);
+695   private native long lookupByName0(String objName, String symName);
+696   private native ClosestSymbol lookupByAddress0(long address);
+697 
+698   // helper called lookupByAddress0
+699   private ClosestSymbol createClosestSymbol(String symbol, long diff) {
+700     return new ClosestSymbol(symbol, diff);
+701   }
+702 }
+    </pre>
+  </body>
+</html>

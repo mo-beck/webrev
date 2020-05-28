@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\share\runtime\stubRoutines.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="safepointMechanism.inline.hpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="thread.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\share\runtime\stubRoutines.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+375   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::conjoint_##type##s_atomic),  sizeof(type)); \
+376   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::arrayof_conjoint_##type##s), (int)MAX2(sizeof(HeapWord), sizeof(type)))
+377 
+378   // Make sure all the copy runtime routines properly handle zero count
+379   TEST_COPYRTN(jbyte);
+380   TEST_COPYRTN(jshort);
+381   TEST_COPYRTN(jint);
+382   TEST_COPYRTN(jlong);
+383 
+384 #undef TEST_COPYRTN
+385 
+386   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::conjoint_words), sizeof(HeapWord));
+387   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::disjoint_words), sizeof(HeapWord));
+388   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::disjoint_words_atomic), sizeof(HeapWord));
+389   // Aligned to BytesPerLong
+390   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::aligned_conjoint_words), sizeof(jlong));
+391   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::aligned_disjoint_words), sizeof(jlong));
+392 
+393   // test safefetch routines
+394   // Not on Windows 32bit until 8074860 is fixed
+<span class="line-modified">395 #if ! (defined(_WIN32) &amp;&amp; defined(_M_IX86))</span>
+396   test_safefetch32();
+397   test_safefetchN();
+398 #endif
+399 
+400 #endif
+401 }
+402 
+403 
+404 void stubRoutines_init1() { StubRoutines::initialize1(); }
+405 void stubRoutines_init2() { StubRoutines::initialize2(); }
+406 
+407 //
+408 // Default versions of arraycopy functions
+409 //
+410 
+411 JRT_LEAF(void, StubRoutines::jbyte_copy(jbyte* src, jbyte* dest, size_t count))
+412 #ifndef PRODUCT
+413   SharedRuntime::_jbyte_array_copy_ctr++;      // Slow-path byte array copy
+414 #endif // !PRODUCT
+415   Copy::conjoint_jbytes_atomic(src, dest, count);
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+375   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::conjoint_##type##s_atomic),  sizeof(type)); \
+376   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::arrayof_conjoint_##type##s), (int)MAX2(sizeof(HeapWord), sizeof(type)))
+377 
+378   // Make sure all the copy runtime routines properly handle zero count
+379   TEST_COPYRTN(jbyte);
+380   TEST_COPYRTN(jshort);
+381   TEST_COPYRTN(jint);
+382   TEST_COPYRTN(jlong);
+383 
+384 #undef TEST_COPYRTN
+385 
+386   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::conjoint_words), sizeof(HeapWord));
+387   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::disjoint_words), sizeof(HeapWord));
+388   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::disjoint_words_atomic), sizeof(HeapWord));
+389   // Aligned to BytesPerLong
+390   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::aligned_conjoint_words), sizeof(jlong));
+391   test_arraycopy_func(CAST_FROM_FN_PTR(address, Copy::aligned_disjoint_words), sizeof(jlong));
+392 
+393   // test safefetch routines
+394   // Not on Windows 32bit until 8074860 is fixed
+<span class="line-modified">395 #if ! (defined(_WIN32) &amp;&amp; defined(_M_IX86)) &amp;&amp; !defined(_M_ARM64)</span>
+396   test_safefetch32();
+397   test_safefetchN();
+398 #endif
+399 
+400 #endif
+401 }
+402 
+403 
+404 void stubRoutines_init1() { StubRoutines::initialize1(); }
+405 void stubRoutines_init2() { StubRoutines::initialize2(); }
+406 
+407 //
+408 // Default versions of arraycopy functions
+409 //
+410 
+411 JRT_LEAF(void, StubRoutines::jbyte_copy(jbyte* src, jbyte* dest, size_t count))
+412 #ifndef PRODUCT
+413   SharedRuntime::_jbyte_array_copy_ctr++;      // Slow-path byte array copy
+414 #endif // !PRODUCT
+415   Copy::conjoint_jbytes_atomic(src, dest, count);
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="safepointMechanism.inline.hpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="thread.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

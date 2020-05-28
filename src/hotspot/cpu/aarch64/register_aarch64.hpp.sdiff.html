@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\register_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="register_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="sharedRuntime_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\register_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 48     max_slots_per_register = 2
+ 49   };
+ 50 
+ 51   // derived registers, offsets, and addresses
+ 52   Register successor() const                          { return as_Register(encoding() + 1); }
+ 53 
+ 54   // construction
+ 55   inline friend Register as_Register(int encoding);
+ 56 
+ 57   VMReg as_VMReg();
+ 58 
+ 59   // accessors
+ 60   int   encoding() const                         { assert(is_valid(), &quot;invalid register&quot;); return (intptr_t)this; }
+ 61   bool  is_valid() const                         { return 0 &lt;= (intptr_t)this &amp;&amp; (intptr_t)this &lt; number_of_registers; }
+ 62   bool  has_byte_register() const                { return 0 &lt;= (intptr_t)this &amp;&amp; (intptr_t)this &lt; number_of_byte_registers; }
+ 63   const char* name() const;
+ 64   int   encoding_nocheck() const                 { return (intptr_t)this; }
+ 65 
+ 66   // Return the bit which represents this register.  This is intended
+ 67   // to be ORed into a bitmask: for usage see class RegSet below.
+<span class="line-modified"> 68   unsigned long bit(bool should_set = true) const { return should_set ? 1 &lt;&lt; encoding() : 0; }</span>
+ 69 };
+ 70 
+ 71 // The integer registers of the aarch64 architecture
+ 72 
+ 73 CONSTANT_REGISTER_DECLARATION(Register, noreg, (-1));
+ 74 
+ 75 
+ 76 CONSTANT_REGISTER_DECLARATION(Register, r0,    (0));
+ 77 CONSTANT_REGISTER_DECLARATION(Register, r1,    (1));
+ 78 CONSTANT_REGISTER_DECLARATION(Register, r2,    (2));
+ 79 CONSTANT_REGISTER_DECLARATION(Register, r3,    (3));
+ 80 CONSTANT_REGISTER_DECLARATION(Register, r4,    (4));
+ 81 CONSTANT_REGISTER_DECLARATION(Register, r5,    (5));
+ 82 CONSTANT_REGISTER_DECLARATION(Register, r6,    (6));
+ 83 CONSTANT_REGISTER_DECLARATION(Register, r7,    (7));
+ 84 CONSTANT_REGISTER_DECLARATION(Register, r8,    (8));
+ 85 CONSTANT_REGISTER_DECLARATION(Register, r9,    (9));
+ 86 CONSTANT_REGISTER_DECLARATION(Register, r10,  (10));
+ 87 CONSTANT_REGISTER_DECLARATION(Register, r11,  (11));
+ 88 CONSTANT_REGISTER_DECLARATION(Register, r12,  (12));
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 48     max_slots_per_register = 2
+ 49   };
+ 50 
+ 51   // derived registers, offsets, and addresses
+ 52   Register successor() const                          { return as_Register(encoding() + 1); }
+ 53 
+ 54   // construction
+ 55   inline friend Register as_Register(int encoding);
+ 56 
+ 57   VMReg as_VMReg();
+ 58 
+ 59   // accessors
+ 60   int   encoding() const                         { assert(is_valid(), &quot;invalid register&quot;); return (intptr_t)this; }
+ 61   bool  is_valid() const                         { return 0 &lt;= (intptr_t)this &amp;&amp; (intptr_t)this &lt; number_of_registers; }
+ 62   bool  has_byte_register() const                { return 0 &lt;= (intptr_t)this &amp;&amp; (intptr_t)this &lt; number_of_byte_registers; }
+ 63   const char* name() const;
+ 64   int   encoding_nocheck() const                 { return (intptr_t)this; }
+ 65 
+ 66   // Return the bit which represents this register.  This is intended
+ 67   // to be ORed into a bitmask: for usage see class RegSet below.
+<span class="line-modified"> 68   uint64_t bit(bool should_set = true) const { return should_set ? 1 &lt;&lt; encoding() : 0; }</span>
+ 69 };
+ 70 
+ 71 // The integer registers of the aarch64 architecture
+ 72 
+ 73 CONSTANT_REGISTER_DECLARATION(Register, noreg, (-1));
+ 74 
+ 75 
+ 76 CONSTANT_REGISTER_DECLARATION(Register, r0,    (0));
+ 77 CONSTANT_REGISTER_DECLARATION(Register, r1,    (1));
+ 78 CONSTANT_REGISTER_DECLARATION(Register, r2,    (2));
+ 79 CONSTANT_REGISTER_DECLARATION(Register, r3,    (3));
+ 80 CONSTANT_REGISTER_DECLARATION(Register, r4,    (4));
+ 81 CONSTANT_REGISTER_DECLARATION(Register, r5,    (5));
+ 82 CONSTANT_REGISTER_DECLARATION(Register, r6,    (6));
+ 83 CONSTANT_REGISTER_DECLARATION(Register, r7,    (7));
+ 84 CONSTANT_REGISTER_DECLARATION(Register, r8,    (8));
+ 85 CONSTANT_REGISTER_DECLARATION(Register, r9,    (9));
+ 86 CONSTANT_REGISTER_DECLARATION(Register, r10,  (10));
+ 87 CONSTANT_REGISTER_DECLARATION(Register, r11,  (11));
+ 88 CONSTANT_REGISTER_DECLARATION(Register, r12,  (12));
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="register_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="sharedRuntime_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

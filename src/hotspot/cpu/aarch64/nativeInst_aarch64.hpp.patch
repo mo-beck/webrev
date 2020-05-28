@@ -1,0 +1,16 @@
+diff a/src/hotspot/cpu/aarch64/nativeInst_aarch64.hpp b/src/hotspot/cpu/aarch64/nativeInst_aarch64.hpp
+--- a/src/hotspot/cpu/aarch64/nativeInst_aarch64.hpp
++++ b/src/hotspot/cpu/aarch64/nativeInst_aarch64.hpp
+@@ -681,11 +681,11 @@
+       // others like: pre-index or post-index.
+       ShouldNotReachHere();
+       return 0;
+     }
+   }
+-  size_t size_in_bytes() { return 1 << size(); }
++  size_t size_in_bytes() { return 1ULL << size(); }
+   bool is_not_pre_post_index() { return (is_ldst_ur() || is_ldst_unsigned_offset()); }
+   bool is_load() {
+     assert(Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b01 ||
+            Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b00, "must be ldr or str");
+ 

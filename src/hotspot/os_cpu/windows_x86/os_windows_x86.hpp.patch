@@ -1,0 +1,16 @@
+diff a/src/hotspot/os_cpu/windows_x86/os_windows_x86.hpp b/src/hotspot/os_cpu/windows_x86/os_windows_x86.hpp
+--- a/src/hotspot/os_cpu/windows_x86/os_windows_x86.hpp
++++ b/src/hotspot/os_cpu/windows_x86/os_windows_x86.hpp
+@@ -60,12 +60,10 @@
+   static void setup_fpu();
+   static bool supports_sse() { return true; }
+ 
+   static jlong rdtsc();
+ 
+-  static bool      register_code_area(char *low, char *high);
+-
+ #ifdef AMD64
+ #define PLATFORM_PRINT_NATIVE_STACK 1
+ static bool platform_print_native_stack(outputStream* st, const void* context,
+                                         char *buf, int buf_size);
+ #endif

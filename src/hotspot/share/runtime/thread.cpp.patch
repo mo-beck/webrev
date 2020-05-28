@@ -1,0 +1,15 @@
+diff a/src/hotspot/share/runtime/thread.cpp b/src/hotspot/share/runtime/thread.cpp
+--- a/src/hotspot/share/runtime/thread.cpp
++++ b/src/hotspot/share/runtime/thread.cpp
+@@ -1704,10 +1704,11 @@
+   _cached_monitor_info = NULL;
+   _parker = Parker::Allocate(this);
+   _SleepEvent = ParkEvent::Allocate(this);
+   // Setup safepoint state info for this thread
+   ThreadSafepointState::create(this);
++  _handshake.set_thread(this);
+ 
+   debug_only(_java_call_counter = 0);
+ 
+   // JVMTI PopFrame support
+   _popframe_condition = popframe_inactive;

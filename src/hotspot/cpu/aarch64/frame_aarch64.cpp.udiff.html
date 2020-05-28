@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\hotspot\cpu\aarch64\frame_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="compiledIC_aot_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="gc\shared\barrierSetAssembler_aarch64.cpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\frame_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -671,19 +671,18 @@</span>
+  
+  #undef DESCRIBE_FP_OFFSET
+  
+  #define DESCRIBE_FP_OFFSET(name)                                        \
+    {                                                                     \
+<span class="udiff-line-modified-removed">-     unsigned long *p = (unsigned long *)fp;                             \</span>
+<span class="udiff-line-modified-removed">-     printf(&quot;0x%016lx 0x%016lx %s\n&quot;, (unsigned long)(p + frame::name##_offset), \</span>
+<span class="udiff-line-modified-added">+     uint64_t *p = (uint64_t *)fp;                             \</span>
+<span class="udiff-line-modified-added">+     printf(&quot;0x%016lx 0x%016lx %s\n&quot;, (uint64_t)(p + frame::name##_offset), \</span>
+             p[frame::name##_offset], #name);                             \
+    }
+<span class="udiff-line-modified-removed">- </span>
+<span class="udiff-line-modified-removed">- static __thread unsigned long nextfp;</span>
+<span class="udiff-line-modified-removed">- static __thread unsigned long nextpc;</span>
+<span class="udiff-line-modified-removed">- static __thread unsigned long nextsp;</span>
+<span class="udiff-line-removed">- static __thread RegisterMap *reg_map;</span>
+<span class="udiff-line-modified-added">+ static THREAD_LOCAL uint64_t nextfp;</span>
+<span class="udiff-line-modified-added">+ static THREAD_LOCAL uint64_t nextpc;</span>
+<span class="udiff-line-modified-added">+ static THREAD_LOCAL uint64_t nextsp;</span>
+<span class="udiff-line-modified-added">+ static THREAD_LOCAL RegisterMap *reg_map;</span>
+  
+  static void printbc(Method *m, intptr_t bcx) {
+    const char *name;
+    char buf[16];
+    if (m-&gt;validate_bci_from_bcp((address)bcx) &lt; 0
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -697,11 +696,11 @@</span>
+    }
+    ResourceMark rm;
+    printf(&quot;%s : %s ==&gt; %s\n&quot;, m-&gt;name_and_sig_as_C_string(), buf, name);
+  }
+  
+<span class="udiff-line-modified-removed">- void internal_pf(unsigned long sp, unsigned long fp, unsigned long pc, unsigned long bcx) {</span>
+<span class="udiff-line-modified-added">+ void internal_pf(uint64_t sp, uint64_t fp, uint64_t pc, uint64_t bcx) {</span>
+    if (! fp)
+      return;
+  
+    DESCRIBE_FP_OFFSET(return_addr);
+    DESCRIBE_FP_OFFSET(link);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -711,30 +710,30 @@</span>
+    DESCRIBE_FP_OFFSET(interpreter_frame_mdp);
+    DESCRIBE_FP_OFFSET(interpreter_frame_cache);
+    DESCRIBE_FP_OFFSET(interpreter_frame_locals);
+    DESCRIBE_FP_OFFSET(interpreter_frame_bcp);
+    DESCRIBE_FP_OFFSET(interpreter_frame_initial_sp);
+<span class="udiff-line-modified-removed">-   unsigned long *p = (unsigned long *)fp;</span>
+<span class="udiff-line-modified-added">+   uint64_t *p = (uint64_t *)fp;</span>
+  
+    // We want to see all frames, native and Java.  For compiled and
+    // interpreted frames we have special information that allows us to
+    // unwind them; for everything else we assume that the native frame
+    // pointer chain is intact.
+    frame this_frame((intptr_t*)sp, (intptr_t*)fp, (address)pc);
+    if (this_frame.is_compiled_frame() ||
+        this_frame.is_interpreted_frame()) {
+      frame sender = this_frame.sender(reg_map);
+<span class="udiff-line-modified-removed">-     nextfp = (unsigned long)sender.fp();</span>
+<span class="udiff-line-modified-removed">-     nextpc = (unsigned long)sender.pc();</span>
+<span class="udiff-line-modified-removed">-     nextsp = (unsigned long)sender.unextended_sp();</span>
+<span class="udiff-line-modified-added">+     nextfp = (uint64_t)sender.fp();</span>
+<span class="udiff-line-modified-added">+     nextpc = (uint64_t)sender.pc();</span>
+<span class="udiff-line-modified-added">+     nextsp = (uint64_t)sender.unextended_sp();</span>
+    } else {
+      nextfp = p[frame::link_offset];
+      nextpc = p[frame::return_addr_offset];
+<span class="udiff-line-modified-removed">-     nextsp = (unsigned long)&amp;p[frame::sender_sp_offset];</span>
+<span class="udiff-line-modified-added">+     nextsp = (uint64_t)&amp;p[frame::sender_sp_offset];</span>
+    }
+  
+<span class="udiff-line-modified-removed">-   if (bcx == -1ul)</span>
+<span class="udiff-line-modified-added">+   if (bcx == -1ull)</span>
+      bcx = p[frame::interpreter_frame_bcp_offset];
+  
+    if (Interpreter::contains((address)pc)) {
+      Method* m = (Method*)p[frame::interpreter_frame_method_offset];
+      if(m &amp;&amp; m-&gt;is_method()) {
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -764,12 +763,12 @@</span>
+    if (cb &amp;&amp; cb-&gt;frame_size())
+      nextfp = nextsp + wordSize * (cb-&gt;frame_size() - 2);
+    internal_pf (nextsp, nextfp, nextpc, -1);
+  }
+  
+<span class="udiff-line-modified-removed">- extern &quot;C&quot; void pf(unsigned long sp, unsigned long fp, unsigned long pc,</span>
+<span class="udiff-line-modified-removed">-                    unsigned long bcx, unsigned long thread) {</span>
+<span class="udiff-line-modified-added">+ extern &quot;C&quot; void pf(uint64_t sp, uint64_t fp, uint64_t pc,</span>
+<span class="udiff-line-modified-added">+                    uint64_t bcx, uint64_t thread) {</span>
+    if (!reg_map) {
+      reg_map = NEW_C_HEAP_OBJ(RegisterMap, mtNone);
+      ::new (reg_map) RegisterMap((JavaThread*)thread, false);
+    } else {
+      *reg_map = RegisterMap((JavaThread*)thread, false);
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -784,13 +783,13 @@</span>
+  }
+  
+  // support for printing out where we are in a Java method
+  // needs to be passed current fp and bcp register values
+  // prints method name, bc index and bytecode name
+<span class="udiff-line-modified-removed">- extern &quot;C&quot; void pm(unsigned long fp, unsigned long bcx) {</span>
+<span class="udiff-line-modified-added">+ extern &quot;C&quot; void pm(uint64_t fp, uint64_t bcx) {</span>
+    DESCRIBE_FP_OFFSET(interpreter_frame_method);
+<span class="udiff-line-modified-removed">-   unsigned long *p = (unsigned long *)fp;</span>
+<span class="udiff-line-modified-added">+   uint64_t *p = (uint64_t *)fp;</span>
+    Method* m = (Method*)p[frame::interpreter_frame_method_offset];
+    printbc(m, bcx);
+  }
+  
+  #ifndef PRODUCT
+</pre>
+<center><a href="compiledIC_aot_aarch64.cpp.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="gc\shared\barrierSetAssembler_aarch64.cpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

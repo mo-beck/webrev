@@ -1,0 +1,37 @@
+diff a/src/hotspot/share/runtime/safepoint.cpp b/src/hotspot/share/runtime/safepoint.cpp
+--- a/src/hotspot/share/runtime/safepoint.cpp
++++ b/src/hotspot/share/runtime/safepoint.cpp
+@@ -1,7 +1,7 @@
+ /*
+- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
++ * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
+  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  *
+  * This code is free software; you can redistribute it and/or modify it
+  * under the terms of the GNU General Public License version 2 only, as
+  * published by the Free Software Foundation.
+@@ -492,12 +492,10 @@
+       DEBUG_ONLY(current->reset_visited_for_critical_count(active_safepoint_counter);)
+       ThreadSafepointState* cur_state = current->safepoint_state();
+       assert(!cur_state->is_running(), "Thread not suspended at safepoint");
+       cur_state->restart(); // TSS _running
+       assert(cur_state->is_running(), "safepoint state has not been reset");
+-
+-      SafepointMechanism::disarm_if_needed(current, false /* NO release */);
+     }
+   } // ~JavaThreadIteratorWithHandle
+ 
+   // Release threads lock, so threads can be created/destroyed again.
+   Threads_lock->unlock();
+@@ -734,11 +732,10 @@
+     return false;
+   }
+ }
+ 
+ bool SafepointSynchronize::handshake_safe(JavaThread *thread) {
+-  assert(Thread::current()->is_VM_thread(), "Must be VMThread");
+   if (thread->is_ext_suspended() || thread->is_terminated()) {
+     return true;
+   }
+   JavaThreadState stable_state;
+   if (try_stable_load_state(&stable_state, thread, InactiveSafepointCounter)) {

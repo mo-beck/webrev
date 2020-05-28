@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\methodHandles_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="macroAssembler_aarch64_trig.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="nativeInst_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\methodHandles_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+ 60 #define NONZERO(x) (x)
+ 61 #endif //PRODUCT
+ 62 
+ 63 #ifdef ASSERT
+ 64 void MethodHandles::verify_klass(MacroAssembler* _masm,
+ 65                                  Register obj, SystemDictionary::WKID klass_id,
+ 66                                  const char* error_message) {
+ 67   InstanceKlass** klass_addr = SystemDictionary::well_known_klass_addr(klass_id);
+ 68   Klass* klass = SystemDictionary::well_known_klass(klass_id);
+ 69   Register temp = rscratch2;
+ 70   Register temp2 = rscratch1; // used by MacroAssembler::cmpptr
+ 71   Label L_ok, L_bad;
+ 72   BLOCK_COMMENT(&quot;verify_klass {&quot;);
+ 73   __ verify_oop(obj);
+ 74   __ cbz(obj, L_bad);
+ 75   __ push(RegSet::of(temp, temp2), sp);
+ 76   __ load_klass(temp, obj);
+ 77   __ cmpptr(temp, ExternalAddress((address) klass_addr));
+ 78   __ br(Assembler::EQ, L_ok);
+ 79   intptr_t super_check_offset = klass-&gt;super_check_offset();
+
+
+
+
+ 80   __ ldr(temp, Address(temp, super_check_offset));
+
+ 81   __ cmpptr(temp, ExternalAddress((address) klass_addr));
+ 82   __ br(Assembler::EQ, L_ok);
+ 83   __ pop(RegSet::of(temp, temp2), sp);
+ 84   __ bind(L_bad);
+ 85   __ stop(error_message);
+ 86   __ BIND(L_ok);
+ 87   __ pop(RegSet::of(temp, temp2), sp);
+ 88   BLOCK_COMMENT(&quot;} verify_klass&quot;);
+ 89 }
+ 90 
+ 91 void MethodHandles::verify_ref_kind(MacroAssembler* _masm, int ref_kind, Register member_reg, Register temp) {  }
+ 92 
+ 93 #endif //ASSERT
+ 94 
+ 95 void MethodHandles::jump_from_method_handle(MacroAssembler* _masm, Register method, Register temp,
+ 96                                             bool for_compiler_entry) {
+ 97   assert(method == rmethod, &quot;interpreter calling convention&quot;);
+ 98   Label L_no_such_method;
+ 99   __ cbz(rmethod, L_no_such_method);
+100   __ verify_method_ptr(method);
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+ 60 #define NONZERO(x) (x)
+ 61 #endif //PRODUCT
+ 62 
+ 63 #ifdef ASSERT
+ 64 void MethodHandles::verify_klass(MacroAssembler* _masm,
+ 65                                  Register obj, SystemDictionary::WKID klass_id,
+ 66                                  const char* error_message) {
+ 67   InstanceKlass** klass_addr = SystemDictionary::well_known_klass_addr(klass_id);
+ 68   Klass* klass = SystemDictionary::well_known_klass(klass_id);
+ 69   Register temp = rscratch2;
+ 70   Register temp2 = rscratch1; // used by MacroAssembler::cmpptr
+ 71   Label L_ok, L_bad;
+ 72   BLOCK_COMMENT(&quot;verify_klass {&quot;);
+ 73   __ verify_oop(obj);
+ 74   __ cbz(obj, L_bad);
+ 75   __ push(RegSet::of(temp, temp2), sp);
+ 76   __ load_klass(temp, obj);
+ 77   __ cmpptr(temp, ExternalAddress((address) klass_addr));
+ 78   __ br(Assembler::EQ, L_ok);
+ 79   intptr_t super_check_offset = klass-&gt;super_check_offset();
+<span class="line-added"> 80 #ifdef _WIN64</span>
+<span class="line-added"> 81   Address a1(temp, (uint64_t) super_check_offset);</span>
+<span class="line-added"> 82   __ ldr(temp, a1);</span>
+<span class="line-added"> 83 #else</span>
+ 84   __ ldr(temp, Address(temp, super_check_offset));
+<span class="line-added"> 85 #endif</span>
+ 86   __ cmpptr(temp, ExternalAddress((address) klass_addr));
+ 87   __ br(Assembler::EQ, L_ok);
+ 88   __ pop(RegSet::of(temp, temp2), sp);
+ 89   __ bind(L_bad);
+ 90   __ stop(error_message);
+ 91   __ BIND(L_ok);
+ 92   __ pop(RegSet::of(temp, temp2), sp);
+ 93   BLOCK_COMMENT(&quot;} verify_klass&quot;);
+ 94 }
+ 95 
+ 96 void MethodHandles::verify_ref_kind(MacroAssembler* _masm, int ref_kind, Register member_reg, Register temp) {  }
+ 97 
+ 98 #endif //ASSERT
+ 99 
+100 void MethodHandles::jump_from_method_handle(MacroAssembler* _masm, Register method, Register temp,
+101                                             bool for_compiler_entry) {
+102   assert(method == rmethod, &quot;interpreter calling convention&quot;);
+103   Label L_no_such_method;
+104   __ cbz(rmethod, L_no_such_method);
+105   __ verify_method_ptr(method);
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="macroAssembler_aarch64_trig.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="nativeInst_aarch64.hpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\debugger\windbg\WindbgDebuggerLocal.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\..\asm\Disassembler.java.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\runtime\Threads.java.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\debugger\windbg\WindbgDebuggerLocal.java</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 26,12 ***</span>
+<span class="line-new-header">--- 26,14 ---</span>
+  
+  import java.io.*;
+  import java.net.*;
+  import java.util.*;
+  import sun.jvm.hotspot.debugger.*;
+<span class="line-added">+ import sun.jvm.hotspot.debugger.aarch64.*;</span>
+  import sun.jvm.hotspot.debugger.amd64.*;
+  import sun.jvm.hotspot.debugger.x86.*;
+<span class="line-added">+ import sun.jvm.hotspot.debugger.windbg.aarch64.*;</span>
+  import sun.jvm.hotspot.debugger.windbg.amd64.*;
+  import sun.jvm.hotspot.debugger.windbg.x86.*;
+  import sun.jvm.hotspot.debugger.win32.coff.*;
+  import sun.jvm.hotspot.debugger.cdbg.*;
+  import sun.jvm.hotspot.debugger.cdbg.basic.BasicDebugEvent;
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 110,11 ***</span>
+  
+      String cpu = PlatformInfo.getCPU();
+      if (cpu.equals(&quot;x86&quot;)) {
+         threadFactory = new WindbgX86ThreadFactory(this);
+      } else if (cpu.equals(&quot;amd64&quot;)) {
+<span class="line-modified">!        threadFactory = new WindbgAMD64ThreadFactory(this);</span>
+      }
+  
+      if (useCache) {
+        // Cache portion of the remote process&#39;s address space.
+        // Fetching data over the socket connection to dbx is slow.
+<span class="line-new-header">--- 112,13 ---</span>
+  
+      String cpu = PlatformInfo.getCPU();
+      if (cpu.equals(&quot;x86&quot;)) {
+         threadFactory = new WindbgX86ThreadFactory(this);
+      } else if (cpu.equals(&quot;amd64&quot;)) {
+<span class="line-modified">!       threadFactory = new WindbgAMD64ThreadFactory(this);</span>
+<span class="line-added">+     } else if (cpu.equals(&quot;aarch64&quot;)) {</span>
+<span class="line-added">+       threadFactory = new WindbgAARCH64ThreadFactory(this);</span>
+      }
+  
+      if (useCache) {
+        // Cache portion of the remote process&#39;s address space.
+        // Fetching data over the socket connection to dbx is slow.
+</pre>
+<center><a href="..\..\asm\Disassembler.java.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\runtime\Threads.java.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

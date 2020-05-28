@@ -1,0 +1,15 @@
+diff a/src/hotspot/share/runtime/vm_version.hpp b/src/hotspot/share/runtime/vm_version.hpp
+--- a/src/hotspot/share/runtime/vm_version.hpp
++++ b/src/hotspot/share/runtime/vm_version.hpp
+@@ -23,9 +23,11 @@
+  */
+ 
+ #ifndef SHARE_RUNTIME_VM_VERSION_HPP
+ #define SHARE_RUNTIME_VM_VERSION_HPP
+ 
++#include "memory/allocation.hpp"
++#include "utilities/ostream.hpp"
+ #include "utilities/macros.hpp"  // for CPU_HEADER() macro.
+ #include CPU_HEADER(vm_version)
+ 
+ #endif // SHARE_RUNTIME_VM_VERSION_HPP

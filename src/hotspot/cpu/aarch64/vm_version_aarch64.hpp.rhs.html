@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames src\hotspot\cpu\aarch64\vm_version_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+    <script type="text/javascript" src="..\..\..\..\navigation.js"></script>
+  </head>
+<body onkeypress="keypress(event);">
+<a name="0"></a>
+<hr />
+<pre>  1 /*
+  2  * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+  3  * Copyright (c) 2014, 2019, Red Hat Inc. All rights reserved.
+  4  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  5  *
+  6  * This code is free software; you can redistribute it and/or modify it
+  7  * under the terms of the GNU General Public License version 2 only, as
+  8  * published by the Free Software Foundation.
+  9  *
+ 10  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 11  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 12  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 13  * version 2 for more details (a copy is included in the LICENSE file that
+ 14  * accompanied this code).
+ 15  *
+ 16  * You should have received a copy of the GNU General Public License version
+ 17  * 2 along with this work; if not, write to the Free Software Foundation,
+ 18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 19  *
+ 20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 21  * or visit www.oracle.com if you need additional information or have any
+ 22  * questions.
+ 23  *
+ 24  */
+ 25 
+ 26 #ifndef CPU_AARCH64_VM_VERSION_AARCH64_HPP
+ 27 #define CPU_AARCH64_VM_VERSION_AARCH64_HPP
+ 28 
+ 29 #include &quot;runtime/abstract_vm_version.hpp&quot;
+ 30 #include &quot;runtime/globals_extension.hpp&quot;
+ 31 #include &quot;utilities/sizes.hpp&quot;
+<a name="1" id="anc1"></a><span class="line-added"> 32 #include &quot;runtime/java.hpp&quot;</span>
+ 33 
+ 34 class VM_Version : public Abstract_VM_Version {
+ 35   friend class JVMCIVMStructs;
+ 36 
+ 37 protected:
+ 38   static int _cpu;
+ 39   static int _model;
+ 40   static int _model2;
+ 41   static int _variant;
+ 42   static int _revision;
+ 43   static int _stepping;
+ 44   static bool _dcpop;
+ 45   struct PsrInfo {
+ 46     uint32_t dczid_el0;
+<a name="2" id="anc2"></a><span class="line-added"> 47 #ifndef _WIN64</span>
+ 48     uint32_t ctr_el0;
+<a name="3" id="anc3"></a><span class="line-added"> 49 #endif</span>
+ 50   };
+ 51   static PsrInfo _psr_info;
+ 52   static void get_processor_features();
+ 53 
+ 54 public:
+ 55   // Initialization
+ 56   static void initialize();
+ 57 
+ 58   // Asserts
+ 59   static void assert_is_initialized() {
+ 60   }
+ 61 
+ 62   static bool expensive_load(int ld_size, int scale) {
+ 63     if (cpu_family() == CPU_ARM) {
+ 64       // Half-word load with index shift by 1 (aka scale is 2) has
+ 65       // extra cycle latency, e.g. ldrsh w0, [x1,w2,sxtw #1].
+ 66       if (ld_size == 2 &amp;&amp; scale == 2) {
+ 67         return true;
+ 68       }
+ 69     }
+ 70     return false;
+ 71   }
+ 72 
+ 73   // The CPU implementer codes can be found in
+ 74   // ARM Architecture Reference Manual ARMv8, for ARMv8-A architecture profile
+ 75   // https://developer.arm.com/docs/ddi0487/latest
+ 76   enum Family {
+ 77     CPU_AMPERE    = 0xC0,
+ 78     CPU_ARM       = &#39;A&#39;,
+ 79     CPU_BROADCOM  = &#39;B&#39;,
+ 80     CPU_CAVIUM    = &#39;C&#39;,
+ 81     CPU_DEC       = &#39;D&#39;,
+ 82     CPU_HISILICON = &#39;H&#39;,
+ 83     CPU_INFINEON  = &#39;I&#39;,
+ 84     CPU_MOTOROLA  = &#39;M&#39;,
+ 85     CPU_NVIDIA    = &#39;N&#39;,
+ 86     CPU_AMCC      = &#39;P&#39;,
+ 87     CPU_QUALCOM   = &#39;Q&#39;,
+ 88     CPU_MARVELL   = &#39;V&#39;,
+ 89     CPU_INTEL     = &#39;i&#39;,
+ 90   };
+ 91 
+ 92   enum Feature_Flag {
+ 93     CPU_FP           = (1&lt;&lt;0),
+ 94     CPU_ASIMD        = (1&lt;&lt;1),
+ 95     CPU_EVTSTRM      = (1&lt;&lt;2),
+ 96     CPU_AES          = (1&lt;&lt;3),
+ 97     CPU_PMULL        = (1&lt;&lt;4),
+ 98     CPU_SHA1         = (1&lt;&lt;5),
+ 99     CPU_SHA2         = (1&lt;&lt;6),
+100     CPU_CRC32        = (1&lt;&lt;7),
+101     CPU_LSE          = (1&lt;&lt;8),
+102     CPU_STXR_PREFETCH= (1 &lt;&lt; 29),
+103     CPU_A53MAC       = (1 &lt;&lt; 30),
+104     CPU_DMB_ATOMICS  = (1 &lt;&lt; 31),
+105   };
+106 
+107   static int cpu_family()                     { return _cpu; }
+108   static int cpu_model()                      { return _model; }
+109   static int cpu_model2()                     { return _model2; }
+110   static int cpu_variant()                    { return _variant; }
+111   static int cpu_revision()                   { return _revision; }
+112   static bool supports_dcpop()                { return _dcpop; }
+<a name="4" id="anc4"></a><span class="line-added">113 </span>
+114   static ByteSize dczid_el0_offset() { return byte_offset_of(PsrInfo, dczid_el0); }
+<a name="5" id="anc5"></a><span class="line-added">115 #ifndef _WIN64</span>
+116   static ByteSize ctr_el0_offset()   { return byte_offset_of(PsrInfo, ctr_el0); }
+<a name="6" id="anc6"></a><span class="line-added">117 #endif</span>
+118   static bool is_zva_enabled() {
+119     // Check the DZP bit (bit 4) of dczid_el0 is zero
+120     // and block size (bit 0~3) is not zero.
+121     return ((_psr_info.dczid_el0 &amp; 0x10) == 0 &amp;&amp;
+122             (_psr_info.dczid_el0 &amp; 0xf) != 0);
+123   }
+124   static int zva_length() {
+125     assert(is_zva_enabled(), &quot;ZVA not available&quot;);
+126     return 4 &lt;&lt; (_psr_info.dczid_el0 &amp; 0xf);
+127   }
+128   static int icache_line_size() {
+<a name="7" id="anc7"></a><span class="line-added">129 #ifndef _WIN64</span>
+130     return (1 &lt;&lt; (_psr_info.ctr_el0 &amp; 0x0f)) * 4;
+<a name="8" id="anc8"></a><span class="line-added">131 #else</span>
+<span class="line-added">132     return os::win32::get_cacheline_size();</span>
+<span class="line-added">133 #endif</span>
+134   }
+135   static int dcache_line_size() {
+<a name="9" id="anc9"></a><span class="line-added">136 #ifndef _WIN64</span>
+137     return (1 &lt;&lt; ((_psr_info.ctr_el0 &gt;&gt; 16) &amp; 0x0f)) * 4;
+<a name="10" id="anc10"></a><span class="line-added">138 #else</span>
+<span class="line-added">139     return os::win32::get_cacheline_size();</span>
+<span class="line-added">140 #endif</span>
+141   }
+142   static bool supports_fast_class_init_checks() { return true; }
+143 };
+144 
+145 #endif // CPU_AARCH64_VM_VERSION_AARCH64_HPP
+<a name="11" id="anc11"></a><b style="font-size: large; color: red">--- EOF ---</b>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<input id="eof" value="11" type="hidden" />
+</body>
+</html>

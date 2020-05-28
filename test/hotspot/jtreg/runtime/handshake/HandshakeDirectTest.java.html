@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New test\hotspot\jtreg\runtime\handshake\HandshakeDirectTest.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 /*
+ 26  * @test HandshakeDirectTest
+ 27  * @summary This test tries to stress direct handshakes between threads while suspending them.
+ 28  * @library /testlibrary /test/lib
+ 29  * @build HandshakeDirectTest
+ 30  * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+SafepointALot -XX:BiasedLockingDecayTime=100000000 -XX:BiasedLockingBulkRebiasThreshold=1000000 -XX:BiasedLockingBulkRevokeThreshold=1000000 HandshakeDirectTest
+ 31  * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:GuaranteedSafepointInterval=10 -XX:+HandshakeALot -XX:+SafepointALot -XX:BiasedLockingDecayTime=100000000 -XX:BiasedLockingBulkRebiasThreshold=1000000 -XX:BiasedLockingBulkRevokeThreshold=1000000 HandshakeDirectTest
+ 32  */
+ 33 
+ 34 import java.util.concurrent.atomic.AtomicInteger;
+ 35 import java.util.concurrent.ThreadLocalRandom;
+ 36 import java.util.concurrent.Semaphore;
+ 37 import java.io.*;
+ 38 
+ 39 public class HandshakeDirectTest  implements Runnable {
+ 40     static final int WORKING_THREADS = 32;
+ 41     static final int DIRECT_HANDSHAKES_MARK = 50000;
+ 42     static Thread[] workingThreads = new Thread[WORKING_THREADS];
+ 43     static Semaphore[] handshakeSem = new Semaphore[WORKING_THREADS];
+ 44     static Object[] locks = new Object[WORKING_THREADS];
+ 45     static boolean[] isBiased = new boolean[WORKING_THREADS];
+ 46     static AtomicInteger handshakeCount = new AtomicInteger(0);
+ 47 
+ 48     @Override
+ 49     public void run() {
+ 50         int me = Integer.parseInt(Thread.currentThread().getName());
+ 51 
+ 52         while (true) {
+ 53             try {
+ 54                 if (!isBiased[me]) {
+ 55                     handshakeSem[me].acquire();
+ 56                     synchronized(locks[me]) {
+ 57                         isBiased[me] = true;
+ 58                     }
+ 59                     handshakeSem[me].release();
+ 60                 }
+ 61 
+ 62                 // Handshake directly some other worker
+ 63                 int handshakee = ThreadLocalRandom.current().nextInt(0, WORKING_THREADS-1);
+ 64                 if (handshakee == me) {
+ 65                     handshakee = handshakee != 0 ? handshakee - 1 : handshakee + 1;
+ 66                 }
+ 67                 handshakeSem[handshakee].acquire();
+ 68                 if (isBiased[handshakee]) {
+ 69                     // Revoke biased lock
+ 70                     synchronized(locks[handshakee]) {
+ 71                         handshakeCount.incrementAndGet();
+ 72                     }
+ 73                     // Create new lock to be biased
+ 74                     locks[handshakee] = new Object();
+ 75                     isBiased[handshakee] = false;
+ 76                 }
+ 77                 handshakeSem[handshakee].release();
+ 78                 if (handshakeCount.get() &gt;= DIRECT_HANDSHAKES_MARK) {
+ 79                     break;
+ 80                 }
+ 81             } catch(InterruptedException ie) {
+ 82                 throw new Error(&quot;Unexpected interrupt&quot;);
+ 83             }
+ 84         }
+ 85     }
+ 86 
+ 87     public static void main(String... args) throws Exception {
+ 88         HandshakeDirectTest test = new HandshakeDirectTest();
+ 89 
+ 90         // Initialize semaphores
+ 91         for (int i = 0; i &lt; WORKING_THREADS; i++) {
+ 92             handshakeSem[i] = new Semaphore(1);
+ 93         }
+ 94 
+ 95         // Initialize locks
+ 96         for (int i = 0; i &lt; WORKING_THREADS; i++) {
+ 97             locks[i] = new Object();
+ 98         }
+ 99 
+100         // Fire-up working threads.
+101         for (int i = 0; i &lt; WORKING_THREADS; i++) {
+102             workingThreads[i] = new Thread(test, Integer.toString(i));
+103             workingThreads[i].start();
+104         }
+105 
+106         // Fire-up suspend-resume thread
+107         Thread suspendResumeThread = new Thread() {
+108             @Override
+109             public void run() {
+110                 while (true) {
+111                     int i = ThreadLocalRandom.current().nextInt(0, WORKING_THREADS-1);
+112                     workingThreads[i].suspend();
+113                     try {
+114                         Thread.sleep(1); // sleep for 1 ms
+115                     } catch(InterruptedException ie) {
+116                     }
+117                     workingThreads[i].resume();
+118                 }
+119             }
+120         };
+121         suspendResumeThread.setDaemon(true);
+122         suspendResumeThread.start();
+123 
+124         // Wait until the desired number of direct handshakes is reached
+125         // and check that all workers exited
+126         for (int i = 0; i &lt; WORKING_THREADS; i++) {
+127             workingThreads[i].join();
+128         }
+129     }
+130 }
+    </pre>
+  </body>
+</html>

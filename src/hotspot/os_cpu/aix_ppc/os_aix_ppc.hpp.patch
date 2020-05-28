@@ -1,0 +1,18 @@
+diff a/src/hotspot/os_cpu/aix_ppc/os_aix_ppc.hpp b/src/hotspot/os_cpu/aix_ppc/os_aix_ppc.hpp
+--- a/src/hotspot/os_cpu/aix_ppc/os_aix_ppc.hpp
++++ b/src/hotspot/os_cpu/aix_ppc/os_aix_ppc.hpp
+@@ -26,14 +26,10 @@
+ #ifndef OS_CPU_AIX_PPC_OS_AIX_PPC_HPP
+ #define OS_CPU_AIX_PPC_OS_AIX_PPC_HPP
+ 
+   static void setup_fpu() {}
+ 
+-  // Used to register dynamic code cache area with the OS
+-  // Note: Currently only used in 64 bit Windows implementations
+-  static bool register_code_area(char *low, char *high) { return true; }
+-
+ #define PLATFORM_PRINT_NATIVE_STACK 1
+ static bool platform_print_native_stack(outputStream* st, void* context,
+                                         char *buf, int buf_size);
+ 
+ #endif // OS_CPU_AIX_PPC_OS_AIX_PPC_HPP

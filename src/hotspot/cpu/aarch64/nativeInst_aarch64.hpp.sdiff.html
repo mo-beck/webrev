@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\cpu\aarch64\nativeInst_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="methodHandles_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="register_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\nativeInst_aarch64.hpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+666 public:
+667   Register target() {
+668     uint32_t r = Instruction_aarch64::extract(uint_at(0), 4, 0);
+669     return r == 0x1f ? zr : as_Register(r);
+670   }
+671   Register base() {
+672     uint32_t b = Instruction_aarch64::extract(uint_at(0), 9, 5);
+673     return b == 0x1f ? sp : as_Register(b);
+674   }
+675   int64_t offset() {
+676     if (is_ldst_ur()) {
+677       return Instruction_aarch64::sextract(uint_at(0), 20, 12);
+678     } else if (is_ldst_unsigned_offset()) {
+679       return Instruction_aarch64::extract(uint_at(0), 21, 10) &lt;&lt; size();
+680     } else {
+681       // others like: pre-index or post-index.
+682       ShouldNotReachHere();
+683       return 0;
+684     }
+685   }
+<span class="line-modified">686   size_t size_in_bytes() { return 1 &lt;&lt; size(); }</span>
+687   bool is_not_pre_post_index() { return (is_ldst_ur() || is_ldst_unsigned_offset()); }
+688   bool is_load() {
+689     assert(Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b01 ||
+690            Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b00, &quot;must be ldr or str&quot;);
+691 
+692     return Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b01;
+693   }
+694   bool is_store() {
+695     assert(Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b01 ||
+696            Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b00, &quot;must be ldr or str&quot;);
+697 
+698     return Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b00;
+699   }
+700 };
+701 
+702 inline NativeLdSt *NativeLdSt_at(address addr) {
+703   assert(nativeInstruction_at(addr)-&gt;is_Imm_LdSt(), &quot;no immediate load/store found&quot;);
+704   return (NativeLdSt*)addr;
+705 }
+706 #endif // CPU_AARCH64_NATIVEINST_AARCH64_HPP
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+666 public:
+667   Register target() {
+668     uint32_t r = Instruction_aarch64::extract(uint_at(0), 4, 0);
+669     return r == 0x1f ? zr : as_Register(r);
+670   }
+671   Register base() {
+672     uint32_t b = Instruction_aarch64::extract(uint_at(0), 9, 5);
+673     return b == 0x1f ? sp : as_Register(b);
+674   }
+675   int64_t offset() {
+676     if (is_ldst_ur()) {
+677       return Instruction_aarch64::sextract(uint_at(0), 20, 12);
+678     } else if (is_ldst_unsigned_offset()) {
+679       return Instruction_aarch64::extract(uint_at(0), 21, 10) &lt;&lt; size();
+680     } else {
+681       // others like: pre-index or post-index.
+682       ShouldNotReachHere();
+683       return 0;
+684     }
+685   }
+<span class="line-modified">686   size_t size_in_bytes() { return 1ULL &lt;&lt; size(); }</span>
+687   bool is_not_pre_post_index() { return (is_ldst_ur() || is_ldst_unsigned_offset()); }
+688   bool is_load() {
+689     assert(Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b01 ||
+690            Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b00, &quot;must be ldr or str&quot;);
+691 
+692     return Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b01;
+693   }
+694   bool is_store() {
+695     assert(Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b01 ||
+696            Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b00, &quot;must be ldr or str&quot;);
+697 
+698     return Instruction_aarch64::extract(uint_at(0), 23, 22) == 0b00;
+699   }
+700 };
+701 
+702 inline NativeLdSt *NativeLdSt_at(address addr) {
+703   assert(nativeInstruction_at(addr)-&gt;is_Imm_LdSt(), &quot;no immediate load/store found&quot;);
+704   return (NativeLdSt*)addr;
+705 }
+706 #endif // CPU_AARCH64_NATIVEINST_AARCH64_HPP
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="methodHandles_aarch64.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="register_aarch64.cpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

@@ -1,0 +1,13 @@
+diff a/src/hotspot/os_cpu/linux_s390/os_linux_s390.hpp b/src/hotspot/os_cpu/linux_s390/os_linux_s390.hpp
+--- a/src/hotspot/os_cpu/linux_s390/os_linux_s390.hpp
++++ b/src/hotspot/os_cpu/linux_s390/os_linux_s390.hpp
+@@ -26,9 +26,6 @@
+ #ifndef OS_CPU_LINUX_S390_OS_LINUX_S390_HPP
+ #define OS_CPU_LINUX_S390_OS_LINUX_S390_HPP
+ 
+   static void setup_fpu() {}
+ 
+-  // Used to register dynamic code cache area with the OS.
+-  static bool register_code_area(char *low, char *high) { return true; }
+-
+ #endif // OS_CPU_LINUX_S390_OS_LINUX_S390_HPP

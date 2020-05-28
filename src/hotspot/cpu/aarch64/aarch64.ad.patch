@@ -1,0 +1,730 @@
+diff a/src/hotspot/cpu/aarch64/aarch64.ad b/src/hotspot/cpu/aarch64/aarch64.ad
+--- a/src/hotspot/cpu/aarch64/aarch64.ad
++++ b/src/hotspot/cpu/aarch64/aarch64.ad
+@@ -530,17 +530,23 @@
+   return _ANY_REG_mask;
+ %}
+ 
+ // Class for non-allocatable 32 bit registers
+ reg_class non_allocatable_reg32(
++#ifdef _WIN64
++    R18,                        // tls on Windows
++#endif
+     R28,                        // thread
+     R30,                        // lr
+     R31                         // sp
+ );
+ 
+ // Class for non-allocatable 64 bit registers
+ reg_class non_allocatable_reg(
++#ifdef _WIN64
++    R18, R18_H,                 // tls on Windows
++#endif
+     R28, R28_H,                 // thread
+     R30, R30_H,                 // lr
+     R31, R31_H                  // sp
+ );
+ 
+@@ -1623,11 +1629,11 @@
+ void MachPrologNode::emit(CodeBuffer &cbuf, PhaseRegAlloc *ra_) const {
+   Compile* C = ra_->C;
+   MacroAssembler _masm(&cbuf);
+ 
+   // n.b. frame size includes space for return pc and rfp
+-  const long framesize = C->frame_size_in_bytes();
++  const int64_t framesize = C->frame_size_in_bytes();
+   assert(framesize%(2*wordSize) == 0, "must preserve 2*wordSize alignment");
+ 
+   // insert a nop at the start of the prolog so we can patch in a
+   // branch if we need to invalidate the method later
+   __ nop();
+@@ -3110,11 +3116,11 @@
+ 
+   /// mov envcodings
+ 
+   enc_class aarch64_enc_movw_imm(iRegI dst, immI src) %{
+     MacroAssembler _masm(&cbuf);
+-    u_int32_t con = (u_int32_t)$src$$constant;
++    uint32_t con = (uint32_t)$src$$constant;
+     Register dst_reg = as_Register($dst$$reg);
+     if (con == 0) {
+       __ movw(dst_reg, zr);
+     } else {
+       __ movw(dst_reg, con);
+@@ -3122,11 +3128,11 @@
+   %}
+ 
+   enc_class aarch64_enc_mov_imm(iRegL dst, immL src) %{
+     MacroAssembler _masm(&cbuf);
+     Register dst_reg = as_Register($dst$$reg);
+-    u_int64_t con = (u_int64_t)$src$$constant;
++    uint64_t con = (uint64_t)$src$$constant;
+     if (con == 0) {
+       __ mov(dst_reg, zr);
+     } else {
+       __ mov(dst_reg, con);
+     }
+@@ -3147,11 +3153,11 @@
+       } else {
+         assert(rtype == relocInfo::none, "unexpected reloc type");
+         if (con < (address)(uintptr_t)os::vm_page_size()) {
+           __ mov(dst_reg, con);
+         } else {
+-          unsigned long offset;
++          uint64_t offset;
+           __ adrp(dst_reg, con, offset);
+           __ add(dst_reg, dst_reg, offset);
+         }
+       }
+     }
+@@ -3164,18 +3170,18 @@
+   %}
+ 
+   enc_class aarch64_enc_mov_p1(iRegP dst, immP_1 src) %{
+     MacroAssembler _masm(&cbuf);
+     Register dst_reg = as_Register($dst$$reg);
+-    __ mov(dst_reg, (u_int64_t)1);
++    __ mov(dst_reg, (uint64_t)1);
+   %}
+ 
+   enc_class aarch64_enc_mov_poll_page(iRegP dst, immPollPage src) %{
+     MacroAssembler _masm(&cbuf);
+     address page = (address)$src$$constant;
+     Register dst_reg = as_Register($dst$$reg);
+-    unsigned long off;
++    uint64_t off;
+     __ adrp(dst_reg, Address(page, relocInfo::poll_type), off);
+     assert(off == 0, "assumed offset == 0");
+   %}
+ 
+   enc_class aarch64_enc_mov_byte_map_base(iRegP dst, immByteMapBase src) %{
+@@ -3298,11 +3304,11 @@
+   %}
+ 
+   enc_class aarch64_enc_cmpw_imm(iRegI src1, immI src2) %{
+     MacroAssembler _masm(&cbuf);
+     Register reg1 = as_Register($src1$$reg);
+-    u_int32_t val = (u_int32_t)$src2$$constant;
++    uint32_t val = (uint32_t)$src2$$constant;
+     __ movw(rscratch1, val);
+     __ cmpw(reg1, rscratch1);
+   %}
+ 
+   enc_class aarch64_enc_cmp(iRegL src1, iRegL src2) %{
+@@ -3320,19 +3326,19 @@
+       __ subs(zr, reg, val);
+     } else if (val != -val) {
+       __ adds(zr, reg, -val);
+     } else {
+     // aargh, Long.MIN_VALUE is a special case
+-      __ orr(rscratch1, zr, (u_int64_t)val);
++      __ orr(rscratch1, zr, (uint64_t)val);
+       __ subs(zr, reg, rscratch1);
+     }
+   %}
+ 
+   enc_class aarch64_enc_cmp_imm(iRegL src1, immL src2) %{
+     MacroAssembler _masm(&cbuf);
+     Register reg1 = as_Register($src1$$reg);
+-    u_int64_t val = (u_int64_t)$src2$$constant;
++    uint64_t val = (uint64_t)$src2$$constant;
+     __ mov(rscratch1, val);
+     __ cmp(reg1, rscratch1);
+   %}
+ 
+   enc_class aarch64_enc_cmpp(iRegP src1, iRegP src2) %{
+@@ -4228,22 +4234,22 @@
+ %}
+ 
+ // 32 bit integer valid for add sub immediate
+ operand immIAddSub()
+ %{
+-  predicate(Assembler::operand_valid_for_add_sub_immediate((long)n->get_int()));
++  predicate(Assembler::operand_valid_for_add_sub_immediate((int64_t)n->get_int()));
+   match(ConI);
+   op_cost(0);
+   format %{ %}
+   interface(CONST_INTER);
+ %}
+ 
+ // 32 bit unsigned integer valid for logical immediate
+ // TODO -- check this is right when e.g the mask is 0x80000000
+ operand immILog()
+ %{
+-  predicate(Assembler::operand_valid_for_logical_immediate(/*is32*/true, (unsigned long)n->get_int()));
++  predicate(Assembler::operand_valid_for_logical_immediate(/*is32*/true, (uint64_t)n->get_int()));
+   match(ConI);
+ 
+   op_cost(0);
+   format %{ %}
+   interface(CONST_INTER);
+@@ -4317,11 +4323,11 @@
+ %}
+ 
+ // 64 bit integer valid for logical immediate
+ operand immLLog()
+ %{
+-  predicate(Assembler::operand_valid_for_logical_immediate(/*is32*/false, (unsigned long)n->get_long()));
++  predicate(Assembler::operand_valid_for_logical_immediate(/*is32*/false, (uint64_t)n->get_long()));
+   match(ConL);
+   op_cost(0);
+   format %{ %}
+   interface(CONST_INTER);
+ %}
+@@ -5888,11 +5894,11 @@
+ pipeline %{
+ 
+ attributes %{
+   // ARM instructions are of fixed length
+   fixed_size_instructions;        // Fixed size instructions TODO does
+-  max_instructions_per_bundle = 2;   // A53 = 2, A57 = 4
++  max_instructions_per_bundle = 4;   // A53 = 2, A57 = 4
+   // ARM instructions come in 32-bit word units
+   instruction_unit_size = 4;         // An instruction is 4 bytes long
+   instruction_fetch_unit_size = 64;  // The processor fetches one line
+   instruction_fetch_units = 1;       // of 64 bytes
+ 
+@@ -7124,11 +7130,11 @@
+ instruct loadConL(iRegLNoSp dst, immL src)
+ %{
+   match(Set dst src);
+ 
+   ins_cost(INSN_COST);
+-  format %{ "mov $dst, $src\t# long" %}
++  format %{ "mov $dst, $src\t# int64_t" %}
+ 
+   ins_encode( aarch64_enc_mov_imm(dst, src) );
+ 
+   ins_pipe(ialu_imm);
+ %}
+@@ -8276,11 +8282,11 @@
+ 
+ instruct castX2P(iRegPNoSp dst, iRegL src) %{
+   match(Set dst (CastX2P src));
+ 
+   ins_cost(INSN_COST);
+-  format %{ "mov $dst, $src\t# long -> ptr" %}
++  format %{ "mov $dst, $src\t# int64_t -> ptr" %}
+ 
+   ins_encode %{
+     if ($dst$$reg != $src$$reg) {
+       __ mov(as_Register($dst$$reg), as_Register($src$$reg));
+     }
+@@ -8291,11 +8297,11 @@
+ 
+ instruct castP2X(iRegLNoSp dst, iRegP src) %{
+   match(Set dst (CastP2X src));
+ 
+   ins_cost(INSN_COST);
+-  format %{ "mov $dst, $src\t# ptr -> long" %}
++  format %{ "mov $dst, $src\t# ptr -> int64_t" %}
+ 
+   ins_encode %{
+     if ($dst$$reg != $src$$reg) {
+       __ mov(as_Register($dst$$reg), as_Register($src$$reg));
+     }
+@@ -8640,11 +8646,11 @@
+   ins_cost(2 * VOLATILE_REF_COST);
+ 
+   effect(KILL cr);
+ 
+  format %{
+-    "cmpxchg $mem, $oldval, $newval\t# (long) if $mem == $oldval then $mem <-- $newval"
++    "cmpxchg $mem, $oldval, $newval\t# (int64_t) if $mem == $oldval then $mem <-- $newval"
+     "cset $res, EQ\t# $res <-- (EQ ? 1 : 0)"
+  %}
+ 
+  ins_encode(aarch64_enc_cmpxchg(mem, oldval, newval),
+             aarch64_enc_cset_eq(res));
+@@ -8755,11 +8761,11 @@
+   ins_cost(VOLATILE_REF_COST);
+ 
+   effect(KILL cr);
+ 
+  format %{
+-    "cmpxchg_acq $mem, $oldval, $newval\t# (long) if $mem == $oldval then $mem <-- $newval"
++    "cmpxchg_acq $mem, $oldval, $newval\t# (int64_t) if $mem == $oldval then $mem <-- $newval"
+     "cset $res, EQ\t# $res <-- (EQ ? 1 : 0)"
+  %}
+ 
+  ins_encode(aarch64_enc_cmpxchg_acq(mem, oldval, newval),
+             aarch64_enc_cset_eq(res));
+@@ -8872,11 +8878,11 @@
+ instruct compareAndExchangeL(iRegLNoSp res, indirect mem, iRegL oldval, iRegL newval, rFlagsReg cr) %{
+   match(Set res (CompareAndExchangeL mem (Binary oldval newval)));
+   ins_cost(2 * VOLATILE_REF_COST);
+   effect(TEMP_DEF res, KILL cr);
+   format %{
+-    "cmpxchg $res = $mem, $oldval, $newval\t# (long, weak) if $mem == $oldval then $mem <-- $newval"
++    "cmpxchg $res = $mem, $oldval, $newval\t# (int64_t, weak) if $mem == $oldval then $mem <-- $newval"
+   %}
+   ins_encode %{
+     __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register,
+                Assembler::xword, /*acquire*/ false, /*release*/ true,
+                /*weak*/ false, $res$$Register);
+@@ -8970,11 +8976,11 @@
+   predicate(needs_acquiring_load_exclusive(n));
+   match(Set res (CompareAndExchangeL mem (Binary oldval newval)));
+   ins_cost(VOLATILE_REF_COST);
+   effect(TEMP_DEF res, KILL cr);
+   format %{
+-    "cmpxchg_acq $res = $mem, $oldval, $newval\t# (long, weak) if $mem == $oldval then $mem <-- $newval"
++    "cmpxchg_acq $res = $mem, $oldval, $newval\t# (int64_t, weak) if $mem == $oldval then $mem <-- $newval"
+   %}
+   ins_encode %{
+     __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register,
+                Assembler::xword, /*acquire*/ true, /*release*/ true,
+                /*weak*/ false, $res$$Register);
+@@ -9069,11 +9075,11 @@
+ instruct weakCompareAndSwapL(iRegINoSp res, indirect mem, iRegL oldval, iRegL newval, rFlagsReg cr) %{
+   match(Set res (WeakCompareAndSwapL mem (Binary oldval newval)));
+   ins_cost(2 * VOLATILE_REF_COST);
+   effect(KILL cr);
+   format %{
+-    "cmpxchg $res = $mem, $oldval, $newval\t# (long, weak) if $mem == $oldval then $mem <-- $newval"
++    "cmpxchg $res = $mem, $oldval, $newval\t# (int64_t, weak) if $mem == $oldval then $mem <-- $newval"
+     "csetw $res, EQ\t# $res <-- (EQ ? 1 : 0)"
+   %}
+   ins_encode %{
+     __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register,
+                Assembler::xword, /*acquire*/ false, /*release*/ true,
+@@ -9176,11 +9182,11 @@
+   predicate(needs_acquiring_load_exclusive(n));
+   match(Set res (WeakCompareAndSwapL mem (Binary oldval newval)));
+   ins_cost(VOLATILE_REF_COST);
+   effect(KILL cr);
+   format %{
+-    "cmpxchg_acq $res = $mem, $oldval, $newval\t# (long, weak) if $mem == $oldval then $mem <-- $newval"
++    "cmpxchg_acq $res = $mem, $oldval, $newval\t# (int64_t, weak) if $mem == $oldval then $mem <-- $newval"
+     "csetw $res, EQ\t# $res <-- (EQ ? 1 : 0)"
+   %}
+   ins_encode %{
+     __ cmpxchg($mem$$Register, $oldval$$Register, $newval$$Register,
+                Assembler::xword, /*acquire*/ true, /*release*/ true,
+@@ -9698,11 +9704,11 @@
+ 
+ instruct cmovL_reg_reg(cmpOp cmp, rFlagsReg cr, iRegLNoSp dst, iRegL src1, iRegL src2) %{
+   match(Set dst (CMoveL (Binary cmp cr) (Binary src1 src2)));
+ 
+   ins_cost(INSN_COST * 2);
+-  format %{ "csel $dst, $src2, $src1 $cmp\t# signed, long"  %}
++  format %{ "csel $dst, $src2, $src1 $cmp\t# signed, int64_t"  %}
+ 
+   ins_encode %{
+     __ csel(as_Register($dst$$reg),
+             as_Register($src2$$reg),
+             as_Register($src1$$reg),
+@@ -9714,11 +9720,11 @@
+ 
+ instruct cmovUL_reg_reg(cmpOpU cmp, rFlagsRegU cr, iRegLNoSp dst, iRegL src1, iRegL src2) %{
+   match(Set dst (CMoveL (Binary cmp cr) (Binary src1 src2)));
+ 
+   ins_cost(INSN_COST * 2);
+-  format %{ "csel $dst, $src2, $src1 $cmp\t# unsigned, long"  %}
++  format %{ "csel $dst, $src2, $src1 $cmp\t# unsigned, int64_t"  %}
+ 
+   ins_encode %{
+     __ csel(as_Register($dst$$reg),
+             as_Register($src2$$reg),
+             as_Register($src1$$reg),
+@@ -9732,11 +9738,11 @@
+ 
+ instruct cmovL_reg_zero(cmpOp cmp, rFlagsReg cr, iRegLNoSp dst, iRegL src, immL0 zero) %{
+   match(Set dst (CMoveL (Binary cmp cr) (Binary src zero)));
+ 
+   ins_cost(INSN_COST * 2);
+-  format %{ "csel $dst, zr, $src $cmp\t# signed, long"  %}
++  format %{ "csel $dst, zr, $src $cmp\t# signed, int64_t"  %}
+ 
+   ins_encode %{
+     __ csel(as_Register($dst$$reg),
+             zr,
+             as_Register($src$$reg),
+@@ -9748,11 +9754,11 @@
+ 
+ instruct cmovUL_reg_zero(cmpOpU cmp, rFlagsRegU cr, iRegLNoSp dst, iRegL src, immL0 zero) %{
+   match(Set dst (CMoveL (Binary cmp cr) (Binary src zero)));
+ 
+   ins_cost(INSN_COST * 2);
+-  format %{ "csel $dst, zr, $src $cmp\t# unsigned, long"  %}
++  format %{ "csel $dst, zr, $src $cmp\t# unsigned, int64_t"  %}
+ 
+   ins_encode %{
+     __ csel(as_Register($dst$$reg),
+             zr,
+             as_Register($src$$reg),
+@@ -9764,11 +9770,11 @@
+ 
+ instruct cmovL_zero_reg(cmpOp cmp, rFlagsReg cr, iRegLNoSp dst, immL0 zero, iRegL src) %{
+   match(Set dst (CMoveL (Binary cmp cr) (Binary zero src)));
+ 
+   ins_cost(INSN_COST * 2);
+-  format %{ "csel $dst, $src, zr $cmp\t# signed, long"  %}
++  format %{ "csel $dst, $src, zr $cmp\t# signed, int64_t"  %}
+ 
+   ins_encode %{
+     __ csel(as_Register($dst$$reg),
+             as_Register($src$$reg),
+             zr,
+@@ -9780,11 +9786,11 @@
+ 
+ instruct cmovUL_zero_reg(cmpOpU cmp, rFlagsRegU cr, iRegLNoSp dst, immL0 zero, iRegL src) %{
+   match(Set dst (CMoveL (Binary cmp cr) (Binary zero src)));
+ 
+   ins_cost(INSN_COST * 2);
+-  format %{ "csel $dst, $src, zr $cmp\t# unsigned, long"  %}
++  format %{ "csel $dst, $src, zr $cmp\t# unsigned, int64_t"  %}
+ 
+   ins_encode %{
+     __ csel(as_Register($dst$$reg),
+             as_Register($src$$reg),
+             zr,
+@@ -10185,11 +10191,11 @@
+   format %{ "sbfiz $dst, $src, $scale & 63, -$scale & 63\t" %}
+ 
+   ins_encode %{
+     __ sbfiz(as_Register($dst$$reg),
+           as_Register($src$$reg),
+-          $scale$$constant & 63, MIN(32, (-$scale$$constant) & 63));
++          $scale$$constant & 63, MIN2((intptr_t)32, (-$scale$$constant) & 63));
+   %}
+ 
+   ins_pipe(ialu_reg_shift);
+ %}
+ 
+@@ -10325,11 +10331,11 @@
+ 
+ instruct negL_reg(iRegLNoSp dst, iRegL src, immL0 zero, rFlagsReg cr) %{
+   match(Set dst (SubL zero src));
+ 
+   ins_cost(INSN_COST);
+-  format %{ "neg $dst, $src\t# long" %}
++  format %{ "neg $dst, $src\t# int64_t" %}
+ 
+   ins_encode %{
+     __ neg(as_Register($dst$$reg),
+            as_Register($src$$reg));
+   %}
+@@ -11991,11 +11997,11 @@
+ 
+   ins_cost(INSN_COST);
+   format %{ "ubfxw $dst, $src, $rshift, $mask" %}
+   ins_encode %{
+     int rshift = $rshift$$constant & 31;
+-    long mask = $mask$$constant;
++    int64_t mask = $mask$$constant;
+     int width = exact_log2(mask+1);
+     __ ubfxw(as_Register($dst$$reg),
+             as_Register($src$$reg), rshift, width);
+   %}
+   ins_pipe(ialu_reg_shift);
+@@ -12008,11 +12014,11 @@
+ 
+   ins_cost(INSN_COST);
+   format %{ "ubfx $dst, $src, $rshift, $mask" %}
+   ins_encode %{
+     int rshift = $rshift$$constant & 63;
+-    long mask = $mask$$constant;
++    int64_t mask = $mask$$constant;
+     int width = exact_log2_long(mask+1);
+     __ ubfx(as_Register($dst$$reg),
+             as_Register($src$$reg), rshift, width);
+   %}
+   ins_pipe(ialu_reg_shift);
+@@ -12028,11 +12034,11 @@
+ 
+   ins_cost(INSN_COST * 2);
+   format %{ "ubfx $dst, $src, $rshift, $mask" %}
+   ins_encode %{
+     int rshift = $rshift$$constant & 31;
+-    long mask = $mask$$constant;
++    int64_t mask = $mask$$constant;
+     int width = exact_log2(mask+1);
+     __ ubfx(as_Register($dst$$reg),
+             as_Register($src$$reg), rshift, width);
+   %}
+   ins_pipe(ialu_reg_shift);
+@@ -12047,11 +12053,11 @@
+ 
+   ins_cost(INSN_COST);
+   format %{ "ubfizw $dst, $src, $lshift, $mask" %}
+   ins_encode %{
+     int lshift = $lshift$$constant & 31;
+-    long mask = $mask$$constant;
++    int64_t mask = $mask$$constant;
+     int width = exact_log2(mask+1);
+     __ ubfizw(as_Register($dst$$reg),
+           as_Register($src$$reg), lshift, width);
+   %}
+   ins_pipe(ialu_reg_shift);
+@@ -12065,11 +12071,11 @@
+ 
+   ins_cost(INSN_COST);
+   format %{ "ubfiz $dst, $src, $lshift, $mask" %}
+   ins_encode %{
+     int lshift = $lshift$$constant & 63;
+-    long mask = $mask$$constant;
++    int64_t mask = $mask$$constant;
+     int width = exact_log2_long(mask+1);
+     __ ubfiz(as_Register($dst$$reg),
+           as_Register($src$$reg), lshift, width);
+   %}
+   ins_pipe(ialu_reg_shift);
+@@ -12083,11 +12089,11 @@
+ 
+   ins_cost(INSN_COST);
+   format %{ "ubfiz $dst, $src, $lshift, $mask" %}
+   ins_encode %{
+     int lshift = $lshift$$constant & 63;
+-    long mask = $mask$$constant;
++    int64_t mask = $mask$$constant;
+     int width = exact_log2(mask+1);
+     __ ubfiz(as_Register($dst$$reg),
+              as_Register($src$$reg), lshift, width);
+   %}
+   ins_pipe(ialu_reg_shift);
+@@ -13286,11 +13292,11 @@
+ 
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ andw(as_Register($dst$$reg),
+             as_Register($src1$$reg),
+-            (unsigned long)($src2$$constant));
++            (uint64_t)($src2$$constant));
+   %}
+ 
+   ins_pipe(ialu_reg_imm);
+ %}
+ 
+@@ -13318,11 +13324,11 @@
+ 
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ orrw(as_Register($dst$$reg),
+             as_Register($src1$$reg),
+-            (unsigned long)($src2$$constant));
++            (uint64_t)($src2$$constant));
+   %}
+ 
+   ins_pipe(ialu_reg_imm);
+ %}
+ 
+@@ -13350,11 +13356,11 @@
+ 
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ eorw(as_Register($dst$$reg),
+             as_Register($src1$$reg),
+-            (unsigned long)($src2$$constant));
++            (uint64_t)($src2$$constant));
+   %}
+ 
+   ins_pipe(ialu_reg_imm);
+ %}
+ 
+@@ -13383,11 +13389,11 @@
+ 
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ andr(as_Register($dst$$reg),
+             as_Register($src1$$reg),
+-            (unsigned long)($src2$$constant));
++            (uint64_t)($src2$$constant));
+   %}
+ 
+   ins_pipe(ialu_reg_imm);
+ %}
+ 
+@@ -13415,11 +13421,11 @@
+ 
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ orr(as_Register($dst$$reg),
+            as_Register($src1$$reg),
+-           (unsigned long)($src2$$constant));
++           (uint64_t)($src2$$constant));
+   %}
+ 
+   ins_pipe(ialu_reg_imm);
+ %}
+ 
+@@ -13447,11 +13453,11 @@
+   format %{ "eor  $dst, $src1, $src2\t# int" %}
+ 
+   ins_encode %{
+     __ eor(as_Register($dst$$reg),
+            as_Register($src1$$reg),
+-           (unsigned long)($src2$$constant));
++           (uint64_t)($src2$$constant));
+   %}
+ 
+   ins_pipe(ialu_reg_imm);
+ %}
+ 
+@@ -13896,20 +13902,20 @@
+   ins_pipe(pipe_class_memory);
+ %}
+ 
+ instruct clearArray_imm_reg(immL cnt, iRegP_R10 base, Universe dummy, rFlagsReg cr)
+ %{
+-  predicate((u_int64_t)n->in(2)->get_long()
+-            < (u_int64_t)(BlockZeroingLowLimit >> LogBytesPerWord));
++  predicate((uint64_t)n->in(2)->get_long()
++            < (uint64_t)(BlockZeroingLowLimit >> LogBytesPerWord));
+   match(Set dummy (ClearArray cnt base));
+   effect(USE_KILL base);
+ 
+   ins_cost(4 * INSN_COST);
+   format %{ "ClearArray $cnt, $base" %}
+ 
+   ins_encode %{
+-    __ zero_words($base$$Register, (u_int64_t)$cnt$$constant);
++    __ zero_words($base$$Register, (uint64_t)$cnt$$constant);
+   %}
+ 
+   ins_pipe(pipe_class_memory);
+ %}
+ 
+@@ -13944,11 +13950,11 @@
+ 
+ instruct overflowAddL_reg_reg(rFlagsReg cr, iRegL op1, iRegL op2)
+ %{
+   match(Set cr (OverflowAddL op1 op2));
+ 
+-  format %{ "cmn   $op1, $op2\t# overflow check long" %}
++  format %{ "cmn   $op1, $op2\t# overflow check int64_t" %}
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ cmn($op1$$Register, $op2$$Register);
+   %}
+ 
+@@ -13957,11 +13963,11 @@
+ 
+ instruct overflowAddL_reg_imm(rFlagsReg cr, iRegL op1, immLAddSub op2)
+ %{
+   match(Set cr (OverflowAddL op1 op2));
+ 
+-  format %{ "cmn   $op1, $op2\t# overflow check long" %}
++  format %{ "cmn   $op1, $op2\t# overflow check int64_t" %}
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ cmn($op1$$Register, $op2$$constant);
+   %}
+ 
+@@ -13996,11 +14002,11 @@
+ 
+ instruct overflowSubL_reg_reg(rFlagsReg cr, iRegL op1, iRegL op2)
+ %{
+   match(Set cr (OverflowSubL op1 op2));
+ 
+-  format %{ "cmp   $op1, $op2\t# overflow check long" %}
++  format %{ "cmp   $op1, $op2\t# overflow check int64_t" %}
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ cmp($op1$$Register, $op2$$Register);
+   %}
+ 
+@@ -14009,11 +14015,11 @@
+ 
+ instruct overflowSubL_reg_imm(rFlagsReg cr, iRegL op1, immLAddSub op2)
+ %{
+   match(Set cr (OverflowSubL op1 op2));
+ 
+-  format %{ "cmp   $op1, $op2\t# overflow check long" %}
++  format %{ "cmp   $op1, $op2\t# overflow check int64_t" %}
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ subs(zr, $op1$$Register, $op2$$constant);
+   %}
+ 
+@@ -14035,11 +14041,11 @@
+ 
+ instruct overflowNegL_reg(rFlagsReg cr, immI0 zero, iRegL op1)
+ %{
+   match(Set cr (OverflowSubL zero op1));
+ 
+-  format %{ "cmp   zr, $op1\t# overflow check long" %}
++  format %{ "cmp   zr, $op1\t# overflow check int64_t" %}
+   ins_cost(INSN_COST);
+   ins_encode %{
+     __ cmp(zr, $op1$$Register);
+   %}
+ 
+@@ -14091,11 +14097,11 @@
+ 
+ instruct overflowMulL_reg(rFlagsReg cr, iRegL op1, iRegL op2)
+ %{
+   match(Set cr (OverflowMulL op1 op2));
+ 
+-  format %{ "mul   rscratch1, $op1, $op2\t#overflow check long\n\t"
++  format %{ "mul   rscratch1, $op1, $op2\t#overflow check int64_t\n\t"
+             "smulh rscratch2, $op1, $op2\n\t"
+             "cmp   rscratch2, rscratch1, ASR #63\n\t"
+             "movw  rscratch1, #0x80000000\n\t"
+             "cselw rscratch1, rscratch1, zr, NE\n\t"
+             "cmpw  rscratch1, #1" %}
+@@ -14117,11 +14123,11 @@
+   match(If cmp (OverflowMulL op1 op2));
+   predicate(n->in(1)->as_Bool()->_test._test == BoolTest::overflow
+             || n->in(1)->as_Bool()->_test._test == BoolTest::no_overflow);
+   effect(USE labl, KILL cr);
+ 
+-  format %{ "mul   rscratch1, $op1, $op2\t#overflow check long\n\t"
++  format %{ "mul   rscratch1, $op1, $op2\t#overflow check int64_t\n\t"
+             "smulh rscratch2, $op1, $op2\n\t"
+             "cmp   rscratch2, rscratch1, ASR #63\n\t"
+             "b$cmp $labl" %}
+   ins_cost(4 * INSN_COST); // Branch is rare so treat as INSN_COST
+   ins_encode %{
+@@ -14881,11 +14887,11 @@
+ instruct cmpL_branch_sign(cmpOpLtGe cmp, iRegL op1, immL0 op2, label labl) %{
+   match(If cmp (CmpL op1 op2));
+   effect(USE labl);
+ 
+   ins_cost(BRANCH_COST);
+-  format %{ "cb$cmp   $op1, $labl # long" %}
++  format %{ "cb$cmp   $op1, $labl # int64_t" %}
+   ins_encode %{
+     Label* L = $labl$$label;
+     Assembler::Condition cond =
+       ((Assembler::Condition)$cmp$$cmpcode == Assembler::LT) ? Assembler::NE : Assembler::EQ;
+     __ tbr(cond, $op1$$Register, 63, *L);
+@@ -14948,11 +14954,11 @@
+ instruct far_cmpL_branch_sign(cmpOpLtGe cmp, iRegL op1, immL0 op2, label labl) %{
+   match(If cmp (CmpL op1 op2));
+   effect(USE labl);
+ 
+   ins_cost(BRANCH_COST);
+-  format %{ "cb$cmp   $op1, $labl # long" %}
++  format %{ "cb$cmp   $op1, $labl # int64_t" %}
+   ins_encode %{
+     Label* L = $labl$$label;
+     Assembler::Condition cond =
+       ((Assembler::Condition)$cmp$$cmpcode == Assembler::LT) ? Assembler::NE : Assembler::EQ;
+     __ tbr(cond, $op1$$Register, 63, *L, /*far*/true);
+@@ -15013,11 +15019,11 @@
+   match(Set cr (CmpL (AndL op1 op2) op3));
+   predicate(Assembler::operand_valid_for_logical_immediate
+             (/*is_32*/false, n->in(1)->in(2)->get_long()));
+ 
+   ins_cost(INSN_COST);
+-  format %{ "tst $op1, $op2 # long" %}
++  format %{ "tst $op1, $op2 # int64_t" %}
+   ins_encode %{
+     __ tst($op1$$Register, $op2$$constant);
+   %}
+   ins_pipe(ialu_reg_reg);
+ %}
+@@ -15037,11 +15043,11 @@
+ 
+ instruct cmpL_and_reg(cmpOp cmp, iRegL op1, iRegL op2, immL0 op3, rFlagsReg cr) %{
+   match(Set cr (CmpL (AndL op1 op2) op3));
+ 
+   ins_cost(INSN_COST);
+-  format %{ "tst $op1, $op2 # long" %}
++  format %{ "tst $op1, $op2 # int64_t" %}
+   ins_encode %{
+     __ tst($op1$$Register, $op2$$Register);
+   %}
+   ins_pipe(ialu_reg_reg);
+ %}

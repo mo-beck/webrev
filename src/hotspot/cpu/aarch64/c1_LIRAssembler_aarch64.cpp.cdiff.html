@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Cdiff src\hotspot\cpu\aarch64\c1_LIRAssembler_aarch64.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="c1_FrameMap_aarch64.cpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_LIRGenerator_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\cpu\aarch64\c1_LIRAssembler_aarch64.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-old-header">*** 1368,11 ***</span>
+      // get object class
+      // not a safepoint as obj null check happens earlier
+      __ load_klass(klass_RInfo, obj);
+      if (k-&gt;is_loaded()) {
+        // See if we get an immediate positive hit
+<span class="line-modified">!       __ ldr(rscratch1, Address(klass_RInfo, long(k-&gt;super_check_offset())));</span>
+        __ cmp(k_RInfo, rscratch1);
+        if ((juint)in_bytes(Klass::secondary_super_cache_offset()) != k-&gt;super_check_offset()) {
+          __ br(Assembler::NE, *failure_target);
+          // successful cast, fall through to profile or jump
+        } else {
+<span class="line-new-header">--- 1368,11 ---</span>
+      // get object class
+      // not a safepoint as obj null check happens earlier
+      __ load_klass(klass_RInfo, obj);
+      if (k-&gt;is_loaded()) {
+        // See if we get an immediate positive hit
+<span class="line-modified">!       __ ldr(rscratch1, Address(klass_RInfo, int64_t(k-&gt;super_check_offset())));</span>
+        __ cmp(k_RInfo, rscratch1);
+        if ((juint)in_bytes(Klass::secondary_super_cache_offset()) != k-&gt;super_check_offset()) {
+          __ br(Assembler::NE, *failure_target);
+          // successful cast, fall through to profile or jump
+        } else {
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 1995,11 ***</span>
+            __ cmpw(reg1, imm);
+          else
+            __ subs(zr, reg1, imm);
+          return;
+        } else {
+<span class="line-modified">!         __ mov(rscratch1, imm);</span>
+          if (is_32bit)
+            __ cmpw(reg1, rscratch1);
+          else
+            __ cmp(reg1, rscratch1);
+          return;
+<span class="line-new-header">--- 1995,11 ---</span>
+            __ cmpw(reg1, imm);
+          else
+            __ subs(zr, reg1, imm);
+          return;
+        } else {
+<span class="line-modified">!         __ mov(rscratch1,(uint64_t) imm);</span>
+          if (is_32bit)
+            __ cmpw(reg1, rscratch1);
+          else
+            __ cmp(reg1, rscratch1);
+          return;
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 2032,11 ***</span>
+        ShouldNotReachHere();
+      }
+    } else if (code == lir_cmp_l2i) {
+      Label done;
+      __ cmp(left-&gt;as_register_lo(), right-&gt;as_register_lo());
+<span class="line-modified">!     __ mov(dst-&gt;as_register(), (u_int64_t)-1L);</span>
+      __ br(Assembler::LT, done);
+      __ csinc(dst-&gt;as_register(), zr, zr, Assembler::EQ);
+      __ bind(done);
+    } else {
+      ShouldNotReachHere();
+<span class="line-new-header">--- 2032,11 ---</span>
+        ShouldNotReachHere();
+      }
+    } else if (code == lir_cmp_l2i) {
+      Label done;
+      __ cmp(left-&gt;as_register_lo(), right-&gt;as_register_lo());
+<span class="line-modified">!     __ mov(dst-&gt;as_register(), (uint64_t)-1L);</span>
+      __ br(Assembler::LT, done);
+      __ csinc(dst-&gt;as_register(), zr, zr, Assembler::EQ);
+      __ bind(done);
+    } else {
+      ShouldNotReachHere();
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 2300,11 ***</span>
+    }
+  
+    assert(default_type != NULL &amp;&amp; default_type-&gt;is_array_klass() &amp;&amp; default_type-&gt;is_loaded(), &quot;must be true at this point&quot;);
+  
+    int elem_size = type2aelembytes(basic_type);
+<span class="line-removed">-   int shift_amount;</span>
+    int scale = exact_log2(elem_size);
+  
+    Address src_length_addr = Address(src, arrayOopDesc::length_offset_in_bytes());
+    Address dst_length_addr = Address(dst, arrayOopDesc::length_offset_in_bytes());
+    Address src_klass_addr = Address(src, oopDesc::klass_offset_in_bytes());
+<span class="line-new-header">--- 2300,10 ---</span>
+</pre>
+<hr />
+<pre>
+<span class="line-old-header">*** 2691,11 ***</span>
+    Register crc = op-&gt;crc()-&gt;as_register();
+    Register val = op-&gt;val()-&gt;as_register();
+    Register res = op-&gt;result_opr()-&gt;as_register();
+  
+    assert_different_registers(val, crc, res);
+<span class="line-modified">!   unsigned long offset;</span>
+    __ adrp(res, ExternalAddress(StubRoutines::crc_table_addr()), offset);
+    if (offset) __ add(res, res, offset);
+  
+    __ mvnw(crc, crc); // ~crc
+    __ update_byte_crc32(crc, val, res);
+<span class="line-new-header">--- 2690,11 ---</span>
+    Register crc = op-&gt;crc()-&gt;as_register();
+    Register val = op-&gt;val()-&gt;as_register();
+    Register res = op-&gt;result_opr()-&gt;as_register();
+  
+    assert_different_registers(val, crc, res);
+<span class="line-modified">!   uint64_t offset;</span>
+    __ adrp(res, ExternalAddress(StubRoutines::crc_table_addr()), offset);
+    if (offset) __ add(res, res, offset);
+  
+    __ mvnw(crc, crc); // ~crc
+    __ update_byte_crc32(crc, val, res);
+</pre>
+<center><a href="c1_FrameMap_aarch64.cpp.cdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="c1_LIRGenerator_aarch64.cpp.cdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

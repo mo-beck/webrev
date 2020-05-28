@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames src\hotspot\cpu\aarch64\c1_Defs_aarch64.hpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+    <script type="text/javascript" src="..\..\..\..\navigation.js"></script>
+  </head>
+<body onkeypress="keypress(event);">
+<a name="0"></a>
+<hr />
+<pre> 1 /*
+ 2  * Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+ 3  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
+ 4  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ 5  *
+ 6  * This code is free software; you can redistribute it and/or modify it
+ 7  * under the terms of the GNU General Public License version 2 only, as
+ 8  * published by the Free Software Foundation.
+ 9  *
+10  * This code is distributed in the hope that it will be useful, but WITHOUT
+11  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+12  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+13  * version 2 for more details (a copy is included in the LICENSE file that
+14  * accompanied this code).
+15  *
+16  * You should have received a copy of the GNU General Public License version
+17  * 2 along with this work; if not, write to the Free Software Foundation,
+18  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+19  *
+20  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+21  * or visit www.oracle.com if you need additional information or have any
+22  * questions.
+23  *
+24  */
+25 
+26 #ifndef CPU_AARCH64_C1_DEFS_AARCH64_HPP
+27 #define CPU_AARCH64_C1_DEFS_AARCH64_HPP
+28 
+29 // native word offsets from memory address (little endian)
+30 enum {
+31   pd_lo_word_offset_in_bytes = 0,
+32   pd_hi_word_offset_in_bytes = BytesPerWord
+33 };
+34 
+35 // explicit rounding operations are required to implement the strictFP mode
+36 enum {
+37   pd_strict_fp_requires_explicit_rounding = false
+38 };
+39 
+40 // FIXME: There are no callee-saved
+41 
+42 // registers
+43 enum {
+44   pd_nof_cpu_regs_frame_map = RegisterImpl::number_of_registers,       // number of registers used during code emission
+45   pd_nof_fpu_regs_frame_map = FloatRegisterImpl::number_of_registers,  // number of registers used during code emission
+46 
+<a name="1" id="anc1"></a><span class="line-modified">47   pd_nof_caller_save_cpu_regs_frame_map = 19 - 2,  // number of registers killed by calls</span>
+48   pd_nof_caller_save_fpu_regs_frame_map = 32,  // number of registers killed by calls
+49 
+<a name="2" id="anc2"></a><span class="line-modified">50   pd_first_callee_saved_reg = 19 - 2,</span>
+<span class="line-modified">51   pd_last_callee_saved_reg = 26 - 2,</span>
+52 
+<a name="3" id="anc3"></a><span class="line-modified">53   pd_last_allocatable_cpu_reg = 16,</span>
+54 
+55   pd_nof_cpu_regs_reg_alloc
+56     = pd_last_allocatable_cpu_reg + 1,  // number of registers that are visible to register allocator
+57   pd_nof_fpu_regs_reg_alloc = 8,  // number of registers that are visible to register allocator
+58 
+59   pd_nof_cpu_regs_linearscan = 32, // number of registers visible to linear scan
+60   pd_nof_fpu_regs_linearscan = pd_nof_fpu_regs_frame_map, // number of registers visible to linear scan
+61   pd_nof_xmm_regs_linearscan = 0, // like sparc we don&#39;t have any of these
+62   pd_first_cpu_reg = 0,
+<a name="4" id="anc4"></a><span class="line-modified">63   pd_last_cpu_reg = 16,</span>
+64   pd_first_byte_reg = 0,
+<a name="5" id="anc5"></a><span class="line-modified">65   pd_last_byte_reg = 16,</span>
+66   pd_first_fpu_reg = pd_nof_cpu_regs_frame_map,
+67   pd_last_fpu_reg =  pd_first_fpu_reg + 31,
+68 
+69   pd_first_callee_saved_fpu_reg = 8 + pd_first_fpu_reg,
+70   pd_last_callee_saved_fpu_reg = 15 + pd_first_fpu_reg,
+71 };
+72 
+73 
+74 // Encoding of float value in debug info.  This is true on x86 where
+75 // floats are extended to doubles when stored in the stack, false for
+76 // AArch64 where floats and doubles are stored in their native form.
+77 enum {
+78   pd_float_saved_as_double = false
+79 };
+80 
+81 #endif // CPU_AARCH64_C1_DEFS_AARCH64_HPP
+<a name="6" id="anc6"></a><b style="font-size: large; color: red">--- EOF ---</b>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+<input id="eof" value="6" type="hidden" />
+</body>
+</html>

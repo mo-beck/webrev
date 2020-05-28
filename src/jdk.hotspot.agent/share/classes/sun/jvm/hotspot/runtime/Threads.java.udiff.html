@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Udiff src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\runtime\Threads.java</title>
+    <link rel="stylesheet" href="..\..\..\..\..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="..\debugger\windbg\WindbgDebuggerLocal.java.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\..\..\..\..\windows\native\libsaproc\sawindbg.cpp.udiff.html" target="_top">next &gt;</a></center>    <h2>src\jdk.hotspot.agent\share\classes\sun\jvm\hotspot\runtime\Threads.java</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<hr />
+<pre>
+<span class="line-new-header">@@ -29,10 +29,11 @@</span>
+  import sun.jvm.hotspot.debugger.*;
+  import sun.jvm.hotspot.types.*;
+  import sun.jvm.hotspot.runtime.solaris_sparc.SolarisSPARCJavaThreadPDAccess;
+  import sun.jvm.hotspot.runtime.solaris_x86.SolarisX86JavaThreadPDAccess;
+  import sun.jvm.hotspot.runtime.solaris_amd64.SolarisAMD64JavaThreadPDAccess;
+<span class="udiff-line-added">+ import sun.jvm.hotspot.runtime.win32_aarch64.Win32AARCH64JavaThreadPDAccess;</span>
+  import sun.jvm.hotspot.runtime.win32_amd64.Win32AMD64JavaThreadPDAccess;
+  import sun.jvm.hotspot.runtime.win32_x86.Win32X86JavaThreadPDAccess;
+  import sun.jvm.hotspot.runtime.linux_x86.LinuxX86JavaThreadPDAccess;
+  import sun.jvm.hotspot.runtime.linux_amd64.LinuxAMD64JavaThreadPDAccess;
+  import sun.jvm.hotspot.runtime.linux_aarch64.LinuxAARCH64JavaThreadPDAccess;
+</pre>
+<hr />
+<pre>
+<span class="line-new-header">@@ -107,10 +108,12 @@</span>
+          } else if (os.equals(&quot;win32&quot;)) {
+              if (cpu.equals(&quot;x86&quot;)) {
+                  access =  new Win32X86JavaThreadPDAccess();
+              } else if (cpu.equals(&quot;amd64&quot;)) {
+                  access =  new Win32AMD64JavaThreadPDAccess();
+<span class="udiff-line-added">+             } else if (cpu.equals(&quot;aarch64&quot;)) {</span>
+<span class="udiff-line-added">+                 access =  new Win32AARCH64JavaThreadPDAccess();</span>
+              }
+          } else if (os.equals(&quot;linux&quot;)) {
+              if (cpu.equals(&quot;x86&quot;)) {
+                  access = new LinuxX86JavaThreadPDAccess();
+              } else if (cpu.equals(&quot;amd64&quot;)) {
+</pre>
+<center><a href="..\debugger\windbg\WindbgDebuggerLocal.java.udiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\..\..\..\..\index.html" target="_top">index</a> <a href="..\..\..\..\..\..\windows\native\libsaproc\sawindbg.cpp.udiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

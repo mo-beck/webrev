@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sdiff src\hotspot\share\runtime\handshake.cpp</title>
+    <link rel="stylesheet" href="..\..\..\..\style.css" />
+  </head>
+<body>
+<center><a href="biasedLocking.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="handshake.hpp.sdiff.html" target="_top">next &gt;</a></center>    <h2>src\hotspot\share\runtime\handshake.cpp</h2>
+     <a class="print" href="javascript:print()">Print this page</a>
+<table>
+<tr valign="top">
+<td>
+<hr />
+<pre>
+  1 /*
+<span class="line-modified">  2  * Copyright (c) 2017, 2019, Oracle and/or its affiliates. All rights reserved.</span>
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 #include &quot;precompiled.hpp&quot;
+ 26 #include &quot;logging/log.hpp&quot;
+ 27 #include &quot;logging/logStream.hpp&quot;
+ 28 #include &quot;memory/resourceArea.hpp&quot;
+ 29 #include &quot;runtime/atomic.hpp&quot;
+ 30 #include &quot;runtime/handshake.hpp&quot;
+ 31 #include &quot;runtime/interfaceSupport.inline.hpp&quot;
+ 32 #include &quot;runtime/osThread.hpp&quot;
+ 33 #include &quot;runtime/semaphore.inline.hpp&quot;
+ 34 #include &quot;runtime/task.hpp&quot;
+ 35 #include &quot;runtime/thread.hpp&quot;
+ 36 #include &quot;runtime/vmThread.hpp&quot;
+ 37 #include &quot;utilities/formatBuffer.hpp&quot;
+ 38 #include &quot;utilities/preserveException.hpp&quot;
+ 39 
+<span class="line-removed"> 40 class HandshakeOperation: public StackObj {</span>
+<span class="line-removed"> 41 public:</span>
+<span class="line-removed"> 42   virtual void do_handshake(JavaThread* thread) = 0;</span>
+<span class="line-removed"> 43 };</span>
+ 44 
+<span class="line-modified"> 45 class HandshakeThreadsOperation: public HandshakeOperation {</span>
+<span class="line-removed"> 46   static Semaphore _done;</span>
+ 47   HandshakeClosure* _handshake_cl;
+
+ 48   bool _executed;
+
+ 49 public:
+<span class="line-modified"> 50   HandshakeThreadsOperation(HandshakeClosure* cl) : _handshake_cl(cl), _executed(false) {}</span>
+
+
+
+
+
+ 51   void do_handshake(JavaThread* thread);
+<span class="line-modified"> 52   bool thread_has_completed() { return _done.trywait(); }</span>
+
+
+
+
+
+ 53   bool executed() const { return _executed; }
+ 54   const char* name() { return _handshake_cl-&gt;name(); }
+ 55 
+
+
+ 56 #ifdef ASSERT
+ 57   void check_state() {
+<span class="line-modified"> 58     assert(!_done.trywait(), &quot;Must be zero&quot;);</span>
+ 59   }
+ 60 #endif
+ 61 };
+ 62 
+<span class="line-removed"> 63 Semaphore HandshakeThreadsOperation::_done(0);</span>
+<span class="line-removed"> 64 </span>
+ 65 class VM_Handshake: public VM_Operation {
+ 66   const jlong _handshake_timeout;
+ 67  public:
+ 68   bool evaluate_at_safepoint() const { return false; }
+ 69 
+ 70  protected:
+<span class="line-modified"> 71   HandshakeThreadsOperation* const _op;</span>
+ 72 
+<span class="line-modified"> 73   VM_Handshake(HandshakeThreadsOperation* op) :</span>
+ 74       _handshake_timeout(TimeHelper::millis_to_counter(HandshakeTimeout)), _op(op) {}
+ 75 
+<span class="line-removed"> 76   void set_handshake(JavaThread* target) {</span>
+<span class="line-removed"> 77     target-&gt;set_handshake_operation(_op);</span>
+<span class="line-removed"> 78   }</span>
+<span class="line-removed"> 79 </span>
+<span class="line-removed"> 80   // This method returns true for threads completed their operation</span>
+<span class="line-removed"> 81   // and true for threads canceled their operation.</span>
+<span class="line-removed"> 82   // A cancellation can happen if the thread is exiting.</span>
+<span class="line-removed"> 83   bool poll_for_completed_thread() { return _op-&gt;thread_has_completed(); }</span>
+<span class="line-removed"> 84 </span>
+ 85   bool handshake_has_timed_out(jlong start_time);
+ 86   static void handle_timeout();
+ 87 };
+ 88 
+ 89 bool VM_Handshake::handshake_has_timed_out(jlong start_time) {
+ 90   // Check if handshake operation has timed out
+ 91   if (_handshake_timeout &gt; 0) {
+ 92     return os::elapsed_counter() &gt;= (start_time + _handshake_timeout);
+ 93   }
+ 94   return false;
+ 95 }
+ 96 
+ 97 void VM_Handshake::handle_timeout() {
+ 98   LogStreamHandle(Warning, handshake) log_stream;
+ 99   for (JavaThreadIteratorWithHandle jtiwh; JavaThread *thr = jtiwh.next(); ) {
+100     if (thr-&gt;has_handshake()) {
+101       log_stream.print(&quot;Thread &quot; PTR_FORMAT &quot; has not cleared its handshake op&quot;, p2i(thr));
+102       thr-&gt;print_thread_state_on(&amp;log_stream);
+103     }
+104   }
+105   log_stream.flush();
+106   fatal(&quot;Handshake operation timed out&quot;);
+107 }
+108 
+109 static void log_handshake_info(jlong start_time_ns, const char* name, int targets, int vmt_executed, const char* extra = NULL) {
+110   if (start_time_ns != 0) {
+111     jlong completion_time = os::javaTimeNanos() - start_time_ns;
+112     log_info(handshake)(&quot;Handshake \&quot;%s\&quot;, Targeted threads: %d, Executed by targeted threads: %d, Total completion time: &quot; JLONG_FORMAT &quot; ns%s%s&quot;,
+113                         name, targets,
+114                         targets - vmt_executed,
+115                         completion_time,
+116                         extra != NULL ? &quot;, &quot; : &quot;&quot;,
+117                         extra != NULL ? extra : &quot;&quot;);
+118   }
+119 }
+120 
+121 class VM_HandshakeOneThread: public VM_Handshake {
+122   JavaThread* _target;
+123  public:
+<span class="line-modified">124   VM_HandshakeOneThread(HandshakeThreadsOperation* op, JavaThread* target) :</span>
+125     VM_Handshake(op), _target(target) {}
+126 
+127   void doit() {
+<span class="line-removed">128     DEBUG_ONLY(_op-&gt;check_state();)</span>
+<span class="line-removed">129 </span>
+130     jlong start_time_ns = 0;
+131     if (log_is_enabled(Info, handshake)) {
+132       start_time_ns = os::javaTimeNanos();
+133     }
+134 
+135     ThreadsListHandle tlh;
+136     if (tlh.includes(_target)) {
+<span class="line-modified">137       set_handshake(_target);</span>
+138     } else {
+139       log_handshake_info(start_time_ns, _op-&gt;name(), 0, 0, &quot;(thread dead)&quot;);
+140       return;
+141     }
+142 
+143     log_trace(handshake)(&quot;JavaThread &quot; INTPTR_FORMAT &quot; signaled, begin attempt to process by VMThtread&quot;, p2i(_target));
+144     jlong timeout_start_time = os::elapsed_counter();
+145     bool by_vm_thread = false;
+146     do {
+147       if (handshake_has_timed_out(timeout_start_time)) {
+148         handle_timeout();
+149       }
+<span class="line-modified">150       by_vm_thread = _target-&gt;handshake_try_process_by_vmThread();</span>
+<span class="line-modified">151     } while (!poll_for_completed_thread());</span>
+152     DEBUG_ONLY(_op-&gt;check_state();)
+153     log_handshake_info(start_time_ns, _op-&gt;name(), 1, by_vm_thread ? 1 : 0);
+154   }
+155 
+156   VMOp_Type type() const { return VMOp_HandshakeOneThread; }
+157 
+158   bool executed() const { return _op-&gt;executed(); }
+159 };
+160 
+161 class VM_HandshakeAllThreads: public VM_Handshake {
+162  public:
+<span class="line-modified">163   VM_HandshakeAllThreads(HandshakeThreadsOperation* op) : VM_Handshake(op) {}</span>
+164 
+165   void doit() {
+<span class="line-removed">166     DEBUG_ONLY(_op-&gt;check_state();)</span>
+<span class="line-removed">167 </span>
+168     jlong start_time_ns = 0;
+169     if (log_is_enabled(Info, handshake)) {
+170       start_time_ns = os::javaTimeNanos();
+171     }
+172     int handshake_executed_by_vm_thread = 0;
+173 
+174     JavaThreadIteratorWithHandle jtiwh;
+175     int number_of_threads_issued = 0;
+176     for (JavaThread *thr = jtiwh.next(); thr != NULL; thr = jtiwh.next()) {
+<span class="line-modified">177       set_handshake(thr);</span>
+178       number_of_threads_issued++;
+179     }
+180 
+181     if (number_of_threads_issued &lt; 1) {
+182       log_handshake_info(start_time_ns, _op-&gt;name(), 0, 0);
+183       return;
+184     }
+
+
+185 
+186     log_trace(handshake)(&quot;Threads signaled, begin processing blocked threads by VMThread&quot;);
+187     const jlong start_time = os::elapsed_counter();
+<span class="line-removed">188     int number_of_threads_completed = 0;</span>
+189     do {
+190       // Check if handshake operation has timed out
+191       if (handshake_has_timed_out(start_time)) {
+192         handle_timeout();
+193       }
+194 
+195       // Have VM thread perform the handshake operation for blocked threads.
+196       // Observing a blocked state may of course be transient but the processing is guarded
+197       // by semaphores and we optimistically begin by working on the blocked threads
+198       jtiwh.rewind();
+199       for (JavaThread *thr = jtiwh.next(); thr != NULL; thr = jtiwh.next()) {
+200         // A new thread on the ThreadsList will not have an operation,
+<span class="line-modified">201         // hence it is skipped in handshake_process_by_vmthread.</span>
+<span class="line-modified">202         if (thr-&gt;handshake_try_process_by_vmThread()) {</span>
+203           handshake_executed_by_vm_thread++;
+204         }
+205       }
+<span class="line-modified">206       while (poll_for_completed_thread()) {</span>
+<span class="line-removed">207         // Includes canceled operations by exiting threads.</span>
+<span class="line-removed">208         number_of_threads_completed++;</span>
+<span class="line-removed">209       }</span>
+<span class="line-removed">210 </span>
+<span class="line-removed">211     } while (number_of_threads_issued &gt; number_of_threads_completed);</span>
+<span class="line-removed">212     assert(number_of_threads_issued == number_of_threads_completed, &quot;Must be the same&quot;);</span>
+213     DEBUG_ONLY(_op-&gt;check_state();)
+214 
+215     log_handshake_info(start_time_ns, _op-&gt;name(), number_of_threads_issued, handshake_executed_by_vm_thread);
+216   }
+217 
+218   VMOp_Type type() const { return VMOp_HandshakeAllThreads; }
+219 };
+220 
+221 class VM_HandshakeFallbackOperation : public VM_Operation {
+222   HandshakeClosure* _handshake_cl;
+223   Thread* _target_thread;
+224   bool _all_threads;
+225   bool _executed;
+226 public:
+227   VM_HandshakeFallbackOperation(HandshakeClosure* cl) :
+228       _handshake_cl(cl), _target_thread(NULL), _all_threads(true), _executed(false) {}
+229   VM_HandshakeFallbackOperation(HandshakeClosure* cl, Thread* target) :
+230       _handshake_cl(cl), _target_thread(target), _all_threads(false), _executed(false) {}
+231 
+232   void doit() {
+233     log_trace(handshake)(&quot;VMThread executing VM_HandshakeFallbackOperation, operation: %s&quot;, name());
+234     for (JavaThreadIteratorWithHandle jtiwh; JavaThread *t = jtiwh.next(); ) {
+235       if (_all_threads || t == _target_thread) {
+236         if (t == _target_thread) {
+237           _executed = true;
+238         }
+239         _handshake_cl-&gt;do_thread(t);
+240       }
+241     }
+242   }
+243 
+244   VMOp_Type type() const { return VMOp_HandshakeFallback; }
+245   bool executed() const { return _executed; }
+246 };
+247 
+<span class="line-modified">248 void HandshakeThreadsOperation::do_handshake(JavaThread* thread) {</span>
+249   jlong start_time_ns = 0;
+250   if (log_is_enabled(Debug, handshake, task)) {
+251     start_time_ns = os::javaTimeNanos();
+252   }
+253 
+254   // Only actually execute the operation for non terminated threads.
+255   if (!thread-&gt;is_terminated()) {
+256     _handshake_cl-&gt;do_thread(thread);
+257     _executed = true;
+258   }
+259 
+260   if (start_time_ns != 0) {
+261     jlong completion_time = os::javaTimeNanos() - start_time_ns;
+262     log_debug(handshake, task)(&quot;Operation: %s for thread &quot; PTR_FORMAT &quot;, is_vm_thread: %s, completed in &quot; JLONG_FORMAT &quot; ns&quot;,
+263                                name(), p2i(thread), BOOL_TO_STR(Thread::current()-&gt;is_VM_thread()), completion_time);
+264   }
+265 
+<span class="line-modified">266   // Use the semaphore to inform the VM thread that we have completed the operation</span>
+<span class="line-modified">267   _done.signal();</span>
+268 
+<span class="line-modified">269   // It is no longer safe to refer to &#39;this&#39; as the VMThread may have destroyed this operation</span>
+270 }
+271 
+272 void Handshake::execute(HandshakeClosure* thread_cl) {
+273   if (SafepointMechanism::uses_thread_local_poll()) {
+<span class="line-modified">274     HandshakeThreadsOperation cto(thread_cl);</span>
+<span class="line-modified">275     VM_HandshakeAllThreads handshake(&amp;cto);</span>
+276     VMThread::execute(&amp;handshake);
+277   } else {
+278     VM_HandshakeFallbackOperation op(thread_cl);
+279     VMThread::execute(&amp;op);
+280   }
+281 }
+282 
+283 bool Handshake::execute(HandshakeClosure* thread_cl, JavaThread* target) {
+284   if (SafepointMechanism::uses_thread_local_poll()) {
+<span class="line-modified">285     HandshakeThreadsOperation cto(thread_cl);</span>
+<span class="line-modified">286     VM_HandshakeOneThread handshake(&amp;cto, target);</span>
+287     VMThread::execute(&amp;handshake);
+288     return handshake.executed();
+289   } else {
+290     VM_HandshakeFallbackOperation op(thread_cl, target);
+291     VMThread::execute(&amp;op);
+292     return op.executed();
+293   }
+294 }
+295 
+<span class="line-modified">296 HandshakeState::HandshakeState() : _operation(NULL), _semaphore(1), _thread_in_process_handshake(false) {</span>
+<span class="line-modified">297   DEBUG_ONLY(_vmthread_processing_handshake = false;)</span>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+298 }
+299 
+<span class="line-modified">300 void HandshakeState::set_operation(JavaThread* target, HandshakeOperation* op) {</span>
+<span class="line-modified">301   _operation = op;</span>
+<span class="line-modified">302   SafepointMechanism::arm_local_poll_release(target);</span>
+
+
+
+
+
+
+
+
+303 }
+304 
+<span class="line-modified">305 void HandshakeState::clear_handshake(JavaThread* target) {</span>
+<span class="line-modified">306   _operation = NULL;</span>
+<span class="line-modified">307   SafepointMechanism::disarm_if_needed(target, true /* release */);</span>
+
+
+
+
+308 }
+309 
+<span class="line-modified">310 void HandshakeState::process_self_inner(JavaThread* thread) {</span>
+<span class="line-modified">311   assert(Thread::current() == thread, &quot;should call from thread&quot;);</span>
+<span class="line-modified">312   assert(!thread-&gt;is_terminated(), &quot;should not be a terminated thread&quot;);</span>
+<span class="line-modified">313   assert(thread-&gt;thread_state() != _thread_blocked, &quot;should not be in a blocked state&quot;);</span>
+<span class="line-modified">314   assert(thread-&gt;thread_state() != _thread_in_native, &quot;should not be in native&quot;);</span>
+
+315 
+316   do {
+<span class="line-modified">317     ThreadInVMForHandshake tivm(thread);</span>
+<span class="line-modified">318     if (!_semaphore.trywait()) {</span>
+<span class="line-modified">319       _semaphore.wait_with_safepoint_check(thread);</span>
+320     }
+<span class="line-modified">321     HandshakeOperation* op = Atomic::load_acquire(&amp;_operation);</span>
+<span class="line-modified">322     if (op != NULL) {</span>
+<span class="line-modified">323       HandleMark hm(thread);</span>
+<span class="line-modified">324       CautiouslyPreserveExceptionMark pem(thread);</span>
+<span class="line-modified">325       // Disarm before execute the operation</span>
+<span class="line-modified">326       clear_handshake(thread);</span>
+<span class="line-modified">327       op-&gt;do_handshake(thread);</span>
+
+
+
+
+
+
+
+
+328     }
+<span class="line-modified">329     _semaphore.signal();</span>
+330   } while (has_operation());
+331 }
+332 
+<span class="line-modified">333 bool HandshakeState::vmthread_can_process_handshake(JavaThread* target) {</span>
+334   // handshake_safe may only be called with polls armed.
+<span class="line-modified">335   // VM thread controls this by first claiming the handshake via claim_handshake_for_vmthread.</span>
+<span class="line-modified">336   return SafepointSynchronize::handshake_safe(target);</span>
+337 }
+338 
+<span class="line-modified">339 static bool possibly_vmthread_can_process_handshake(JavaThread* target) {</span>
+340   // Note that this method is allowed to produce false positives.
+<span class="line-modified">341   if (target-&gt;is_ext_suspended()) {</span>
+342     return true;
+343   }
+<span class="line-modified">344   if (target-&gt;is_terminated()) {</span>
+345     return true;
+346   }
+<span class="line-modified">347   switch (target-&gt;thread_state()) {</span>
+348   case _thread_in_native:
+349     // native threads are safe if they have no java stack or have walkable stack
+<span class="line-modified">350     return !target-&gt;has_last_Java_frame() || target-&gt;frame_anchor()-&gt;walkable();</span>
+351 
+352   case _thread_blocked:
+353     return true;
+354 
+355   default:
+356     return false;
+357   }
+358 }
+359 
+<span class="line-modified">360 bool HandshakeState::claim_handshake_for_vmthread() {</span>
+<span class="line-modified">361   if (!_semaphore.trywait()) {</span>
+362     return false;
+363   }
+<span class="line-modified">364   if (has_operation()) {</span>
+365     return true;
+366   }
+<span class="line-modified">367   _semaphore.signal();</span>
+368   return false;
+369 }
+370 
+<span class="line-modified">371 bool HandshakeState::try_process_by_vmThread(JavaThread* target) {</span>
+<span class="line-modified">372   assert(Thread::current()-&gt;is_VM_thread(), &quot;should call from vm thread&quot;);</span>
+373 
+<span class="line-modified">374   if (!has_operation()) {</span>
+375     // JT has already cleared its handshake
+376     return false;
+377   }
+378 
+<span class="line-modified">379   if (!possibly_vmthread_can_process_handshake(target)) {</span>
+380     // JT is observed in an unsafe state, it must notice the handshake itself
+381     return false;
+382   }
+383 
+384   // Claim the semaphore if there still an operation to be executed.
+<span class="line-modified">385   if (!claim_handshake_for_vmthread()) {</span>
+
+
+
+
+
+
+
+
+386     return false;
+387   }
+388 
+389   // If we own the semaphore at this point and while owning the semaphore
+390   // can observe a safe state the thread cannot possibly continue without
+391   // getting caught by the semaphore.
+392   bool executed = false;
+<span class="line-modified">393   if (vmthread_can_process_handshake(target)) {</span>
+<span class="line-modified">394     guarantee(!_semaphore.trywait(), &quot;we should already own the semaphore&quot;);</span>
+<span class="line-modified">395     log_trace(handshake)(&quot;Processing handshake by VMThtread&quot;);</span>
+<span class="line-modified">396     DEBUG_ONLY(_vmthread_processing_handshake = true;)</span>
+<span class="line-modified">397     _operation-&gt;do_handshake(target);</span>
+<span class="line-modified">398     DEBUG_ONLY(_vmthread_processing_handshake = false;)</span>
+<span class="line-modified">399     // Disarm after VM thread have executed the operation.</span>
+<span class="line-modified">400     clear_handshake(target);</span>
+401     executed = true;
+402   }
+403 
+404   // Release the thread
+<span class="line-modified">405   _semaphore.signal();</span>
+406 
+407   return executed;
+408 }
+</pre>
+</td>
+<td>
+<hr />
+<pre>
+  1 /*
+<span class="line-modified">  2  * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.</span>
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * This code is free software; you can redistribute it and/or modify it
+  6  * under the terms of the GNU General Public License version 2 only, as
+  7  * published by the Free Software Foundation.
+  8  *
+  9  * This code is distributed in the hope that it will be useful, but WITHOUT
+ 10  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ 11  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ 12  * version 2 for more details (a copy is included in the LICENSE file that
+ 13  * accompanied this code).
+ 14  *
+ 15  * You should have received a copy of the GNU General Public License version
+ 16  * 2 along with this work; if not, write to the Free Software Foundation,
+ 17  * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ 18  *
+ 19  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 20  * or visit www.oracle.com if you need additional information or have any
+ 21  * questions.
+ 22  *
+ 23  */
+ 24 
+ 25 #include &quot;precompiled.hpp&quot;
+ 26 #include &quot;logging/log.hpp&quot;
+ 27 #include &quot;logging/logStream.hpp&quot;
+ 28 #include &quot;memory/resourceArea.hpp&quot;
+ 29 #include &quot;runtime/atomic.hpp&quot;
+ 30 #include &quot;runtime/handshake.hpp&quot;
+ 31 #include &quot;runtime/interfaceSupport.inline.hpp&quot;
+ 32 #include &quot;runtime/osThread.hpp&quot;
+ 33 #include &quot;runtime/semaphore.inline.hpp&quot;
+ 34 #include &quot;runtime/task.hpp&quot;
+ 35 #include &quot;runtime/thread.hpp&quot;
+ 36 #include &quot;runtime/vmThread.hpp&quot;
+ 37 #include &quot;utilities/formatBuffer.hpp&quot;
+ 38 #include &quot;utilities/preserveException.hpp&quot;
+ 39 
+
+
+
+
+ 40 
+<span class="line-modified"> 41 class HandshakeOperation: public StackObj {</span>
+
+ 42   HandshakeClosure* _handshake_cl;
+<span class="line-added"> 43   int64_t _pending_threads;</span>
+ 44   bool _executed;
+<span class="line-added"> 45   bool _is_direct;</span>
+ 46 public:
+<span class="line-modified"> 47   HandshakeOperation(HandshakeClosure* cl, bool is_direct = false) :</span>
+<span class="line-added"> 48     _handshake_cl(cl),</span>
+<span class="line-added"> 49     _pending_threads(1),</span>
+<span class="line-added"> 50     _executed(false),</span>
+<span class="line-added"> 51     _is_direct(is_direct) {}</span>
+<span class="line-added"> 52 </span>
+ 53   void do_handshake(JavaThread* thread);
+<span class="line-modified"> 54   bool is_completed() {</span>
+<span class="line-added"> 55     int64_t val = Atomic::load(&amp;_pending_threads);</span>
+<span class="line-added"> 56     assert(val &gt;= 0, &quot;_pending_threads cannot be negative&quot;);</span>
+<span class="line-added"> 57     return val == 0;</span>
+<span class="line-added"> 58   }</span>
+<span class="line-added"> 59   void add_target_count(int count) { Atomic::add(&amp;_pending_threads, count); }</span>
+ 60   bool executed() const { return _executed; }
+ 61   const char* name() { return _handshake_cl-&gt;name(); }
+ 62 
+<span class="line-added"> 63   bool is_direct() { return _is_direct; }</span>
+<span class="line-added"> 64 </span>
+ 65 #ifdef ASSERT
+ 66   void check_state() {
+<span class="line-modified"> 67     assert(_pending_threads == 0, &quot;Must be zero&quot;);</span>
+ 68   }
+ 69 #endif
+ 70 };
+ 71 
+
+
+ 72 class VM_Handshake: public VM_Operation {
+ 73   const jlong _handshake_timeout;
+ 74  public:
+ 75   bool evaluate_at_safepoint() const { return false; }
+ 76 
+ 77  protected:
+<span class="line-modified"> 78   HandshakeOperation* const _op;</span>
+ 79 
+<span class="line-modified"> 80   VM_Handshake(HandshakeOperation* op) :</span>
+ 81       _handshake_timeout(TimeHelper::millis_to_counter(HandshakeTimeout)), _op(op) {}
+ 82 
+
+
+
+
+
+
+
+
+
+ 83   bool handshake_has_timed_out(jlong start_time);
+ 84   static void handle_timeout();
+ 85 };
+ 86 
+ 87 bool VM_Handshake::handshake_has_timed_out(jlong start_time) {
+ 88   // Check if handshake operation has timed out
+ 89   if (_handshake_timeout &gt; 0) {
+ 90     return os::elapsed_counter() &gt;= (start_time + _handshake_timeout);
+ 91   }
+ 92   return false;
+ 93 }
+ 94 
+ 95 void VM_Handshake::handle_timeout() {
+ 96   LogStreamHandle(Warning, handshake) log_stream;
+ 97   for (JavaThreadIteratorWithHandle jtiwh; JavaThread *thr = jtiwh.next(); ) {
+ 98     if (thr-&gt;has_handshake()) {
+ 99       log_stream.print(&quot;Thread &quot; PTR_FORMAT &quot; has not cleared its handshake op&quot;, p2i(thr));
+100       thr-&gt;print_thread_state_on(&amp;log_stream);
+101     }
+102   }
+103   log_stream.flush();
+104   fatal(&quot;Handshake operation timed out&quot;);
+105 }
+106 
+107 static void log_handshake_info(jlong start_time_ns, const char* name, int targets, int vmt_executed, const char* extra = NULL) {
+108   if (start_time_ns != 0) {
+109     jlong completion_time = os::javaTimeNanos() - start_time_ns;
+110     log_info(handshake)(&quot;Handshake \&quot;%s\&quot;, Targeted threads: %d, Executed by targeted threads: %d, Total completion time: &quot; JLONG_FORMAT &quot; ns%s%s&quot;,
+111                         name, targets,
+112                         targets - vmt_executed,
+113                         completion_time,
+114                         extra != NULL ? &quot;, &quot; : &quot;&quot;,
+115                         extra != NULL ? extra : &quot;&quot;);
+116   }
+117 }
+118 
+119 class VM_HandshakeOneThread: public VM_Handshake {
+120   JavaThread* _target;
+121  public:
+<span class="line-modified">122   VM_HandshakeOneThread(HandshakeOperation* op, JavaThread* target) :</span>
+123     VM_Handshake(op), _target(target) {}
+124 
+125   void doit() {
+
+
+126     jlong start_time_ns = 0;
+127     if (log_is_enabled(Info, handshake)) {
+128       start_time_ns = os::javaTimeNanos();
+129     }
+130 
+131     ThreadsListHandle tlh;
+132     if (tlh.includes(_target)) {
+<span class="line-modified">133       _target-&gt;set_handshake_operation(_op);</span>
+134     } else {
+135       log_handshake_info(start_time_ns, _op-&gt;name(), 0, 0, &quot;(thread dead)&quot;);
+136       return;
+137     }
+138 
+139     log_trace(handshake)(&quot;JavaThread &quot; INTPTR_FORMAT &quot; signaled, begin attempt to process by VMThtread&quot;, p2i(_target));
+140     jlong timeout_start_time = os::elapsed_counter();
+141     bool by_vm_thread = false;
+142     do {
+143       if (handshake_has_timed_out(timeout_start_time)) {
+144         handle_timeout();
+145       }
+<span class="line-modified">146       by_vm_thread = _target-&gt;handshake_try_process(_op);</span>
+<span class="line-modified">147     } while (!_op-&gt;is_completed());</span>
+148     DEBUG_ONLY(_op-&gt;check_state();)
+149     log_handshake_info(start_time_ns, _op-&gt;name(), 1, by_vm_thread ? 1 : 0);
+150   }
+151 
+152   VMOp_Type type() const { return VMOp_HandshakeOneThread; }
+153 
+154   bool executed() const { return _op-&gt;executed(); }
+155 };
+156 
+157 class VM_HandshakeAllThreads: public VM_Handshake {
+158  public:
+<span class="line-modified">159   VM_HandshakeAllThreads(HandshakeOperation* op) : VM_Handshake(op) {}</span>
+160 
+161   void doit() {
+
+
+162     jlong start_time_ns = 0;
+163     if (log_is_enabled(Info, handshake)) {
+164       start_time_ns = os::javaTimeNanos();
+165     }
+166     int handshake_executed_by_vm_thread = 0;
+167 
+168     JavaThreadIteratorWithHandle jtiwh;
+169     int number_of_threads_issued = 0;
+170     for (JavaThread *thr = jtiwh.next(); thr != NULL; thr = jtiwh.next()) {
+<span class="line-modified">171       thr-&gt;set_handshake_operation(_op);</span>
+172       number_of_threads_issued++;
+173     }
+174 
+175     if (number_of_threads_issued &lt; 1) {
+176       log_handshake_info(start_time_ns, _op-&gt;name(), 0, 0);
+177       return;
+178     }
+<span class="line-added">179     // _op was created with a count == 1 so don&#39;t double count.</span>
+<span class="line-added">180     _op-&gt;add_target_count(number_of_threads_issued - 1);</span>
+181 
+182     log_trace(handshake)(&quot;Threads signaled, begin processing blocked threads by VMThread&quot;);
+183     const jlong start_time = os::elapsed_counter();
+
+184     do {
+185       // Check if handshake operation has timed out
+186       if (handshake_has_timed_out(start_time)) {
+187         handle_timeout();
+188       }
+189 
+190       // Have VM thread perform the handshake operation for blocked threads.
+191       // Observing a blocked state may of course be transient but the processing is guarded
+192       // by semaphores and we optimistically begin by working on the blocked threads
+193       jtiwh.rewind();
+194       for (JavaThread *thr = jtiwh.next(); thr != NULL; thr = jtiwh.next()) {
+195         // A new thread on the ThreadsList will not have an operation,
+<span class="line-modified">196         // hence it is skipped in handshake_try_process.</span>
+<span class="line-modified">197         if (thr-&gt;handshake_try_process(_op)) {</span>
+198           handshake_executed_by_vm_thread++;
+199         }
+200       }
+<span class="line-modified">201     } while (!_op-&gt;is_completed());</span>
+
+
+
+
+
+
+202     DEBUG_ONLY(_op-&gt;check_state();)
+203 
+204     log_handshake_info(start_time_ns, _op-&gt;name(), number_of_threads_issued, handshake_executed_by_vm_thread);
+205   }
+206 
+207   VMOp_Type type() const { return VMOp_HandshakeAllThreads; }
+208 };
+209 
+210 class VM_HandshakeFallbackOperation : public VM_Operation {
+211   HandshakeClosure* _handshake_cl;
+212   Thread* _target_thread;
+213   bool _all_threads;
+214   bool _executed;
+215 public:
+216   VM_HandshakeFallbackOperation(HandshakeClosure* cl) :
+217       _handshake_cl(cl), _target_thread(NULL), _all_threads(true), _executed(false) {}
+218   VM_HandshakeFallbackOperation(HandshakeClosure* cl, Thread* target) :
+219       _handshake_cl(cl), _target_thread(target), _all_threads(false), _executed(false) {}
+220 
+221   void doit() {
+222     log_trace(handshake)(&quot;VMThread executing VM_HandshakeFallbackOperation, operation: %s&quot;, name());
+223     for (JavaThreadIteratorWithHandle jtiwh; JavaThread *t = jtiwh.next(); ) {
+224       if (_all_threads || t == _target_thread) {
+225         if (t == _target_thread) {
+226           _executed = true;
+227         }
+228         _handshake_cl-&gt;do_thread(t);
+229       }
+230     }
+231   }
+232 
+233   VMOp_Type type() const { return VMOp_HandshakeFallback; }
+234   bool executed() const { return _executed; }
+235 };
+236 
+<span class="line-modified">237 void HandshakeOperation::do_handshake(JavaThread* thread) {</span>
+238   jlong start_time_ns = 0;
+239   if (log_is_enabled(Debug, handshake, task)) {
+240     start_time_ns = os::javaTimeNanos();
+241   }
+242 
+243   // Only actually execute the operation for non terminated threads.
+244   if (!thread-&gt;is_terminated()) {
+245     _handshake_cl-&gt;do_thread(thread);
+246     _executed = true;
+247   }
+248 
+249   if (start_time_ns != 0) {
+250     jlong completion_time = os::javaTimeNanos() - start_time_ns;
+251     log_debug(handshake, task)(&quot;Operation: %s for thread &quot; PTR_FORMAT &quot;, is_vm_thread: %s, completed in &quot; JLONG_FORMAT &quot; ns&quot;,
+252                                name(), p2i(thread), BOOL_TO_STR(Thread::current()-&gt;is_VM_thread()), completion_time);
+253   }
+254 
+<span class="line-modified">255   // Inform VMThread/Handshaker that we have completed the operation</span>
+<span class="line-modified">256   Atomic::dec(&amp;_pending_threads);</span>
+257 
+<span class="line-modified">258   // It is no longer safe to refer to &#39;this&#39; as the VMThread/Handshaker may have destroyed this operation</span>
+259 }
+260 
+261 void Handshake::execute(HandshakeClosure* thread_cl) {
+262   if (SafepointMechanism::uses_thread_local_poll()) {
+<span class="line-modified">263     HandshakeOperation ho(thread_cl);</span>
+<span class="line-modified">264     VM_HandshakeAllThreads handshake(&amp;ho);</span>
+265     VMThread::execute(&amp;handshake);
+266   } else {
+267     VM_HandshakeFallbackOperation op(thread_cl);
+268     VMThread::execute(&amp;op);
+269   }
+270 }
+271 
+272 bool Handshake::execute(HandshakeClosure* thread_cl, JavaThread* target) {
+273   if (SafepointMechanism::uses_thread_local_poll()) {
+<span class="line-modified">274     HandshakeOperation ho(thread_cl);</span>
+<span class="line-modified">275     VM_HandshakeOneThread handshake(&amp;ho, target);</span>
+276     VMThread::execute(&amp;handshake);
+277     return handshake.executed();
+278   } else {
+279     VM_HandshakeFallbackOperation op(thread_cl, target);
+280     VMThread::execute(&amp;op);
+281     return op.executed();
+282   }
+283 }
+284 
+<span class="line-modified">285 bool Handshake::execute_direct(HandshakeClosure* thread_cl, JavaThread* target) {</span>
+<span class="line-modified">286   if (!SafepointMechanism::uses_thread_local_poll()) {</span>
+<span class="line-added">287     VM_HandshakeFallbackOperation op(thread_cl, target);</span>
+<span class="line-added">288     VMThread::execute(&amp;op);</span>
+<span class="line-added">289     return op.executed();</span>
+<span class="line-added">290   }</span>
+<span class="line-added">291   JavaThread* self = JavaThread::current();</span>
+<span class="line-added">292   HandshakeOperation op(thread_cl, /*is_direct*/ true);</span>
+<span class="line-added">293 </span>
+<span class="line-added">294   jlong start_time_ns = 0;</span>
+<span class="line-added">295   if (log_is_enabled(Info, handshake)) {</span>
+<span class="line-added">296     start_time_ns = os::javaTimeNanos();</span>
+<span class="line-added">297   }</span>
+<span class="line-added">298 </span>
+<span class="line-added">299   ThreadsListHandle tlh;</span>
+<span class="line-added">300   if (tlh.includes(target)) {</span>
+<span class="line-added">301     target-&gt;set_handshake_operation(&amp;op);</span>
+<span class="line-added">302   } else {</span>
+<span class="line-added">303     log_handshake_info(start_time_ns, op.name(), 0, 0, &quot;(thread dead)&quot;);</span>
+<span class="line-added">304     return false;</span>
+<span class="line-added">305   }</span>
+<span class="line-added">306 </span>
+<span class="line-added">307   bool by_handshaker = false;</span>
+<span class="line-added">308   while (!op.is_completed()) {</span>
+<span class="line-added">309     by_handshaker = target-&gt;handshake_try_process(&amp;op);</span>
+<span class="line-added">310     // Check for pending handshakes to avoid possible deadlocks where our</span>
+<span class="line-added">311     // target is trying to handshake us.</span>
+<span class="line-added">312     if (SafepointMechanism::should_block(self)) {</span>
+<span class="line-added">313       ThreadBlockInVM tbivm(self);</span>
+<span class="line-added">314     }</span>
+<span class="line-added">315   }</span>
+<span class="line-added">316   DEBUG_ONLY(op.check_state();)</span>
+<span class="line-added">317   log_handshake_info(start_time_ns, op.name(), 1, by_handshaker ? 1 : 0);</span>
+<span class="line-added">318 </span>
+<span class="line-added">319   return op.executed();</span>
+<span class="line-added">320 }</span>
+<span class="line-added">321 </span>
+<span class="line-added">322 HandshakeState::HandshakeState() :</span>
+<span class="line-added">323   _operation(NULL),</span>
+<span class="line-added">324   _operation_direct(NULL),</span>
+<span class="line-added">325   _handshake_turn_sem(1),</span>
+<span class="line-added">326   _processing_sem(1),</span>
+<span class="line-added">327   _thread_in_process_handshake(false)</span>
+<span class="line-added">328 {</span>
+<span class="line-added">329   DEBUG_ONLY(_active_handshaker = NULL;)</span>
+330 }
+331 
+<span class="line-modified">332 void HandshakeState::set_operation(HandshakeOperation* op) {</span>
+<span class="line-modified">333   if (!op-&gt;is_direct()) {</span>
+<span class="line-modified">334     assert(Thread::current()-&gt;is_VM_thread(), &quot;should be the VMThread&quot;);</span>
+<span class="line-added">335     _operation = op;</span>
+<span class="line-added">336   } else {</span>
+<span class="line-added">337     assert(Thread::current()-&gt;is_Java_thread(), &quot;should be a JavaThread&quot;);</span>
+<span class="line-added">338     // Serialize direct handshakes so that only one proceeds at a time for a given target</span>
+<span class="line-added">339     _handshake_turn_sem.wait_with_safepoint_check(JavaThread::current());</span>
+<span class="line-added">340     _operation_direct = op;</span>
+<span class="line-added">341   }</span>
+<span class="line-added">342   SafepointMechanism::arm_local_poll_release(_handshakee);</span>
+343 }
+344 
+<span class="line-modified">345 void HandshakeState::clear_handshake(bool is_direct) {</span>
+<span class="line-modified">346   if (!is_direct) {</span>
+<span class="line-modified">347     _operation = NULL;</span>
+<span class="line-added">348   } else {</span>
+<span class="line-added">349     _operation_direct = NULL;</span>
+<span class="line-added">350     _handshake_turn_sem.signal();</span>
+<span class="line-added">351   }</span>
+352 }
+353 
+<span class="line-modified">354 void HandshakeState::process_self_inner() {</span>
+<span class="line-modified">355   assert(Thread::current() == _handshakee, &quot;should call from _handshakee&quot;);</span>
+<span class="line-modified">356   assert(!_handshakee-&gt;is_terminated(), &quot;should not be a terminated thread&quot;);</span>
+<span class="line-modified">357   assert(_handshakee-&gt;thread_state() != _thread_blocked, &quot;should not be in a blocked state&quot;);</span>
+<span class="line-modified">358   assert(_handshakee-&gt;thread_state() != _thread_in_native, &quot;should not be in native&quot;);</span>
+<span class="line-added">359   JavaThread* self = _handshakee;</span>
+360 
+361   do {
+<span class="line-modified">362     ThreadInVMForHandshake tivm(self);</span>
+<span class="line-modified">363     if (!_processing_sem.trywait()) {</span>
+<span class="line-modified">364       _processing_sem.wait_with_safepoint_check(self);</span>
+365     }
+<span class="line-modified">366     if (has_operation()) {</span>
+<span class="line-modified">367       HandleMark hm(self);</span>
+<span class="line-modified">368       CautiouslyPreserveExceptionMark pem(self);</span>
+<span class="line-modified">369       HandshakeOperation * op = _operation;</span>
+<span class="line-modified">370       if (op != NULL) {</span>
+<span class="line-modified">371         // Disarm before executing the operation</span>
+<span class="line-modified">372         clear_handshake(/*is_direct*/ false);</span>
+<span class="line-added">373         op-&gt;do_handshake(self);</span>
+<span class="line-added">374       }</span>
+<span class="line-added">375       op = _operation_direct;</span>
+<span class="line-added">376       if (op != NULL) {</span>
+<span class="line-added">377         // Disarm before executing the operation</span>
+<span class="line-added">378         clear_handshake(/*is_direct*/ true);</span>
+<span class="line-added">379         op-&gt;do_handshake(self);</span>
+<span class="line-added">380       }</span>
+381     }
+<span class="line-modified">382     _processing_sem.signal();</span>
+383   } while (has_operation());
+384 }
+385 
+<span class="line-modified">386 bool HandshakeState::can_process_handshake() {</span>
+387   // handshake_safe may only be called with polls armed.
+<span class="line-modified">388   // Handshaker controls this by first claiming the handshake via claim_handshake().</span>
+<span class="line-modified">389   return SafepointSynchronize::handshake_safe(_handshakee);</span>
+390 }
+391 
+<span class="line-modified">392 bool HandshakeState::possibly_can_process_handshake() {</span>
+393   // Note that this method is allowed to produce false positives.
+<span class="line-modified">394   if (_handshakee-&gt;is_ext_suspended()) {</span>
+395     return true;
+396   }
+<span class="line-modified">397   if (_handshakee-&gt;is_terminated()) {</span>
+398     return true;
+399   }
+<span class="line-modified">400   switch (_handshakee-&gt;thread_state()) {</span>
+401   case _thread_in_native:
+402     // native threads are safe if they have no java stack or have walkable stack
+<span class="line-modified">403     return !_handshakee-&gt;has_last_Java_frame() || _handshakee-&gt;frame_anchor()-&gt;walkable();</span>
+404 
+405   case _thread_blocked:
+406     return true;
+407 
+408   default:
+409     return false;
+410   }
+411 }
+412 
+<span class="line-modified">413 bool HandshakeState::claim_handshake(bool is_direct) {</span>
+<span class="line-modified">414   if (!_processing_sem.trywait()) {</span>
+415     return false;
+416   }
+<span class="line-modified">417   if (has_specific_operation(is_direct)){</span>
+418     return true;
+419   }
+<span class="line-modified">420   _processing_sem.signal();</span>
+421   return false;
+422 }
+423 
+<span class="line-modified">424 bool HandshakeState::try_process(HandshakeOperation* op) {</span>
+<span class="line-modified">425   bool is_direct = op-&gt;is_direct();</span>
+426 
+<span class="line-modified">427   if (!has_specific_operation(is_direct)){</span>
+428     // JT has already cleared its handshake
+429     return false;
+430   }
+431 
+<span class="line-modified">432   if (!possibly_can_process_handshake()) {</span>
+433     // JT is observed in an unsafe state, it must notice the handshake itself
+434     return false;
+435   }
+436 
+437   // Claim the semaphore if there still an operation to be executed.
+<span class="line-modified">438   if (!claim_handshake(is_direct)) {</span>
+<span class="line-added">439     return false;</span>
+<span class="line-added">440   }</span>
+<span class="line-added">441 </span>
+<span class="line-added">442   // Check if the handshake operation is the same as the one we meant to execute. The</span>
+<span class="line-added">443   // handshake could have been already processed by the handshakee and a new handshake</span>
+<span class="line-added">444   // by another JavaThread might be in progress.</span>
+<span class="line-added">445   if ( (is_direct &amp;&amp; op != _operation_direct)) {</span>
+<span class="line-added">446     _processing_sem.signal();</span>
+447     return false;
+448   }
+449 
+450   // If we own the semaphore at this point and while owning the semaphore
+451   // can observe a safe state the thread cannot possibly continue without
+452   // getting caught by the semaphore.
+453   bool executed = false;
+<span class="line-modified">454   if (can_process_handshake()) {</span>
+<span class="line-modified">455     guarantee(!_processing_sem.trywait(), &quot;we should already own the semaphore&quot;);</span>
+<span class="line-modified">456     log_trace(handshake)(&quot;Processing handshake by %s&quot;, Thread::current()-&gt;is_VM_thread() ? &quot;VMThread&quot; : &quot;Handshaker&quot;);</span>
+<span class="line-modified">457     DEBUG_ONLY(_active_handshaker = Thread::current();)</span>
+<span class="line-modified">458     op-&gt;do_handshake(_handshakee);</span>
+<span class="line-modified">459     DEBUG_ONLY(_active_handshaker = NULL;)</span>
+<span class="line-modified">460     // Disarm after we have executed the operation.</span>
+<span class="line-modified">461     clear_handshake(is_direct);</span>
+462     executed = true;
+463   }
+464 
+465   // Release the thread
+<span class="line-modified">466   _processing_sem.signal();</span>
+467 
+468   return executed;
+469 }
+</pre>
+</td>
+</tr>
+</table>
+<center><a href="biasedLocking.cpp.sdiff.html" target="_top">&lt; prev</a> <a href="..\..\..\..\index.html" target="_top">index</a> <a href="handshake.hpp.sdiff.html" target="_top">next &gt;</a></center>  </body>
+</html>

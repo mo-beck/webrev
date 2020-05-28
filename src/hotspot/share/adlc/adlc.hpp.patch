@@ -1,0 +1,21 @@
+diff a/src/hotspot/share/adlc/adlc.hpp b/src/hotspot/share/adlc/adlc.hpp
+--- a/src/hotspot/share/adlc/adlc.hpp
++++ b/src/hotspot/share/adlc/adlc.hpp
+@@ -37,13 +37,16 @@
+ #include <string.h>
+ #include <ctype.h>
+ #include <stdarg.h>
+ #include <sys/types.h>
+ 
+-/* Make sure that we have the intptr_t and uintptr_t definitions */
+ #ifdef _WIN32
+ 
++/* Make sure that we don't define min/max */
++#define NOMINMAX
++
++/* Make sure that we have the intptr_t and uintptr_t definitions */
+ #if _MSC_VER >= 1300
+ using namespace std;
+ #endif
+ 
+ #if _MSC_VER >= 1400

@@ -1,0 +1,16 @@
+diff a/src/java.base/windows/native/libjava/java_props_md.c b/src/java.base/windows/native/libjava/java_props_md.c
+--- a/src/java.base/windows/native/libjava/java_props_md.c
++++ b/src/java.base/windows/native/libjava/java_props_md.c
+@@ -566,10 +566,12 @@
+         sprops.os_version = _strdup(buf);
+ #if defined(_M_AMD64)
+         sprops.os_arch = "amd64";
+ #elif defined(_X86_)
+         sprops.os_arch = "x86";
++#elif defined(_M_ARM64)
++        sprops.os_arch = "aarch64";
+ #else
+         sprops.os_arch = "unknown";
+ #endif
+     }
+ 

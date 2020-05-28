@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>New src\utils\hsdis-llvm\hsdis.h</title>
+    <link rel="stylesheet" href="..\..\..\style.css" />
+  </head>
+  <body>
+    <pre>
+  1 /*
+  2  * Copyright (c) 2008, 2012, Oracle and/or its affiliates. All rights reserved.
+  3  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+  4  *
+  5  * The Universal Permissive License (UPL), Version 1.0
+  6  *
+  7  * Subject to the condition set forth below, permission is hereby granted to
+  8  * any person obtaining a copy of this software, associated documentation
+  9  * and/or data (collectively the &quot;Software&quot;), free of charge and under any
+ 10  * and all copyright rights in the Software, and any and all patent rights
+ 11  * owned or freely licensable by each licensor hereunder covering either (i)
+ 12  * the unmodified Software as contributed to or provided by such licensor,
+ 13  * or (ii) the Larger Works (as defined below), to deal in both
+ 14  *
+ 15  * (a) the Software, and
+ 16  *
+ 17  * (b) any piece of software and/or hardware listed in the lrgrwrks.txt file
+ 18  * if one is included with the Software (each a &quot;Larger Work&quot; to which the
+ 19  * Software is contributed by such licensors),
+ 20  *
+ 21  * without restriction, including without limitation the rights to copy,
+ 22  * create derivative works of, display, perform, and distribute the Software
+ 23  * and make, use, sell, offer for sale, import, export, have made, and have
+ 24  * sold the Software and the Larger Work(s), and to sublicense the foregoing
+ 25  * rights on either these or other terms.
+ 26  *
+ 27  * This license is subject to the following condition:
+ 28  *
+ 29  * The above copyright notice and either this complete permission notice or
+ 30  * at a minimum a reference to the UPL must be included in all copies or
+ 31  * substantial portions of the Software.
+ 32  *
+ 33  * THE SOFTWARE IS PROVIDED &quot;AS IS&quot;, WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ 34  * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ 35  * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+ 36  * NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+ 37  * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+ 38  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+ 39  * USE OR OTHER DEALINGS IN THE SOFTWARE.
+ 40  *
+ 41  * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ 42  * or visit www.oracle.com if you need additional information or have any
+ 43  * questions.
+ 44  *
+ 45  */
+ 46 
+ 47 /* decode_instructions -- dump a range of addresses as native instructions
+ 48    This implements the protocol required by the HotSpot PrintAssembly option.
+ 49 
+ 50    The start_va, end_va is the virtual address the region of memory to
+ 51    disasemble and buffer contains the instructions to decode,
+ 52    Disassembling instructions in the current address space is done by
+ 53    having start_va == buffer.
+ 54 
+ 55    The option string, if not empty, is interpreted by the disassembler implementation.
+ 56 
+ 57    The printf callback is &#39;fprintf&#39; or any other workalike.
+ 58    It is called as (*printf_callback)(printf_stream, &quot;some format...&quot;, some, format, args).
+ 59 
+ 60    The event callback receives an event tag (a string) and an argument (a void*).
+ 61    It is called as (*event_callback)(event_stream, &quot;tag&quot;, arg).
+ 62 
+ 63    Events:
+ 64      &lt;insn pc=&#39;%p&#39;&gt;             begin an instruction, at a given location
+ 65      &lt;/insn pc=&#39;%d&#39;&gt;            end an instruction, at a given location
+ 66      &lt;addr value=&#39;%p&#39;/&gt;         emit the symbolic value of an address
+ 67 
+ 68    A tag format is one of three basic forms: &quot;tag&quot;, &quot;/tag&quot;, &quot;tag/&quot;,
+ 69    where tag is a simple identifier, signifying (as in XML) a element start,
+ 70    element end, and standalone element.  (To render as XML, add angle brackets.)
+ 71 */
+ 72 #ifndef SHARED_TOOLS_HSDIS_H
+ 73 #define SHARED_TOOLS_HSDIS_H
+ 74 
+ 75 #ifdef __cplusplus
+ 76 extern &quot;C&quot;
+ 77 {
+ 78 #endif
+ 79 
+ 80 extern
+ 81 #ifdef _WIN32
+ 82 __declspec(dllexport)
+ 83 #endif
+ 84 void* decode_instructions_virtual(uintptr_t start_va, uintptr_t end_va,
+ 85                                   unsigned char* buffer, uintptr_t length,
+ 86                                   void* (*event_callback)(void*, const char*, void*),
+ 87                                   void* event_stream,
+ 88                                   int (*printf_callback)(void*, const char*, ...),
+ 89                                   void* printf_stream,
+ 90                                   const char* options,
+ 91                                   int newline /* bool value for nice new line */);
+ 92 
+ 93 /* This is the compatability interface for older versions of hotspot */
+ 94 extern
+ 95 #ifdef _WIN32
+ 96 __declspec(dllexport)
+ 97 #endif
+ 98 void* decode_instructions(void* start_pv, void* end_pv,
+ 99                     void* (*event_callback)(void*, const char*, void*),
+100                     void* event_stream,
+101                     int   (*printf_callback)(void*, const char*, ...),
+102                     void* printf_stream,
+103                     const char* options);
+104 
+105 /* convenience typedefs */
+106 
+107 typedef void* (*decode_instructions_event_callback_ftype)  (void*, const char*, void*);
+108 typedef int   (*decode_instructions_printf_callback_ftype) (void*, const char*, ...);
+109 typedef void* (*decode_func_vtype) (uintptr_t start_va, uintptr_t end_va,
+110                                     unsigned char* buffer, uintptr_t length,
+111                                     decode_instructions_event_callback_ftype event_callback,
+112                                     void* event_stream,
+113                                     decode_instructions_printf_callback_ftype printf_callback,
+114                                     void* printf_stream,
+115                                     const char* options,
+116                                     int newline);
+117 typedef void* (*decode_func_stype) (void* start_pv, void* end_pv,
+118                                     decode_instructions_event_callback_ftype event_callback,
+119                                     void* event_stream,
+120                                     decode_instructions_printf_callback_ftype printf_callback,
+121                                     void* printf_stream,
+122                                     const char* options);
+123 
+124 #endif /* SHARED_TOOLS_HSDIS_H */
+125 
+126 #ifdef __cplusplus
+127 }
+128 #endif
+    </pre>
+  </body>
+</html>
